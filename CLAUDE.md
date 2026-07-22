@@ -332,12 +332,20 @@ sensitive columns. Do not add a `tents` tab and do not use `IMPORTRANGE`.
 flat rows):
 
 ```
-placements  tentId | x | y | rot
+placements  tentId | x | y | rot |
+            name | placering | length | width | color | electricity | water | nya | shape
 nodes       id | domain | kind | rating | x | y | unl |
             out220 | out16 | out32 | out63 | out125
 cables      src | dst | dstKind | domain | otype | phase
 meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
 ```
+
+Custom objects (user-added items, not from the Excel library) live only in the app, so a
+placed custom carries its full definition inline in cols `name…shape`; for library tents
+those cols are blank and `tentId` resolves against the baked-in library as before. On load a
+placed custom is rebuilt into the library (`customFromRow`) so `refOf()` finds it and it
+returns to the list on delete. A custom is placed at most once (placing removes it from the
+list), so one row per custom is enough — unplaced custom templates still stay local-only.
 
 `meta` is a **single data row** (`A2:G2`), not key/value pairs. That keeps every tab
 the same shape — header row plus data rows — so one `rowsToObjects()` helper parses
