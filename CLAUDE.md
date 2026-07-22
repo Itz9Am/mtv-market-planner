@@ -10,20 +10,24 @@ Single self-contained HTML file, no framework, no server. Leaflet + SheetJS from
 
 ## Repo layout
 
+Everything lives **flat in the repo root** — there are no `src/`, `data/`, `dist/`, or
+`scripts/` directories.
+
 ```
-src/planner.template.html   the app; contains the literal token __TENTS_JSON__
-data/tents.json             tent library extracted from the Excel workbook
-scripts/extract_tents.py    xlsx  -> data/tents.json      (openpyxl)
-scripts/build.py            template + data -> dist/      (+ syntax & sanity checks)
-dist/marknad_tent_planner.html   the artefact the user actually opens
+planner.template.html       the app; contains the literal token __TENTS_JSON__
+tents.json                  tent library extracted from the Excel workbook
+extract_tents.py            xlsx  -> tents.json           (openpyxl)
+build.py                    template + data -> marknad_tent_planner.html  (+ checks)
+marknad_tent_planner.html   the generated artefact the user actually opens
+marknad_base_clean.png      the base plan image (hosted alongside the HTML)
 ```
 
-**Always edit `src/planner.template.html`, never `dist/`.** `dist/` is generated and
-will be overwritten.
+**Always edit `planner.template.html`, never `marknad_tent_planner.html`.** The latter
+is generated and will be overwritten.
 
 ```bash
-python3 scripts/extract_tents.py Marknadsutstallare_2026-2.xlsx   # only when the sheet changes
-python3 scripts/build.py                                          # after every edit
+python3 extract_tents.py Marknadsutstallare_2026-2.xlsx   # only when the sheet changes
+python3 build.py                                          # after every edit
 ```
 
 `build.py` runs `node --check` on the embedded script, warns on emoji, and warns on
@@ -35,7 +39,7 @@ duplicate tent ids. A build that prints warnings is a build that will misbehave.
 
 There is no test suite and the app cannot be opened in this environment, so:
 
-1. `python3 scripts/build.py` — must print `syntax OK` with no warnings.
+1. `python3 build.py` — must print `syntax OK` with no warnings.
 2. For anything touching the electrical/water graph, **extract the pure functions and
    run them under node**. This has caught two real bugs that syntax checking missed
    (a `ReferenceError` from a deleted helper, and socket exhaustion). Pattern:
@@ -50,7 +54,7 @@ There is no test suite and the app cannot be opened in this environment, so:
 
 ## Data model
 
-`data/tents.json` is an array of "placeable items" (tents, but also organiser
+`tents.json` is an array of "placeable items" (tents, but also organiser
 structures and custom objects). 150 entries currently.
 
 ```jsonc
@@ -68,7 +72,7 @@ structures and custom objects). 150 entries currently.
 ```
 
 Source of truth: `Utplaceringsdokument` sheet, header row 2. Column map and the
-extraction rules are documented at the top of `scripts/extract_tents.py` — read it
+extraction rules are documented at the top of `extract_tents.py` — read it
 before touching the data pipeline.
 
 Three non-obvious rules, all of which caused bugs already:
@@ -217,7 +221,7 @@ water networks, and a little metadata. It does **not** hold the tent library.
 
 The tent library keeps its current pipeline unchanged: the private
 *Marknadsutställare 2026* workbook is exported to xlsx and imported manually via
-`scripts/extract_tents.py`. This is what lets category colours survive (they are cell
+`extract_tents.py`. This is what lets category colours survive (they are cell
 fills, readable only by openpyxl) and it means the sheet never touches the
 sensitive columns. Do not add a `tents` tab and do not use `IMPORTRANGE`.
 
