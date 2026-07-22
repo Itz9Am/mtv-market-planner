@@ -189,36 +189,40 @@ blue pipes. No capacity maths. Water-capable items show a blue ring.
 
 ## Persistence
 
-`localStorage`, keys prefixed `mtvi_` (see `const LS` at the top of the script). Bump
-the version suffix when a shape changes.
+`localStorage`, keys prefixed `mtvi_` (see `const LS` at the top of the script), is the
+per-session cache: placements, nodes, cables, image, ppm, view, edits, removed, custom,
+and the Sheet config (`LS.sheetCfg`) each live under their own key. Bump the version
+suffix when a shape changes. The base image is embedded as a data URL and downscaled to
+2600 px on upload; it is kept in `localStorage` but is **never** written to the Sheet
+(only its hosted URL is — see below).
 
-**Save/Load project** writes one JSON file — the portable unit of work:
-
-```jsonc
-{ "v":1, "image":"data:image/jpeg;base64,…", "ppm":12.4,
-  "view":{"c":[y,x],"z":2}, "placed":[{"ref":{…},"lat":..,"lng":..,"rot":..}],
-  "custom":[…], "edits":{…}, "removed":[…], "nodes":[…], "cables":[…] }
-```
-
-The base image is embedded as a data URL and downscaled to 2600 px on upload.
+**Save/Load is Google Sheets** (see the section below) — the portable, shared unit of
+work. The old one-JSON-file path has been removed.
 
 ---
 
-## Next task: Google Sheets for saved state
+## Google Sheets for saved state — the only save/load path
 
-Agreed design, not yet built. **Scope is deliberately narrow — read this before
-designing anything.**
+Built. Save/Load go to a shared Google Sheet; **the old local JSON file path has been
+removed** (there is no `saveProjBtn`/`loadProjBtn` any more). The module lives under
+the `/* Google Sheets sync */` banner in the script — `doSheetSave` / `doSheetLoad`,
+the pure row helpers (`rowsToObjects nodeFromRow nodeToRow cableFromRow cableToRow
+gnum gbool isBlank`), and the GIS token client (`getToken` / `ensureTokenClient`).
+Config (spreadsheet id, OAuth client id, optional API key, base image URL) lives in
+`localStorage` under `LS.sheetCfg`, prefilled from `SHEET_DEFAULTS`, edited via the
+**Settings** modal. **Scope is deliberately narrow.**
 
-The new spreadsheet stores **only what the application saves**: placements, power and
+The spreadsheet stores **only what the application saves**: placements, power and
 water networks, and a little metadata. It does **not** hold the tent library.
 
 The tent library keeps its current pipeline unchanged: the private
 *Marknadsutställare 2026* workbook is exported to xlsx and imported manually via
 `scripts/extract_tents.py`. This is what lets category colours survive (they are cell
-fills, readable only by openpyxl) and it means the new sheet never touches the
+fills, readable only by openpyxl) and it means the sheet never touches the
 sensitive columns. Do not add a `tents` tab and do not use `IMPORTRANGE`.
 
-**Tabs** (created by hand; all app-written, flat rows):
+**Tabs** (created by hand — they already exist in the live sheet; all app-written,
+flat rows):
 
 ```
 placements  tentId | x | y | rot
@@ -230,7 +234,7 @@ meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
 
 `meta` is a **single data row** (`A2:G2`), not key/value pairs. That keeps every tab
 the same shape — header row plus data rows — so one `rowsToObjects()` helper parses
-all four, and the whole of `meta` is written atomically in one `values.update`.
+all four, and the whole of `meta` is written atomically as one range in the batch write.
 `view` is split into three numeric columns rather than JSON-in-a-cell so the sheet
 stays readable when debugging by eye.
 
@@ -240,12 +244,18 @@ is closed and hard-coded in two places (`outputs()` and the source/cabinet modal
 
 > **Careful:** `outs === null` means *"use the default complement for this rating"* and
 > is NOT the same as an object of zeros, which means *"this unit has no sockets"*.
-> Empty cells must load back as `null`; a literal `0` must load as `0`. Conflating them
+> Empty cells load back as `null`; a literal `0` loads as `0`. Conflating them
 > turns every default cabinet into one with no outlets and nothing will connect.
+> `nodeFromRow` / `nodeToRow` enforce this and are covered by the node tests — extend
+> those tests before touching the mapping.
 
-Read with `values.batchGet`, write one `values.update` per tab. `tentId` joins to the
-baked-in library and is resolved through `refOf()`, which already handles a missing id
-by falling back to a snapshot.
+Reads are one `values.batchGet` with `valueRenderOption=UNFORMATTED_VALUE` (so numbers
+and booleans come back typed and trailing empty cells are omitted — that omission is
+what makes empty-vs-zero detectable). Writes are a `values:batchClear` of the data rows
+(`A2:` down, headers kept) followed by one `values:batchUpdate` for all four tabs; the
+clear is what removes stale rows when the plan shrinks. `tentId` joins to the baked-in
+library and is resolved through `refOf()`, which handles a missing id by falling back
+to a snapshot; on Sheet load a missing id gets a minimal stub `ref`.
 
 **Auth**, verified against current Google docs:
 
@@ -253,22 +263,29 @@ by falling back to a snapshot.
   reads sheets that are already link-public. Restrictions are HTTP-referrer/IP plus
   API-service only. Public read therefore = API key + "Anyone with the link → Viewer".
 - Admin writes = **OAuth 2.0 client ID** (Google Identity Services token client,
-  scope `https://www.googleapis.com/auth/spreadsheets`). The client ID is public by
+  scopes `https://www.googleapis.com/auth/spreadsheets` plus `userinfo.email` so
+  `savedBy` can be filled from the signed-in account). The client ID is public by
   design; real enforcement is Drive sharing — only accounts with **Editor** on the
   sheet can write. Prefer an **Internal** consent screen if the admins share a
   Workspace domain, to skip verification.
+- The OAuth client is a **web** client; its **Authorized JavaScript origins** must
+  list the origin the HTML is served from. `file://` has a null origin and will fail —
+  the app has to be hosted (e.g. GitHub Pages). The client *secret* is unused; the
+  browser token flow needs only the client id.
 
 **Constraints to design around:**
 
 - The base image cannot live in a cell. Host the PNG alongside the HTML and put its
   URL in `meta.imageUrl`, together with `meta.ppm` — without both, a fresh browser can
-  load coordinates but cannot draw anything to scale.
+  load coordinates but cannot draw anything to scale. On save the URL written is
+  `sheetCfg().imageUrl` (default `marknad_base_clean.png`), **not** whatever image is
+  currently loaded — a data-URL upload is never pushed to the sheet.
 - `tentId` must stay stable across re-imports. Numeric ids are safe; the synthetic
   `x_<slug>` ids for organiser structures change if a row is renamed.
-- Last write wins. Write `savedAt`/`savedBy` to `meta` and warn the user if the remote
-  value changed since load, otherwise two admins silently clobber each other.
+- Last write wins. `doSheetSave` re-reads `meta.savedAt` before writing and warns if it
+  changed since load (`GS.lastSavedAt`), otherwise two admins silently clobber each
+  other.
 - Sheets API quotas are ~300 req/min per project, 60/min per user; batch and cache.
-- Keep the existing local Save/Load project JSON working as an offline path.
 
 ---
 
