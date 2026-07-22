@@ -266,10 +266,12 @@ between the `public` and `admin` classes.
 
 > **Public read needs an API key.** Anonymous read of the Sheet requires
 > `SHEET_DEFAULTS.apiKey` to be set (a browser key restricted to the Pages origin + the
-> Sheets API) **and** the Sheet shared "Anyone with the link → Viewer". It currently
-> ships as `''`, so until it's filled in, an unauthenticated browser can't read the
-> Sheet and the public view only shows that browser's own `localStorage`. The read path
-> (`sheetBatchGet` / `autoLoadStartup` / `pollRemote`) already uses the key when present.
+> Sheets API) **and** the Sheet shared "Anyone with the link → Viewer". A restricted key
+> **is now filled in** (referrer-locked to `https://itz9am.github.io/*`, Sheets-API-only,
+> so it is safe to commit), so a fresh/incognito browser can read the plan without
+> signing in. The read path (`sheetBatchGet` / `autoLoadStartup` / `pollRemote`) uses the
+> key whenever no token is present. If public read ever 403s, check the Sheet is still
+> link-Viewer and the key's referrer/API restrictions still match the serving origin.
 
 ## Persistence
 
