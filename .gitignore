@@ -7,3 +7,7 @@ marknad_tent_planner.html
 
 # local preview server dir
 _site/
+
+# python bytecode cache (e.g. from importing extract_tents.py)
+__pycache__/
+*.pyc
