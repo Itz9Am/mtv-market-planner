@@ -256,6 +256,12 @@ module lives under the `/* automatic sync */` and `/* Google Sheets sync */` ban
 - `autoLoadStartup()` — pulls the four tabs on startup / after sign-in, silently
   (API key or silent token, never a popup). **Unsynced local edits win**: if
   `LS.dirty` is set it pushes the local state instead of overwriting from the Sheet.
+- `pollRemote()` / `remoteReload()` — live reload. Every 15 s (and on tab refocus) it
+  reads only `meta!A2:G`; if `savedAt` differs from `GS.lastSavedAt` (someone else
+  saved) it pulls the whole plan. `reloadBlocked()` suppresses it while the user has
+  pending edits, is mid-drag (`pointerDown` — reloading would tear a layer out from
+  under Leaflet's drag handler), or the tab is hidden. `applySheetState(…,keepView)`
+  keeps the local pan/zoom and skips the image reflash when the URL is unchanged.
 - pure row helpers (`rowsToObjects nodeFromRow nodeToRow cableFromRow cableToRow gnum
   gbool isBlank`) and the GIS token client (`getToken` / `ensureTokenClient`).
 
@@ -340,9 +346,10 @@ to a snapshot; on Sheet load a missing id gets a minimal stub `ref`.
   and `GS.lastSavedAt` are still written/tracked, so a concurrency check can be
   reinstated, but two admins editing the same Sheet at once will clobber each other.
 - Sheets API quotas are ~300 req/min per project, 60/min per user; the 2.5 s debounce
-  plus coalescing keeps a burst of edits to one `batchClear`+`batchUpdate` pair. View
-  (pan/zoom) changes deliberately do **not** trigger a save — the current view is just
-  captured on the next real edit — so idle panning doesn't burn quota.
+  plus coalescing keeps a burst of edits to one `batchClear`+`batchUpdate` pair, and the
+  15 s live-reload poll is a single small `meta` read (~4/min). View (pan/zoom) changes
+  deliberately do **not** trigger a save — the current view is captured on the next real
+  edit — so idle panning doesn't burn quota.
 
 ---
 

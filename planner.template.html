@@ -942,13 +942,15 @@ function sheetData(savedAt,savedBy){
     {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy)]}
   ];
 }
-function applySheetState(P,N,C,M){
+function applySheetState(P,N,C,M,keepView){
+  const cur=(keepView&&imgBounds)?{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}:null; // preserve pan/zoom
   placed.forEach(removeTentMarker); placed=[]; placedIds=new Set(); deselect(); showDomainLayers();
   nodes=N.map(nodeFromRow); cables=C.map(cableFromRow); saveNet();
   ppm=gnum(M.ppm); lsSet(LS.ppm,ppm); updateScaleReadout();
   const vz=gnum(M.viewZoom), vx=gnum(M.viewX), vy=gnum(M.viewY);
   const view=(vz!=null&&vx!=null&&vy!=null)?{c:[vy,vx],z:vz}:null;
-  if(view) lsSet(LS.view,view);
+  const useView=cur||view;
+  if(useView) lsSet(LS.view,useView);
   P.forEach(o=>{
     const lib=library.find(x=>String(x.id)===String(o.tentId));
     const ref=lib?Object.assign({},lib):{id:o.tentId,name:String(o.tentId),placering:'',length:null,width:null,color:'#C9CDD6',electricity:'',water:false,nya:0};
@@ -957,7 +959,9 @@ function applySheetState(P,N,C,M){
   placedIds=new Set(placed.map(t=>t.ref.id));
   savePlaced();
   const imgUrl=(M.imageUrl&&String(M.imageUrl).trim())||sheetCfg().imageUrl;
-  if(imgUrl){ setImage(imgUrl, !!view); } else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
+  if(keepView && imgUrl===imgData){ if(useView) map.setView(useView.c,useView.z); refreshAll(); }  // same image: no reflash
+  else if(imgUrl){ setImage(imgUrl, !!useView); }
+  else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
   renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
 }
 /* --- automatic sync: debounced save on every change, load on startup --- */
@@ -1012,6 +1016,42 @@ async function autoLoadStartup(){
     GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
   }catch(e){ SYNC.loading=false; setSync(haveToken()||cfg.apiKey?'error':'signin',e.message); }
 }
+
+/* --- live reload: poll meta.savedAt; when someone else saves, pull it in --- */
+let pointerDown=false;   // don't reload mid-drag (Leaflet would lose the dragged layer)
+['mousedown','touchstart'].forEach(e=>document.addEventListener(e,()=>{pointerDown=true;},true));
+['mouseup','touchend','touchcancel'].forEach(e=>document.addEventListener(e,()=>{pointerDown=false;},true));
+async function remoteReload(){
+  SYNC.loading=true;
+  try{
+    const vr=await sheetBatchGet([SHEET_RANGES.placements,SHEET_RANGES.nodes,SHEET_RANGES.cables,SHEET_RANGES.meta]);
+    const P=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
+    const N=rowsToObjects(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
+    const C=rowsToObjects(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
+    const M=rowsToObjects(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
+    applySheetState(P,N,C,M,true);                 // keepView: don't yank the user's pan/zoom
+    GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
+    return M;
+  } finally { SYNC.loading=false; }
+}
+function reloadBlocked(){ return SYNC.loading||SYNC.inflight||SYNC.pending||pointerDown||document.hidden; }
+async function pollRemote(){
+  const cfg=sheetCfg();
+  if(!cfg.spreadsheetId || reloadBlocked()) return;   // busy, mid-edit, or tab hidden
+  if(!haveToken() && !cfg.apiKey) return;              // can't read silently
+  try{
+    const vr=await sheetBatchGet([SHEET_RANGES.meta]);
+    const M=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.meta)[0]||{};
+    if(M.savedAt && M.savedAt!==GS.lastSavedAt && !reloadBlocked()){   // re-check after the await
+      const m=await remoteReload();
+      flashBanner('Plan updated from the Sheet'+(m&&m.savedBy?(' · '+m.savedBy):'')+'.',false);
+      setTimeout(()=>banner.style.display='none',2200);
+    }
+  }catch(e){/* transient poll error — try again next tick */}
+}
+let pollTimer=null;
+function startPolling(){ if(!pollTimer) pollTimer=setInterval(pollRemote,15000); }
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRemote(); });   // catch up on refocus
 
 /* --- settings modal + buttons --- */
 function updateAuthStatus(){
@@ -1404,6 +1444,7 @@ setLetters(showLetters);
 renderList();
 if(!imgData) flashBanner('Upload a clean overhead image of your area, then Set scale',true);
 autoLoadStartup();   // pull the shared plan from the Sheet (silent; local unsynced edits win)
+startPolling();      // then watch for saves made elsewhere and reload them in
 [80,300,900].forEach(d=>setTimeout(()=>{map.invalidateSize();positionCtl();},d));
 window.addEventListener('resize',()=>{map.invalidateSize();positionCtl();});
 window.addEventListener('load',()=>{map.invalidateSize();positionCtl();});
