@@ -234,18 +234,33 @@ suffix when a shape changes. The base image is embedded as a data URL and downsc
 2600 px on upload; it is kept in `localStorage` but is **never** written to the Sheet
 (only its hosted URL is — see below).
 
-**Save/Load is Google Sheets** (see the section below) — the portable, shared unit of
-work. The old one-JSON-file path has been removed.
+**The Google Sheet syncs automatically** (see the section below) — it is the portable,
+shared unit of work. There are no Save/Load buttons and no local JSON file path.
 
 ---
 
-## Google Sheets for saved state — the only save/load path
+## Google Sheets for saved state — the only save/load path (automatic sync)
 
-Built. Save/Load go to a shared Google Sheet; **the old local JSON file path has been
-removed** (there is no `saveProjBtn`/`loadProjBtn` any more). The module lives under
-the `/* Google Sheets sync */` banner in the script — `doSheetSave` / `doSheetLoad`,
-the pure row helpers (`rowsToObjects nodeFromRow nodeToRow cableFromRow cableToRow
-gnum gbool isBlank`), and the GIS token client (`getToken` / `ensureTokenClient`).
+Built, and **fully automatic — there are no Save/Load buttons**. Every change writes to
+the shared Sheet on a debounce, and the plan is pulled from the Sheet on startup. The
+only Sheet control left in the UI is the **Settings** button plus a small
+`#syncStatus` indicator (`Synced` / `Saving…` / `Sign in to sync` / `Sync error`). The
+module lives under the `/* automatic sync */` and `/* Google Sheets sync */` banners:
+
+- `queueSheetSave()` — called from `savePlaced` / `saveNet` / calibration; debounced
+  (2.5 s) and coalesced so a burst of edits is one write. Guarded by `SYNC.loading` so
+  applying a load doesn't echo back a save. Never triggers an auth popup.
+- `runAutoSave()` — silently refreshes the token (`getToken(false)`, `prompt:'none'`);
+  if that can't happen it shows *Sign in to sync* and leaves the change pending. Writes
+  `values:batchClear` + `values:batchUpdate`. Retries with backoff, capped.
+- `autoLoadStartup()` — pulls the four tabs on startup / after sign-in, silently
+  (API key or silent token, never a popup). **Unsynced local edits win**: if
+  `LS.dirty` is set it pushes the local state instead of overwriting from the Sheet.
+- pure row helpers (`rowsToObjects nodeFromRow nodeToRow cableFromRow cableToRow gnum
+  gbool isBlank`) and the GIS token client (`getToken` / `ensureTokenClient`).
+
+`LS.dirty` is a flag set on every queued save and cleared on a successful save/load;
+it is what stops a stale startup load from clobbering edits made while offline.
 Config (spreadsheet id, OAuth client id, optional API key, base image URL) lives in
 `localStorage` under `LS.sheetCfg`, prefilled from `SHEET_DEFAULTS`, edited via the
 **Settings** modal. **Scope is deliberately narrow.**
@@ -320,10 +335,14 @@ to a snapshot; on Sheet load a missing id gets a minimal stub `ref`.
   currently loaded — a data-URL upload is never pushed to the sheet.
 - `tentId` must stay stable across re-imports. Numeric ids are safe; the synthetic
   `x_<slug>` ids for organiser structures change if a row is renamed.
-- Last write wins. `doSheetSave` re-reads `meta.savedAt` before writing and warns if it
-  changed since load (`GS.lastSavedAt`), otherwise two admins silently clobber each
-  other.
-- Sheets API quotas are ~300 req/min per project, 60/min per user; batch and cache.
+- Last write wins, **silently** — auto-save no longer runs the interactive
+  "overwrite?" confirm (it can't block on every keystroke). `meta.savedAt`/`savedBy`
+  and `GS.lastSavedAt` are still written/tracked, so a concurrency check can be
+  reinstated, but two admins editing the same Sheet at once will clobber each other.
+- Sheets API quotas are ~300 req/min per project, 60/min per user; the 2.5 s debounce
+  plus coalescing keeps a burst of edits to one `batchClear`+`batchUpdate` pair. View
+  (pan/zoom) changes deliberately do **not** trigger a save — the current view is just
+  captured on the next real edit — so idle panning doesn't burn quota.
 
 ---
 

@@ -107,8 +107,8 @@
       <button id="tabVatten" class="tab">Vatten</button>
     </div>
     <div class="bar" id="projectBar">
-      <button id="saveSheetBtn" class="primary" title="Write the current plan to the shared Google Sheet">Save to Sheet</button>
-      <button id="loadSheetBtn" title="Load the plan from the shared Google Sheet">Load from Sheet</button>
+      <span id="syncStatus" title="" style="font-size:12px;font-weight:600;color:var(--muted)"></span>
+      <span style="flex:1"></span>
       <button id="sheetCfgBtn" title="Google Sheet settings">Settings</button>
     </div>
     <div id="placementUI">
@@ -263,7 +263,7 @@
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',sheetCfg:'mtvi_sheetcfg_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',sheetCfg:'mtvi_sheetcfg_v1',dirty:'mtvi_dirty_v1'};
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -464,7 +464,7 @@ function removeTentMarker(t){
   ['marker','label','poly','nyaPoly'].forEach(k=>{ if(t[k])map.removeLayer(t[k]); t[k]=null; });
 }
 function refreshAll(){ placed.forEach(renderTentMarker); positionCtl(); }
-function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); }
+function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); queueSheetSave(); }
 function loadPlaced(){ placed=[]; (lsGet(LS.placed,[])||[]).forEach(a=>{placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null});}); placedIds=new Set(placed.map(t=>t.ref.id)); }
 function doPlace(ref,lat,lng){
   const t={uid:uidSeq++,ref:Object.assign({},ref),lat,lng,rot:0,marker:null};
@@ -733,7 +733,7 @@ document.getElementById('lenCancel').onclick=()=>{ lenBg.style.display='none'; i
 document.getElementById('lenSave').onclick=()=>{
   const meters=parseFloat(document.getElementById('lenInput').value); if(!meters||meters<=0){alert('Enter a length in metres.');return;}
   const a=map.project(calibPts[0],0), b=map.project(calibPts[1],0);
-  ppm=Math.hypot(a.x-b.x,a.y-b.y)/meters; lsSet(LS.ppm,ppm);
+  ppm=Math.hypot(a.x-b.x,a.y-b.y)/meters; lsSet(LS.ppm,ppm); queueSheetSave();   // ppm lives in meta
   lenBg.style.display='none'; if(calibLine){map.removeLayer(calibLine);calibLine=null;}
   updateScaleReadout(); refreshAll(); flashBanner('Scale set — drag tents onto the image.',false); setTimeout(()=>banner.style.display='none',2500);
 };
@@ -960,42 +960,57 @@ function applySheetState(P,N,C,M){
   if(imgUrl){ setImage(imgUrl, !!view); } else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
   renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
 }
-async function remoteMeta(){
-  try{ const vr=await sheetBatchGet([SHEET_RANGES.meta]);
-    return rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.meta)[0]||{}; }catch(e){ return {}; }
+/* --- automatic sync: debounced save on every change, load on startup --- */
+const SYNC={timer:null,pending:false,inflight:false,loading:false,errs:0};
+function setSync(s,msg){
+  const el=document.getElementById('syncStatus'); if(!el) return;
+  const M={saved:['Synced','var(--ok)'],saving:['Saving…','var(--accent)'],pending:['Saving…','var(--accent)'],
+    loading:['Loading…','var(--accent)'],signin:['Sign in to sync (Settings)','var(--accent)'],
+    error:['Sync error — retrying','var(--danger)'],idle:['','var(--muted)']};
+  const v=M[s]||M.idle; el.textContent=v[0]; el.style.color=v[1]; el.title=msg||v[0];
 }
-async function doSheetSave(){
-  if(GS.busy) return; GS.busy=true;
+/* Called from every mutation (savePlaced / saveNet / calibration). Debounced and
+   coalesced so a burst of edits becomes one write. Never pops up auth. */
+function queueSheetSave(){
+  if(SYNC.loading || !sheetCfg().spreadsheetId) return;   // not while loading; not if unconfigured
+  lsSet(LS.dirty,1); SYNC.pending=true; SYNC.errs=0; setSync('pending');
+  clearTimeout(SYNC.timer); SYNC.timer=setTimeout(runAutoSave,2500);
+}
+async function runAutoSave(){
+  if(SYNC.inflight || !SYNC.pending) return;
+  if(!haveToken()){ try{ await getToken(false); }              // silent refresh only — never a popup mid-edit
+    catch(e){ setSync('signin'); return; } }                   // stays pending; retries on next change / sign-in
+  SYNC.inflight=true; SYNC.pending=false; setSync('saving');
   try{
-    flashBanner('Saving to Google Sheet…',false);
-    await getToken(true);
-    const rm=await remoteMeta();                        // last-write-wins guard
-    if(rm.savedAt && rm.savedAt!==GS.lastSavedAt){
-      if(!confirm('The sheet was saved '+(rm.savedBy?('by '+rm.savedBy+' '):'')+'at '+rm.savedAt+', after you loaded.\n\nOverwrite those changes?')){
-        flashBanner('Save cancelled — load first to see the newer version.',true); return; }
-    }
     const savedAt=new Date().toISOString(), savedBy=GS.email||'admin';
-    await sheetApi('/values:batchClear',{ranges:SHEET_CLEAR});                 // drop stale rows
+    await sheetApi('/values:batchClear',{ranges:SHEET_CLEAR});
     await sheetApi('/values:batchUpdate',{valueInputOption:'RAW',data:sheetData(savedAt,savedBy)});
-    GS.lastSavedAt=savedAt;
-    flashBanner('Saved to Google Sheet.',false); setTimeout(()=>banner.style.display='none',2200);
-  }catch(e){ alert('Could not save to the sheet.\n\n'+e.message); flashBanner('Save failed.',true); }
-  finally{ GS.busy=false; }
+    GS.lastSavedAt=savedAt; lsSet(LS.dirty,0); SYNC.errs=0;
+    setSync(SYNC.pending?'pending':'saved');
+  }catch(e){ SYNC.errs++; SYNC.pending=true; setSync('error',e.message); }
+  SYNC.inflight=false;
+  if(SYNC.pending && SYNC.errs<4){ clearTimeout(SYNC.timer);   // backoff on error, quick follow-up on a fresh edit
+    SYNC.timer=setTimeout(runAutoSave, SYNC.errs?4000*SYNC.errs:1200); }
 }
-async function doSheetLoad(){
-  if(GS.busy) return; GS.busy=true;
+/* Pull the shared plan on startup (or after sign-in), silently. Unsynced local
+   edits win — we push them instead of overwriting. */
+async function autoLoadStartup(){
+  const cfg=sheetCfg();
+  if(!cfg.spreadsheetId) return;
+  if(lsGet(LS.dirty,0)){ setSync('pending'); queueSheetSave(); return; }
+  if(!haveToken() && !cfg.apiKey){ try{ await getToken(false); }catch(e){ setSync('signin'); return; } }
+  setSync('loading');
   try{
-    flashBanner('Loading from Google Sheet…',false);
     const vr=await sheetBatchGet([SHEET_RANGES.placements,SHEET_RANGES.nodes,SHEET_RANGES.cables,SHEET_RANGES.meta]);
     const P=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
     const N=rowsToObjects(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
     const C=rowsToObjects(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
     const M=rowsToObjects(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
-    applySheetState(P,N,C,M);
-    GS.lastSavedAt=M.savedAt||null;
-    flashBanner('Loaded from Google Sheet.',false); setTimeout(()=>banner.style.display='none',2200);
-  }catch(e){ alert('Could not load from the sheet.\n\n'+e.message); flashBanner('Load failed.',true); }
-  finally{ GS.busy=false; }
+    if(P.length||N.length||C.length||(M&&M.ppm!=null)){
+      SYNC.loading=true; applySheetState(P,N,C,M); SYNC.loading=false;
+    }
+    GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
+  }catch(e){ SYNC.loading=false; setSync(haveToken()||cfg.apiKey?'error':'signin',e.message); }
 }
 
 /* --- settings modal + buttons --- */
@@ -1028,18 +1043,18 @@ document.getElementById('cfgSignIn').onclick=async()=>{
   try{ sheetCfgSet(readCfgFields()); GS.tokenClient=null; GS.token=null; GS.tokenExp=0; GS.email=null;
     await getToken(true,true);   // force the consent screen so the Sheets permission is (re)granted
     updateAuthStatus();
-    flashBanner('Signed in'+(GS.email?(' as '+GS.email):'')+'.',false); setTimeout(()=>banner.style.display='none',1800); }
+    flashBanner('Signed in'+(GS.email?(' as '+GS.email):'')+'.',false); setTimeout(()=>banner.style.display='none',1800);
+    autoLoadStartup();           // now that we can read/write, pull the shared plan (or push local edits)
+  }
   catch(e){ alert('Sign-in failed.\n\n'+e.message); }
 };
-document.getElementById('saveSheetBtn').onclick=doSheetSave;
-document.getElementById('loadSheetBtn').onclick=doSheetLoad;
 
 /* ---------- Networks: El (source+cabinets, 3-phase) and Vatten (brunn/handfat) ---------- */
 function ampOf(s){ const m=/(\d+)\s*A/i.exec(s||''); return m?parseInt(m[1]):0; }
 function tentAmp(id){ const t=placed.find(x=>String(x.ref.id)===String(id)); return t?ampOf(refOf(t).electricity):0; }
 function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
 function tentPos(id){ const t=placed.find(x=>x.ref.id===id); return t?[t.lat,t.lng]:null; }
-function saveNet(){ lsSet(LS.nodes,nodes); lsSet(LS.cables,cables); }
+function saveNet(){ lsSet(LS.nodes,nodes); lsSet(LS.cables,cables); queueSheetSave(); }
 function curDomain(){ return currentTab==='el'?'el':currentTab==='vatten'?'water':null; }
 
 // a tent's demand from its sheet electricity: {phase:1|3, amp}
@@ -1388,6 +1403,7 @@ updateScaleReadout();
 setLetters(showLetters);
 renderList();
 if(!imgData) flashBanner('Upload a clean overhead image of your area, then Set scale',true);
+autoLoadStartup();   // pull the shared plan from the Sheet (silent; local unsynced edits win)
 [80,300,900].forEach(d=>setTimeout(()=>{map.invalidateSize();positionCtl();},d));
 window.addEventListener('resize',()=>{map.invalidateSize();positionCtl();});
 window.addEventListener('load',()=>{map.invalidateSize();positionCtl();});
