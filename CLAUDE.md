@@ -229,6 +229,43 @@ blue pipes. No capacity maths. Water-capable items show a blue ring.
   via the **Letters** toggle.
 - Tent list sorts by colour with **red last**, then by `placering`, then name.
 
+## Public view vs admin view
+
+The app boots in a **public, map-only view** and is flipped to the full editing UI by
+signing in. State lives in one boolean, `ADMIN` (persisted in `LS.admin`,
+`mtvi_admin_v1`), and one function, `applyMode()`, which toggles `document.body`
+between the `public` and `admin` classes.
+
+- **Public (default, no login):** the sidebar (`#sidebar`) and toolbar (`#topbar`) are
+  hidden by `body.public` CSS; only the map with the tents shows. Auto-sync still runs
+  read-only (startup pull + 15 s poll), so a shared link stays current. `<body>` ships
+  with `class="public"` and an early inline `if(ADMIN) document.body.className='admin'`
+  so a fresh viewer **never flashes the editing tools** (a persisted admin sees a brief
+  public flash instead — the safe direction).
+- **Admin (unlocked by sign-in):** the full UI. `enterAdmin()` / `exitAdminMode()` set
+  the flag and call `applyMode()`. `applyMode()` forces the Placering tab when leaving
+  admin and defers `map.invalidateSize()` (the sidebar showing/hiding resizes the map).
+- **The admin entry is deliberately "somewhat hidden":** a faint `⋮` corner button
+  (`#adminBtn`, bottom-right of the map, opacity .3 → 1 on hover). It's written as the
+  HTML entity `&#8942;` in the template so `build.py`'s emoji check never sees a raw
+  glyph — **do not** paste a literal padlock/key/gear character; U+1F512, U+26BF and
+  U+2699 all fall inside that regex's ranges and would warn. **Exit admin** is a button
+  next to `#syncStatus` (only visible in admin, since the sidebar is hidden in public).
+- **Every tent mutation is gated on `ADMIN`**, not just hidden by CSS: `tentClick`
+  (early return), the polygon `mousedown` drag and `dblclick` edit, the token-mode
+  marker's drag-enable and `dblclick`, and the rotate/delete `keydown`. Public viewers
+  can pan/zoom but cannot select, move, rotate, edit, or delete anything.
+- Admin mode is **UI only** — the real write gate is unchanged (Google Drive Editor
+  sharing; see the sync section). Flipping to admin without a valid Editor token reveals
+  the tools but writes still fail.
+
+> **Public read needs an API key.** Anonymous read of the Sheet requires
+> `SHEET_DEFAULTS.apiKey` to be set (a browser key restricted to the Pages origin + the
+> Sheets API) **and** the Sheet shared "Anyone with the link → Viewer". It currently
+> ships as `''`, so until it's filled in, an unauthenticated browser can't read the
+> Sheet and the public view only shows that browser's own `localStorage`. The read path
+> (`sheetBatchGet` / `autoLoadStartup` / `pollRemote`) already uses the key when present.
+
 ## Persistence
 
 `localStorage`, keys prefixed `mtvi_` (see `const LS` at the top of the script), is the
