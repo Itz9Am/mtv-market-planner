@@ -918,9 +918,13 @@ async function sheetApi(path,body){
   const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(cfg.spreadsheetId)+path;
   const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+GS.token,'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok){ const msg=await sheetErr(r);
-    if(isScopeErr(r.status,msg)){ GS.token=null; GS.tokenExp=0;
-      throw new Error('Write failed ('+r.status+'): '+msg+'\n\nThe signed-in account lacks the Sheets write permission. Open Settings → Sign in again and grant it, or add the '+
-        'https://www.googleapis.com/auth/spreadsheets scope to the OAuth consent screen (writes also need Editor access to the sheet).'); }
+    const scope=r.status===401||/insufficient|scope/i.test(msg);
+    if(scope){ GS.token=null; GS.tokenExp=0;
+      throw new Error('Write failed ('+r.status+'): '+msg+'\n\nThe signed-in account lacks the Sheets write scope. Open Settings → Sign in again and grant it, or add the '+
+        'https://www.googleapis.com/auth/spreadsheets scope to the OAuth consent screen.'); }
+    if(r.status===403){                                     // token is fine; the account can't edit this file
+      throw new Error('Write failed ('+r.status+'): '+msg+'\n\nThe signed-in Google account'+(GS.email?(' ('+GS.email+')'):'')+
+        ' does not have Editor access to this spreadsheet. Share the sheet with that account as Editor, or Settings → Sign in with an account that can edit it.'); }
     throw new Error('Write failed ('+r.status+'). '+msg); }
   return r.json();
 }
