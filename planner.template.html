@@ -108,6 +108,10 @@
     <div class="bar" id="projectBar">
       <span id="syncStatus" title="Google Sheet sync" style="font-size:12px;font-weight:600;color:var(--muted);cursor:pointer"></span>
       <span style="flex:1"></span>
+      <span class="lbl" style="font-size:11px;color:var(--muted)">Area</span>
+      <select id="areaSel" title="Switch area" style="background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:6px 8px;border-radius:7px;font-size:12px;max-width:120px"></select>
+      <button id="areaAdd" title="Add a new blank area">+ New</button>
+      <button id="areaRename" title="Rename this area">Rename</button>
     </div>
     <div id="placementUI">
       <div class="bar">
@@ -218,7 +222,7 @@
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',areas:'mtvi_areas_v1'};
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -242,6 +246,37 @@ const DEFAULT_IMG='marknad_base_clean.png';   // committed & published next to t
 let imgData=lsGet(LS.img,null), imgBounds=null, imgOverlay=null;
 let ppm=lsGet(LS.ppm,null);
 let currentTab='placering';
+/* ---------- areas (multiple plans in one Sheet) ----------
+   Each area is an independent plan: its own image + ppm + view and its own
+   placements/nodes/cables. The ACTIVE area lives in the usual globals
+   (placed/nodes/cables/ppm/imgData); every INACTIVE area is stashed in
+   `areaStore` as raw Sheet row-objects so it can be written back and switched to.
+   All areas share the tent library — a tent placed in any area leaves the list. */
+const AREA_DEFAULT='1';                       // existing (pre-areas) data maps here
+const BLANK_BOUNDS=[[0,0],[1400,2000]];       // coordinate frame for an image-less area
+let areas=[];                                 // [{id,name,ppm,imageUrl,view}]
+let activeArea=AREA_DEFAULT;
+let areaStore={};                             // inactive id -> {P:[rowObj],N:[rowObj],C:[rowObj]}
+function curAreaObj(){ return areas.find(a=>a.id===activeArea)||null; }
+function currentView(){ const c=map.getCenter(); return imgBounds?{c:[c.lat,c.lng],z:map.getZoom()}:null; }
+function saveAreas(){ lsSet(LS.areas,{active:activeArea,list:areas,store:areaStore}); }
+function loadAreas(){
+  const a=lsGet(LS.areas,null);
+  if(a&&a.list&&a.list.length){
+    areas=a.list; areaStore=a.store||{};
+    activeArea=(a.active&&a.list.some(x=>x.id===a.active))?a.active:a.list[0].id;
+  }else{
+    areas=[{id:AREA_DEFAULT,name:'Area 1',ppm:lsGet(LS.ppm,null),imageUrl:DEFAULT_IMG,view:lsGet(LS.view,null)}];
+    activeArea=AREA_DEFAULT; areaStore={};
+  }
+}
+function nextAreaId(){ let mx=0; areas.forEach(a=>{ const n=parseInt(a.id,10); if(Number.isFinite(n)&&n>mx)mx=n; }); return String(mx+1); }
+/* the union of tent ids placed in ANY area (active + stashed) */
+function allPlacedSet(){
+  const s=new Set(); placed.forEach(t=>s.add(String(t.ref.id)));
+  Object.keys(areaStore).forEach(id=>(areaStore[id].P||[]).forEach(o=>{ if(!isBlank(o.tentId)) s.add(String(o.tentId)); }));
+  return s;
+}
 const EL_COLORS={'220v 6A':'#9FC5E8','380v 16A':'#F9CB9C','380v 32A':'#E06666','none':'#C9CDD6','':'#8A90A0'};
 const EL_LIST=['220v 6A','380v 16A','380v 32A','none','']; // legend order
 function elColor(e){ e=(e||'').trim(); return EL_COLORS[e]!==undefined?EL_COLORS[e]:'#C4A6E0'; }
@@ -267,7 +302,7 @@ map.createPane('cables');     map.getPane('cables').style.zIndex='610';      // 
 map.createPane('tentlabels'); map.getPane('tentlabels').style.zIndex='620';  // above cables
 map.getPane('tentlabels').style.pointerEvents='none';
 map.createPane('nodes');      map.getPane('nodes').style.zIndex='630';       // cabinets on top
-setImage(imgData||DEFAULT_IMG,true);   // fall back to the committed base plan on a fresh browser
+// the active area's canvas is set up in init via bootActiveFromLS() (may be blank)
 map.on('zoomend',refreshAll);
 map.on('move zoom',positionCtl);
 map.on('moveend zoomend',()=>{ if(imgBounds){ lsSet(LS.view,{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}); }});
@@ -295,8 +330,27 @@ function setImage(dataURL,restore){
     map.invalidateSize(); refreshAll();
   };
   img.onerror=()=>{ if(imgData!==dataURL) return;   // superseded by a newer image, ignore
-    flashBanner('Could not load the base image "'+dataURL+'". Upload one, or set the image URL in Settings.',true); };
+    flashBanner('Could not load the base image "'+dataURL+'". Set the image URL for this area in the Sheet.',true); };
   img.src=dataURL;
+}
+/* An area with no image is a blank canvas: no overlay, just a coordinate frame so
+   tents can still be placed. The base image can be added to the Sheet later. */
+function setBlankCanvas(view){
+  imgData='';
+  if(imgOverlay){ map.removeLayer(imgOverlay); imgOverlay=null; }
+  imgBounds=BLANK_BOUNDS;
+  const v=view||null;
+  if(v&&v.c){ map.setView(v.c,v.z); } else { map.fitBounds(BLANK_BOUNDS); }
+  try{ localStorage.removeItem(LS.img); }catch(e){}
+  map.invalidateSize(); refreshAll();
+}
+function bootActiveFromLS(){
+  const a=curAreaObj();
+  if(a&&a.ppm!=null){ ppm=a.ppm; }
+  const raw=((a&&a.imageUrl)||'').trim();
+  const url=raw || (activeArea===AREA_DEFAULT?DEFAULT_IMG:'');
+  if(!url){ setBlankCanvas(lsGet(LS.view,null)); }
+  else { setImage(url,true); }
 }
 
 /* ---------- metres screen pixels ---------- */
@@ -478,15 +532,17 @@ function sortLib(arr){
 }
 function fmtSize(t){ if(t.shape==='circle')return t.length?`${t.length} m dia.`:'no size'; return (t.length&&t.width)?`${t.length}×${t.width} m`:'no size';}
 function updateCounts(){
-  const avail=library.filter(t=>!placedIds.has(t.id)&&!removed.has(String(t.id))).length;
+  const placedSet=allPlacedSet();
+  const avail=library.filter(t=>!placedSet.has(String(t.id))&&!removed.has(String(t.id))).length;
   document.getElementById('counts').textContent=avail+' available · '+placed.length+' placed'+(removed.size?' · '+removed.size+' removed':'');
   const rb=document.getElementById('restoreBtn');
   rb.style.display=removed.size?'':'none'; rb.textContent='Restore removed ('+removed.size+')';
 }
 function renderList(filter=''){
   const f=(filter||'').trim().toLowerCase();
+  const placedSet=allPlacedSet();
   const merged=library.map(applyEdits);
-  const items=sortLib(merged.filter(t=>!placedIds.has(t.id) && !removed.has(String(t.id)) && (!f||t.name.toLowerCase().includes(f)||(t.placering||'').toLowerCase().includes(f))));
+  const items=sortLib(merged.filter(t=>!placedSet.has(String(t.id)) && !removed.has(String(t.id)) && (!f||t.name.toLowerCase().includes(f)||(t.placering||'').toLowerCase().includes(f))));
   listEl.innerHTML='';
   items.forEach(m=>{
     const el=document.createElement('div'); el.className='tent'; el.draggable=true; el.dataset.id=m.id;
@@ -631,6 +687,9 @@ function setTab(tab){
 document.getElementById('tabPlacering').onclick=()=>setTab('placering');
 document.getElementById('tabEl').onclick=()=>setTab('el');
 document.getElementById('tabVatten').onclick=()=>setTab('vatten');
+document.getElementById('areaSel').onchange=e=>selectArea(e.target.value);
+document.getElementById('areaAdd').onclick=addArea;
+document.getElementById('areaRename').onclick=renameArea;
 function renderLegend(){
   const el=document.getElementById('elLegend'); if(!el)return; el.innerHTML='';
   const cnt={}; placed.forEach(t=>{const e=(refOf(t).electricity||'').trim(); cnt[e]=(cnt[e]||0)+1;});
@@ -652,7 +711,8 @@ function renderLegend(){
   });
   const noPower=placed.filter(t=>needsPower(t)&&!hasPower(t));
   unconnectedSection(el,'Without power',noPower,tr=>elLabel(tr.electricity),'Every placed tent that needs power is connected.');
-  const waiting=library.filter(x=>!placedIds.has(x.id)&&!removed.has(String(x.id))&&tentReq(applyEdits(x).electricity)).length;
+  const waitSet=allPlacedSet();
+  const waiting=library.filter(x=>!waitSet.has(String(x.id))&&!removed.has(String(x.id))&&tentReq(applyEdits(x).electricity)).length;
   if(waiting){ const d=document.createElement('div'); d.className='hint'; d.textContent=waiting+' more tent(s) needing power are not placed yet.'; el.appendChild(d); }
 }
 
@@ -661,14 +721,28 @@ function renderLegend(){
    metadata. NOT the tent library (that keeps its Excel pipeline). Four flat tabs,
    each a header row plus data rows, so one rowsToObjects() parses them all.
    No cell holds JSON: view is three columns, node outputs are five columns. */
+/* Every tab carries a trailing `area` column so one Sheet holds several plans; it is
+   APPENDED (never inserted) so rows written before areas existed still line up — a
+   missing area cell reads back as the default area. `meta` is one row PER AREA (that
+   area's ppm/image/view + area,name); savedAt/savedBy are the global save stamp,
+   written identically to every row (the poll reads row 0). */
 const SHEET_HEADERS={
-  placements:['tentId','x','y','rot'],
-  nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125'],
-  cables:['src','dst','dstKind','domain','otype','phase'],
-  meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy']
+  placements:['tentId','x','y','rot','area'],
+  nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','area'],
+  cables:['src','dst','dstKind','domain','otype','phase','area'],
+  meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy','area','name']
 };
-const SHEET_RANGES={placements:'placements!A1:D',nodes:'nodes!A1:L',cables:'cables!A1:F',meta:'meta!A1:G'};
-const SHEET_CLEAR=['placements!A2:D','nodes!A2:L','cables!A2:F','meta!A2:G'];
+const SHEET_RANGES={placements:'placements!A1:E',nodes:'nodes!A1:M',cables:'cables!A1:G',meta:'meta!A1:I'};
+const SHEET_CLEAR=['placements!A2:E','nodes!A2:M','cables!A2:G','meta!A2:I'];
+/* an area cell that is blank (old rows written before areas existed) => the default area */
+function areaOf(o){ const a=o&&o.area; return (a==null||a==='')?AREA_DEFAULT:String(a); }
+function rowObjToArray(o,headers){ return headers.map(h=>{ const v=o[h]; return (v===undefined||v===null)?'':v; }); }
+function arrToRowObj(arr,headers){ const o={}; headers.forEach((h,i)=>{ o[h]=arr[i]; }); return o; }
+function viewFromMeta(o){ const z=gnum(o.viewZoom),x=gnum(o.viewX),y=gnum(o.viewY); return (z!=null&&x!=null&&y!=null)?{c:[y,x],z}:null; }
+/* live active-area item -> Sheet row-object (the shape inactive areas are stashed in) */
+function placedRowObj(t,area){ return {tentId:t.ref.id,x:t.lng,y:t.lat,rot:t.rot||0,area}; }
+function nodeRowObj(n,area){ return arrToRowObj(nodeToRow(n).concat([area]),SHEET_HEADERS.nodes); }
+function cableRowObj(c,area){ return arrToRowObj(cableToRow(c).concat([area]),SHEET_HEADERS.cables); }
 /* Config is hard-coded here — there is no in-app settings UI. */
 const SHEET_DEFAULTS={
   spreadsheetId:'1H47rLODVURUOy91OeuWh-uJiDcj79c-K8Q_HZxNeDDM',
@@ -795,25 +869,45 @@ async function sheetApi(path,body){
 }
 
 /* --- state <-> sheet --- */
-function metaRow(savedAt,savedBy){
-  const c=map.getCenter(), view=imgBounds?{x:c.lng,y:c.lat,z:map.getZoom()}:null;
-  return [ppm||'', sheetCfg().imageUrl||'', view?view.x:'', view?view.y:'', view?view.z:'', savedAt, savedBy];
+/* one meta row for an area: live values for the active area, stashed values otherwise */
+function metaArr(a,savedAt,savedBy){
+  let vx='',vy='',vz='';
+  if(a.id===activeArea){
+    const c=map.getCenter(); if(imgBounds){ vx=c.lng; vy=c.lat; vz=map.getZoom(); }
+    return [ppm||'', a.imageUrl||'', vx,vy,vz, savedAt, savedBy, a.id, a.name||''];
+  }
+  const v=a.view; if(v&&v.c){ vx=v.c[1]; vy=v.c[0]; vz=v.z; }
+  return [(a.ppm==null?'':a.ppm), a.imageUrl||'', vx,vy,vz, savedAt, savedBy, a.id, a.name||''];
 }
 function sheetData(savedAt,savedBy){
+  const pl=[SHEET_HEADERS.placements.slice()], nd=[SHEET_HEADERS.nodes.slice()],
+        cb=[SHEET_HEADERS.cables.slice()], mt=[SHEET_HEADERS.meta.slice()];
+  // active area, live from the globals
+  placed.forEach(t=>pl.push([t.ref.id,t.lng,t.lat,t.rot||0,activeArea]));
+  nodes.forEach(n=>nd.push(nodeToRow(n).concat([activeArea])));
+  cables.forEach(c=>cb.push(cableToRow(c).concat([activeArea])));
+  // inactive areas, from the stash
+  Object.keys(areaStore).forEach(id=>{ const st=areaStore[id]||{};
+    (st.P||[]).forEach(o=>pl.push(rowObjToArray(o,SHEET_HEADERS.placements)));
+    (st.N||[]).forEach(o=>nd.push(rowObjToArray(o,SHEET_HEADERS.nodes)));
+    (st.C||[]).forEach(o=>cb.push(rowObjToArray(o,SHEET_HEADERS.cables)));
+  });
+  areas.forEach(a=>mt.push(metaArr(a,savedAt,savedBy)));
   return [
-    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>[t.ref.id,t.lng,t.lat,t.rot||0]))},
-    {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(nodeToRow))},
-    {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(cableToRow))},
-    {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy)]}
+    {range:SHEET_RANGES.placements,values:pl},
+    {range:SHEET_RANGES.nodes,values:nd},
+    {range:SHEET_RANGES.cables,values:cb},
+    {range:SHEET_RANGES.meta,values:mt}
   ];
 }
-function applySheetState(P,N,C,M,keepView){
+/* Render one area's rows into the live globals + its image/ppm/view. `area` is the
+   areas[] entry (or null). Rebuilds placed/nodes/cables exactly as the old loader did. */
+function renderActive(P,N,C,area,keepView){
   const cur=(keepView&&imgBounds)?{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}:null; // preserve pan/zoom
   placed.forEach(removeTentMarker); placed=[]; placedIds=new Set(); deselect(); showDomainLayers();
   nodes=N.map(nodeFromRow); cables=C.map(cableFromRow); saveNet();
-  ppm=gnum(M.ppm); lsSet(LS.ppm,ppm); updateScaleReadout();
-  const vz=gnum(M.viewZoom), vx=gnum(M.viewX), vy=gnum(M.viewY);
-  const view=(vz!=null&&vx!=null&&vy!=null)?{c:[vy,vx],z:vz}:null;
+  ppm=area?area.ppm:null; lsSet(LS.ppm,ppm); updateScaleReadout();
+  const view=(area&&area.view)?area.view:null;
   const useView=cur||view;
   if(useView) lsSet(LS.view,useView);
   P.forEach(o=>{
@@ -823,11 +917,92 @@ function applySheetState(P,N,C,M,keepView){
   });
   placedIds=new Set(placed.map(t=>t.ref.id));
   savePlaced();
-  const imgUrl=(M.imageUrl&&String(M.imageUrl).trim())||sheetCfg().imageUrl;
-  if(keepView && imgUrl===imgData){ if(useView) map.setView(useView.c,useView.z); refreshAll(); }  // same image: no reflash
-  else if(imgUrl){ setImage(imgUrl, !!useView); }
-  else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
+  const raw=area?((area.imageUrl||'').trim()):'';
+  const imgUrl=raw || (String(area&&area.id)===AREA_DEFAULT?DEFAULT_IMG:'');
+  if(!imgUrl){ setBlankCanvas(useView); }
+  else if(keepView && imgUrl===imgData){ if(useView) map.setView(useView.c,useView.z); refreshAll(); }  // same image: no reflash
+  else { setImage(imgUrl, !!useView); }
   renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
+}
+/* Load the whole Sheet (all areas): build the areas list, stash the inactive ones,
+   render the active one. `Ms` is the array of meta row-objects (one per area). */
+function applySheetState(P,N,C,Ms,keepView){
+  // 1. areas from meta rows
+  const list=(Ms&&Ms.length?Ms:[]).map(o=>({
+    id:areaOf(o), name:(o.name!=null&&o.name!=='')?String(o.name):'',
+    ppm:gnum(o.ppm), imageUrl:(o.imageUrl!=null?String(o.imageUrl):'').trim(), view:viewFromMeta(o)
+  }));
+  const byId={}, ordered=[];                       // dedupe by id, keep first-seen order
+  list.forEach(a=>{ if(!byId[a.id]){ byId[a.id]=a; ordered.push(a); } });
+  // 2. group data rows by area
+  const gP={},gN={},gC={};
+  const bucket=(g,o)=>{ const k=areaOf(o); (g[k]=g[k]||[]).push(o); };
+  P.forEach(o=>bucket(gP,o)); N.forEach(o=>bucket(gN,o)); C.forEach(o=>bucket(gC,o));
+  // 3. ensure every referenced area exists in the list
+  const ids=new Set(ordered.map(a=>a.id));
+  [gP,gN,gC].forEach(g=>Object.keys(g).forEach(k=>ids.add(k)));
+  if(!ids.size) ids.add(AREA_DEFAULT);
+  ids.forEach(id=>{ if(!byId[id]){ const a={id,name:'',ppm:null,imageUrl:'',view:null}; byId[id]=a; ordered.push(a); } });
+  ordered.forEach((a,i)=>{ if(!a.name) a.name='Area '+(i+1); });
+  areas=ordered;
+  // 4. choose the active area (keep current if still present, else last local choice, else first)
+  const savedActive=(lsGet(LS.areas,{})||{}).active;
+  if(!areas.some(a=>a.id===activeArea)){
+    activeArea=(savedActive&&areas.some(a=>a.id===savedActive))?savedActive:areas[0].id;
+  }
+  // 5. stash inactive areas, render the active one
+  areaStore={};
+  areas.forEach(a=>{ if(a.id!==activeArea) areaStore[a.id]={P:gP[a.id]||[],N:gN[a.id]||[],C:gC[a.id]||[]}; });
+  renderActive(gP[activeArea]||[],gN[activeArea]||[],gC[activeArea]||[],byId[activeArea],keepView);
+  saveAreas(); updateAreaUI();
+}
+/* --- switching / adding areas (UI is view-only; data unchanged on a pure switch) --- */
+function captureActive(){
+  const a=curAreaObj();
+  if(a){ a.ppm=ppm; a.view=currentView(); }   // imageUrl is set in the Sheet, not the app
+  areaStore[activeArea]={
+    P:placed.map(t=>placedRowObj(t,activeArea)),
+    N:nodes.map(n=>nodeRowObj(n,activeArea)),
+    C:cables.map(c=>cableRowObj(c,activeArea))
+  };
+}
+function activateAreaId(id,keepView){
+  activeArea=id;
+  const a=curAreaObj();
+  const st=areaStore[id]||{P:[],N:[],C:[]};
+  delete areaStore[id];                        // now live, no longer stashed
+  SYNC.loading=true;                           // suppress echo saves while rebuilding
+  try{ renderActive(st.P,st.N,st.C,a,keepView); }
+  finally{ SYNC.loading=false; }
+}
+function selectArea(id){
+  if(id===activeArea || !areas.some(a=>a.id===id)){ updateAreaUI(); return; }
+  captureActive();
+  activateAreaId(id,false);
+  saveAreas(); updateAreaUI();                 // no Sheet write: switching doesn't change the plan
+}
+function addArea(){
+  captureActive();
+  const id=nextAreaId();
+  const a={id,name:'Area '+(areas.length+1),ppm:null,imageUrl:'',view:null};
+  areas.push(a); areaStore[id]={P:[],N:[],C:[]};
+  activateAreaId(id,false);
+  saveAreas(); updateAreaUI();
+  flashBanner('New blank area "'+a.name+'". Place tents here; a base image can be added in the Sheet later.',false);
+  setTimeout(()=>{ banner.style.display='none'; },3200);
+  queueSheetSave();                            // persist the new (empty) area + its meta row
+}
+function renameArea(){
+  const a=curAreaObj(); if(!a)return;
+  const name=prompt('Area name:',a.name||''); if(name==null)return;
+  const trimmed=name.trim(); if(!trimmed)return;
+  a.name=trimmed; saveAreas(); updateAreaUI(); queueSheetSave();
+}
+function updateAreaUI(){
+  const sel=document.getElementById('areaSel'); if(!sel)return;
+  sel.innerHTML='';
+  areas.forEach(a=>{ const o=document.createElement('option'); o.value=a.id; o.textContent=a.name||('Area '+a.id); sel.appendChild(o); });
+  sel.value=activeArea;
 }
 /* --- automatic sync: debounced save on every change, load on startup --- */
 const SYNC={timer:null,pending:false,inflight:false,loading:false,errs:0};
@@ -874,11 +1049,11 @@ async function autoLoadStartup(){
     const P=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
     const N=rowsToObjects(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
     const C=rowsToObjects(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
-    const M=rowsToObjects(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
-    if(P.length||N.length||C.length||(M&&M.ppm!=null)){
-      SYNC.loading=true; applySheetState(P,N,C,M); SYNC.loading=false;
+    const Ms=rowsToObjects(vr[3]&&vr[3].values,SHEET_HEADERS.meta);
+    if(P.length||N.length||C.length||Ms.length){
+      SYNC.loading=true; applySheetState(P,N,C,Ms); SYNC.loading=false;
     }
-    GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
+    GS.lastSavedAt=(Ms[0]&&Ms[0].savedAt)||null; lsSet(LS.dirty,0); setSync('saved');
   }catch(e){ SYNC.loading=false; setSync(haveToken()||cfg.apiKey?'error':'signin',e.message); }
 }
 
@@ -893,10 +1068,11 @@ async function remoteReload(){
     const P=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
     const N=rowsToObjects(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
     const C=rowsToObjects(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
-    const M=rowsToObjects(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
-    applySheetState(P,N,C,M,true);                 // keepView: don't yank the user's pan/zoom
-    GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
-    return M;
+    const Ms=rowsToObjects(vr[3]&&vr[3].values,SHEET_HEADERS.meta);
+    applySheetState(P,N,C,Ms,true);                // keepView: don't yank the user's pan/zoom
+    const M0=Ms[0]||{};
+    GS.lastSavedAt=M0.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
+    return M0;
   } finally { SYNC.loading=false; }
 }
 function reloadBlocked(){ return SYNC.loading||SYNC.inflight||SYNC.pending||pointerDown||document.hidden; }
@@ -1265,7 +1441,8 @@ function renderVattenLegend(){
       el.appendChild(row);
     });
   }
-  const waitingW=library.filter(x=>!placedIds.has(x.id)&&!removed.has(String(x.id))&&applyEdits(x).water).length;
+  const waitSetW=allPlacedSet();
+  const waitingW=library.filter(x=>!waitSetW.has(String(x.id))&&!removed.has(String(x.id))&&applyEdits(x).water).length;
   if(waitingW){ const d=document.createElement('div'); d.className='hint'; d.textContent=waitingW+' more tent(s) needing water are not placed yet.'; el.appendChild(d); }
 }
 document.addEventListener('keydown',e=>{
@@ -1276,11 +1453,13 @@ document.addEventListener('keydown',e=>{
 });
 
 /* ---------- init ---------- */
-loadPlaced();
+loadAreas();         // restore the area list + which area was active (from localStorage)
+loadPlaced();        // the active area's placements are cached in the usual LS keys
 updateScaleReadout();
 setLetters(showLetters);
+updateAreaUI();
+bootActiveFromLS();  // set up the active area's canvas (base image, or a blank one)
 renderList();
-if(!imgData) flashBanner('Base image could not be loaded — check the connection and refresh.',true);
 autoLoadStartup();   // pull the shared plan from the Sheet (silent; local unsynced edits win)
 startPolling();      // then watch for saves made elsewhere and reload them in
 [80,300,900].forEach(d=>setTimeout(()=>{map.invalidateSize();positionCtl();},d));

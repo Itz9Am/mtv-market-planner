@@ -261,13 +261,15 @@ module lives under the `/* automatic sync */` and `/* Google Sheets sync */` ban
   (API key or silent token, never a popup). **Unsynced local edits win**: if
   `LS.dirty` is set it pushes the local state instead of overwriting from the Sheet.
 - `pollRemote()` / `remoteReload()` — live reload. Every 15 s (and on tab refocus) it
-  reads only `meta!A2:G`; if `savedAt` differs from `GS.lastSavedAt` (someone else
-  saved) it pulls the whole plan. `reloadBlocked()` suppresses it while the user has
+  reads only `meta!A2:I` (row 0's `savedAt`); if it differs from `GS.lastSavedAt`
+  (someone else saved) it pulls the whole plan. `reloadBlocked()` suppresses it while the user has
   pending edits, is mid-drag (`pointerDown` — reloading would tear a layer out from
   under Leaflet's drag handler), or the tab is hidden. `applySheetState(…,keepView)`
   keeps the local pan/zoom and skips the image reflash when the URL is unchanged.
 - pure row helpers (`rowsToObjects nodeFromRow nodeToRow cableFromRow cableToRow gnum
-  gbool isBlank`) and the GIS token client (`getToken` / `ensureTokenClient`).
+  gbool isBlank areaOf rowObjToArray arrToRowObj viewFromMeta`) and the GIS token client
+  (`getToken` / `ensureTokenClient`). The area helpers plus the meta/area round-trip are
+  covered by the node tests (see *How to verify changes*).
 
 `LS.dirty` is a flag set on every queued save and cleared on a successful save/load;
 it is what stops a stale startup load from clobbering edits made while offline.
@@ -290,18 +292,34 @@ sensitive columns. Do not add a `tents` tab and do not use `IMPORTRANGE`.
 flat rows):
 
 ```
-placements  tentId | x | y | rot
+placements  tentId | x | y | rot | area
 nodes       id | domain | kind | rating | x | y | unl |
-            out220 | out16 | out32 | out63 | out125
-cables      src | dst | dstKind | domain | otype | phase
-meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
+            out220 | out16 | out32 | out63 | out125 | area
+cables      src | dst | dstKind | domain | otype | phase | area
+meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy | area | name
 ```
 
-`meta` is a **single data row** (`A2:G2`), not key/value pairs. That keeps every tab
-the same shape — header row plus data rows — so one `rowsToObjects()` helper parses
-all four, and the whole of `meta` is written atomically as one range in the batch write.
-`view` is split into three numeric columns rather than JSON-in-a-cell so the sheet
-stays readable when debugging by eye.
+**Multiple areas (plans) live in one Sheet.** Each area is an independent plan with
+its own base image, `ppm`, view and its own placements/nodes/cables. Every tab carries
+a trailing **`area`** column tagging the row's plan; `meta` is **one row per area**
+(that area's ppm/image/view + `area`,`name`). The `area` column is **appended, never
+inserted**, so rows written before areas existed still line up — a blank `area` cell
+reads back as the default area `'1'` (`areaOf()`), which is how the pre-areas live sheet
+auto-migrates to "Area 1" on first load. `savedAt`/`savedBy` are the global save stamp,
+written identically to every `meta` row (the live-reload poll reads row 0). In the app,
+the **active** area lives in the usual globals (`placed`/`nodes`/`cables`/`ppm`/`imgData`)
+and every **inactive** area is stashed in `areaStore` as raw Sheet row-objects, so a
+save writes all areas and switching (`selectArea`) never hits the network. The tent
+library is shared: a tent placed in **any** area leaves the list (`allPlacedSet()`).
+Switching areas is view-only and does **not** save; adding/renaming an area does.
+An area with an empty `imageUrl` renders as a blank canvas (`setBlankCanvas`) — there is
+no in-app image upload, so the base image for a new area is set later via its `meta`
+`imageUrl` cell.
+
+This keeps every tab the same shape — header row plus data rows — so one
+`rowsToObjects()` helper parses all four, and each tab is written atomically as one range
+in the batch write. `view` is split into three numeric columns rather than JSON-in-a-cell
+so the sheet stays readable when debugging by eye.
 
 `nodes.outs` is likewise **flattened into five columns**, not JSON. The socket key set
 is closed and hard-coded in two places (`outputs()` and the source/cabinet modal):
