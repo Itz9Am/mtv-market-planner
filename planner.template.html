@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{--bg:#1c1e26;--panel:#23262f;--panel2:#2b2f3a;--line:#3a3f4d;--txt:#e8eaf0;--muted:#9aa0b0;--accent:#e0a94a;--accent2:#4a90e0;--danger:#e05a5a;--ok:#5ac47a}
   *{box-sizing:border-box}
@@ -106,8 +107,12 @@
       <button id="tabVatten" class="tab">Vatten</button>
     </div>
     <div class="bar" id="projectBar">
-      <button id="saveProjBtn" class="primary">Save project</button>
-      <button id="loadProjBtn">Load project</button>
+      <button id="saveSheetBtn" class="primary" title="Write the current plan to the shared Google Sheet">Save to Sheet</button>
+      <button id="loadSheetBtn" title="Load the plan from the shared Google Sheet">Load from Sheet</button>
+      <button id="sheetCfgBtn" title="Google Sheet settings">Settings</button>
+      <span style="flex:1"></span>
+      <button id="saveProjBtn" title="Download the plan as a local JSON file">Save file</button>
+      <button id="loadProjBtn" title="Load a plan from a local JSON file">Load file</button>
       <input type="file" id="loadProjFile" accept=".json,application/json" style="display:none"/>
     </div>
     <div id="placementUI">
@@ -240,10 +245,29 @@
   </div>
 </div>
 
+<div class="modal-bg" id="sheetBg">
+  <div class="modal" style="width:420px">
+    <h3>Google Sheet settings</h3>
+    <p>The plan (placements, power &amp; water networks, scale and view) is stored in a
+      Google Sheet. The tent library is <b>not</b> — it keeps its own Excel pipeline.
+      Writing needs an account with <b>Editor</b> access to the sheet.</p>
+    <label>Spreadsheet ID</label><input id="cfgSheetId" placeholder="the long id from the sheet URL"/>
+    <label>OAuth Client ID</label><input id="cfgClientId" placeholder="…apps.googleusercontent.com"/>
+    <label>API key (optional — anonymous read-only)</label><input id="cfgApiKey" placeholder="leave blank to always sign in"/>
+    <label>Base image URL (drawn to scale on load)</label><input id="cfgImageUrl" placeholder="e.g. marknad_base_clean.png"/>
+    <p id="sheetAuthStatus" style="margin-top:12px">Not signed in.</p>
+    <div class="actions">
+      <button id="cfgSignIn">Sign in</button>
+      <span style="flex:1"></span>
+      <button id="sheetCfgCancel">Cancel</button><button id="sheetCfgSave" class="primary">Save settings</button>
+    </div>
+  </div>
+</div>
+
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',sheetCfg:'mtvi_sheetcfg_v1'};
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -801,6 +825,228 @@ document.getElementById('loadProjFile').addEventListener('change',e=>{
   };
   rd.readAsText(f); e.target.value='';
 });
+
+/* ---------- Google Sheets sync (shared project state) ----------
+   Stores ONLY what the app saves: placements, el/water networks, and a little
+   metadata. NOT the tent library (that keeps its Excel pipeline). Four flat tabs,
+   each a header row plus data rows, so one rowsToObjects() parses them all.
+   No cell holds JSON: view is three columns, node outputs are five columns. */
+const SHEET_HEADERS={
+  placements:['tentId','x','y','rot'],
+  nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125'],
+  cables:['src','dst','dstKind','domain','otype','phase'],
+  meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy']
+};
+const SHEET_RANGES={placements:'placements!A1:D',nodes:'nodes!A1:L',cables:'cables!A1:F',meta:'meta!A1:G'};
+const SHEET_CLEAR=['placements!A2:D','nodes!A2:L','cables!A2:F','meta!A2:G'];
+const SHEET_DEFAULTS={
+  spreadsheetId:'1H47rLODVURUOy91OeuWh-uJiDcj79c-K8Q_HZxNeDDM',
+  clientId:'445187642175-7iqlq60l2rlkmhqg0b3elv97pvjeke1q.apps.googleusercontent.com',
+  apiKey:'', imageUrl:'marknad_base_clean.png'
+};
+const GS={token:null,tokenExp:0,tokenClient:null,cbResolve:null,cbReject:null,email:null,lastSavedAt:null,busy:false};
+function sheetCfg(){ return Object.assign({},SHEET_DEFAULTS,lsGet(LS.sheetCfg,{})); }
+function sheetCfgSet(c){ lsSet(LS.sheetCfg,c); }
+function parseSheetId(s){ const m=/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/.exec(s||''); return m?m[1]:(s||'').trim(); }
+
+/* --- pure type + row helpers (extracted & node-tested; see CLAUDE.md) --- */
+function gnum(v){ if(v===''||v==null)return null; const n=Number(v); return Number.isFinite(n)?n:null; }
+function gbool(v){ return v===true||v==='TRUE'||v==='true'||v===1||v==='1'; }
+function isBlank(v){ return v===''||v==null||v===undefined; }
+function rowsToObjects(values,headers){
+  const rows=values||[], out=[];
+  for(let i=1;i<rows.length;i++){ const r=rows[i]||[];
+    if(r.every(isBlank)) continue;
+    const o={}; headers.forEach((h,j)=>{ o[h]= j<r.length?r[j]:undefined; }); out.push(o); }
+  return out;
+}
+/* CAREFUL: empty out-cells => outs null ("use default complement"); a literal 0 in
+   every cell => an object of zeros ("no sockets"). Never conflate them. */
+function nodeFromRow(o){
+  const cells=[o.out220,o.out16,o.out32,o.out63,o.out125];
+  const outs=cells.every(isBlank)?null
+    :{'220V':gnum(o.out220)||0,'16A':gnum(o.out16)||0,'32A':gnum(o.out32)||0,'63A':gnum(o.out63)||0,'125A':gnum(o.out125)||0};
+  const n={id:String(o.id),domain:o.domain,kind:o.kind,rating:gnum(o.rating)||0,lat:gnum(o.y),lng:gnum(o.x)};
+  if(o.kind==='source'){ n.unl=gbool(o.unl); n.outs=n.unl?null:outs; }
+  else if(outs){ n.outs=outs; }
+  return n;
+}
+function nodeToRow(n){
+  const isSrc=n.kind==='source';
+  const outs=n.outs;
+  const cells=outs?[outs['220V']||0,outs['16A']||0,outs['32A']||0,outs['63A']||0,outs['125A']||0]:['','','','',''];
+  return [n.id,n.domain,n.kind,n.rating,n.lng,n.lat,isSrc?(n.unl!==false):''].concat(cells);
+}
+function cableFromRow(o){
+  const c={src:String(o.src),dst:o.dstKind==='node'?String(o.dst):o.dst,dstKind:o.dstKind,domain:o.domain};
+  if(!isBlank(o.otype)) c.otype=o.otype;
+  const ph=gnum(o.phase); if(ph!=null) c.phase=ph;
+  return c;
+}
+function cableToRow(c){ return [c.src,c.dst,c.dstKind,c.domain,isBlank(c.otype)?'':c.otype,c.phase!=null?c.phase:'']; }
+
+/* --- OAuth (Google Identity Services token client) --- */
+function ensureGis(){
+  return new Promise((res,rej)=>{
+    if(window.google&&google.accounts&&google.accounts.oauth2) return res();
+    let n=0; const t=setInterval(()=>{
+      if(window.google&&google.accounts&&google.accounts.oauth2){clearInterval(t);res();}
+      else if(++n>100){clearInterval(t);rej(new Error('Google sign-in library did not load. Check your connection.'));}
+    },100);
+  });
+}
+function ensureTokenClient(){
+  if(GS.tokenClient) return;
+  GS.tokenClient=google.accounts.oauth2.initTokenClient({
+    client_id:sheetCfg().clientId,
+    scope:'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email',
+    callback:(resp)=>{ const ok=GS.cbResolve, no=GS.cbReject; GS.cbResolve=GS.cbReject=null;
+      if(resp.error){ if(no)no(new Error(resp.error_description||resp.error)); return; }
+      GS.token=resp.access_token; GS.tokenExp=Date.now()+((resp.expires_in||3600)*1000);
+      fetchEmail().finally(()=>{ if(ok)ok(GS.token); }); },
+    error_callback:(err)=>{ const no=GS.cbReject; GS.cbResolve=GS.cbReject=null;
+      if(no)no(new Error((err&&err.type)?('Sign-in '+err.type):'Sign-in was cancelled.')); }
+  });
+}
+async function fetchEmail(){
+  try{ const r=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+GS.token}});
+    if(r.ok){ const j=await r.json(); GS.email=j.email||GS.email; } }catch(e){}
+}
+function haveToken(){ return GS.token && Date.now()<GS.tokenExp-60000; }
+function getToken(interactive){
+  return ensureGis().then(()=>{
+    if(!sheetCfg().clientId) return Promise.reject(new Error('Set the OAuth Client ID in Sheet settings first.'));
+    if(haveToken()) return GS.token;
+    ensureTokenClient();
+    return new Promise((res,rej)=>{ GS.cbResolve=res; GS.cbReject=rej;
+      GS.tokenClient.requestAccessToken({prompt:interactive?'':'none'}); });
+  });
+}
+
+/* --- Sheets REST calls --- */
+async function sheetErr(r){ try{ const j=await r.json(); return (j.error&&j.error.message)||''; }catch(e){ return ''; } }
+async function sheetBatchGet(ranges){
+  const cfg=sheetCfg();
+  if(!cfg.spreadsheetId) throw new Error('Set the Spreadsheet ID in Sheet settings first.');
+  const q=ranges.map(r=>'ranges='+encodeURIComponent(r)).join('&')+'&valueRenderOption=UNFORMATTED_VALUE';
+  let url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(cfg.spreadsheetId)+'/values:batchGet?'+q;
+  let headers={};
+  if(!haveToken() && cfg.apiKey){ url+='&key='+encodeURIComponent(cfg.apiKey); }   // anonymous read of a link-public sheet
+  else { await getToken(true); headers={Authorization:'Bearer '+GS.token}; }
+  const r=await fetch(url,{headers});
+  if(!r.ok) throw new Error('Read failed ('+r.status+'). '+await sheetErr(r));
+  return (await r.json()).valueRanges||[];   // returned in the same order as `ranges`
+}
+async function sheetApi(path,body){
+  const cfg=sheetCfg();
+  const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(cfg.spreadsheetId)+path;
+  const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+GS.token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok) throw new Error('Write failed ('+r.status+'). '+await sheetErr(r));
+  return r.json();
+}
+
+/* --- state <-> sheet --- */
+function metaRow(savedAt,savedBy){
+  const c=map.getCenter(), view=imgBounds?{x:c.lng,y:c.lat,z:map.getZoom()}:null;
+  return [ppm||'', sheetCfg().imageUrl||'', view?view.x:'', view?view.y:'', view?view.z:'', savedAt, savedBy];
+}
+function sheetData(savedAt,savedBy){
+  return [
+    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>[t.ref.id,t.lng,t.lat,t.rot||0]))},
+    {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(nodeToRow))},
+    {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(cableToRow))},
+    {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy)]}
+  ];
+}
+function applySheetState(P,N,C,M){
+  placed.forEach(removeTentMarker); placed=[]; placedIds=new Set(); deselect(); showDomainLayers();
+  nodes=N.map(nodeFromRow); cables=C.map(cableFromRow); saveNet();
+  ppm=gnum(M.ppm); lsSet(LS.ppm,ppm); updateScaleReadout();
+  const vz=gnum(M.viewZoom), vx=gnum(M.viewX), vy=gnum(M.viewY);
+  const view=(vz!=null&&vx!=null&&vy!=null)?{c:[vy,vx],z:vz}:null;
+  if(view) lsSet(LS.view,view);
+  P.forEach(o=>{
+    const lib=library.find(x=>String(x.id)===String(o.tentId));
+    const ref=lib?Object.assign({},lib):{id:o.tentId,name:String(o.tentId),placering:'',length:null,width:null,color:'#C9CDD6',electricity:'',water:false,nya:0};
+    placed.push({uid:uidSeq++,ref:ref,lat:gnum(o.y),lng:gnum(o.x),rot:gnum(o.rot)||0,marker:null});
+  });
+  placedIds=new Set(placed.map(t=>t.ref.id));
+  savePlaced();
+  const imgUrl=(M.imageUrl&&String(M.imageUrl).trim())||sheetCfg().imageUrl;
+  if(imgUrl){ setImage(imgUrl, !!view); } else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
+  renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
+}
+async function remoteMeta(){
+  try{ const vr=await sheetBatchGet([SHEET_RANGES.meta]);
+    return rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.meta)[0]||{}; }catch(e){ return {}; }
+}
+async function doSheetSave(){
+  if(GS.busy) return; GS.busy=true;
+  try{
+    flashBanner('Saving to Google Sheet…',false);
+    await getToken(true);
+    const rm=await remoteMeta();                        // last-write-wins guard
+    if(rm.savedAt && rm.savedAt!==GS.lastSavedAt){
+      if(!confirm('The sheet was saved '+(rm.savedBy?('by '+rm.savedBy+' '):'')+'at '+rm.savedAt+', after you loaded.\n\nOverwrite those changes?')){
+        flashBanner('Save cancelled — load first to see the newer version.',true); return; }
+    }
+    const savedAt=new Date().toISOString(), savedBy=GS.email||'admin';
+    await sheetApi('/values:batchClear',{ranges:SHEET_CLEAR});                 // drop stale rows
+    await sheetApi('/values:batchUpdate',{valueInputOption:'RAW',data:sheetData(savedAt,savedBy)});
+    GS.lastSavedAt=savedAt;
+    flashBanner('Saved to Google Sheet.',false); setTimeout(()=>banner.style.display='none',2200);
+  }catch(e){ alert('Could not save to the sheet.\n\n'+e.message); flashBanner('Save failed.',true); }
+  finally{ GS.busy=false; }
+}
+async function doSheetLoad(){
+  if(GS.busy) return; GS.busy=true;
+  try{
+    flashBanner('Loading from Google Sheet…',false);
+    const vr=await sheetBatchGet([SHEET_RANGES.placements,SHEET_RANGES.nodes,SHEET_RANGES.cables,SHEET_RANGES.meta]);
+    const P=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
+    const N=rowsToObjects(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
+    const C=rowsToObjects(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
+    const M=rowsToObjects(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
+    applySheetState(P,N,C,M);
+    GS.lastSavedAt=M.savedAt||null;
+    flashBanner('Loaded from Google Sheet.',false); setTimeout(()=>banner.style.display='none',2200);
+  }catch(e){ alert('Could not load from the sheet.\n\n'+e.message); flashBanner('Load failed.',true); }
+  finally{ GS.busy=false; }
+}
+
+/* --- settings modal + buttons --- */
+function updateAuthStatus(){
+  const el=document.getElementById('sheetAuthStatus');
+  el.textContent=haveToken()?('Signed in'+(GS.email?(' as '+GS.email):'')+'.'):'Not signed in.';
+}
+function readCfgFields(){
+  return { spreadsheetId:parseSheetId(document.getElementById('cfgSheetId').value),
+    clientId:document.getElementById('cfgClientId').value.trim(),
+    apiKey:document.getElementById('cfgApiKey').value.trim(),
+    imageUrl:document.getElementById('cfgImageUrl').value.trim() };
+}
+document.getElementById('sheetCfgBtn').onclick=()=>{
+  const c=sheetCfg();
+  document.getElementById('cfgSheetId').value=c.spreadsheetId||'';
+  document.getElementById('cfgClientId').value=c.clientId||'';
+  document.getElementById('cfgApiKey').value=c.apiKey||'';
+  document.getElementById('cfgImageUrl').value=c.imageUrl||'';
+  updateAuthStatus();
+  document.getElementById('sheetBg').style.display='flex';
+};
+document.getElementById('sheetCfgCancel').onclick=()=>{ document.getElementById('sheetBg').style.display='none'; };
+document.getElementById('sheetCfgSave').onclick=()=>{
+  sheetCfgSet(readCfgFields()); GS.tokenClient=null; GS.token=null; GS.tokenExp=0;
+  document.getElementById('sheetBg').style.display='none';
+  flashBanner('Sheet settings saved.',false); setTimeout(()=>banner.style.display='none',1500);
+};
+document.getElementById('cfgSignIn').onclick=async()=>{
+  try{ sheetCfgSet(readCfgFields()); GS.tokenClient=null; GS.token=null;
+    await getToken(true); updateAuthStatus(); }
+  catch(e){ alert('Sign-in failed.\n\n'+e.message); }
+};
+document.getElementById('saveSheetBtn').onclick=doSheetSave;
+document.getElementById('loadSheetBtn').onclick=doSheetLoad;
 
 /* ---------- Networks: El (source+cabinets, 3-phase) and Vatten (brunn/handfat) ---------- */
 function ampOf(s){ const m=/(\d+)\s*A/i.exec(s||''); return m?parseInt(m[1]):0; }
