@@ -697,21 +697,37 @@ const SHEET_CLEAR=['placements!A2:M','nodes!A2:L','cables!A2:F','meta!A2:G'];
 /* Is this id one of the baked-in Excel library tents (vs. a custom object)? Only
    non-baked items get their definition written to / read from the sheet. */
 function isBakedTent(id){ return TENTS.some(x=>String(x.id)===String(id)); }
+/* the nine def cells (columns E..M) as written / read */
+function defRow(r){ return [r.name||'', r.placering||'', r.electricity||'', r.water?1:0,
+  r.shape==='circle'?'circle':'rect', r.length!=null?r.length:'', r.width!=null?r.width:'', r.color||'', r.nya?1:0]; }
+function defFromRow(o){ return {name:String(o.name),placering:o.placering||'',electricity:o.electricity||'',
+  water:gbool(o.water),shape:o.shape==='circle'?'circle':'rect',length:gnum(o.length),width:gnum(o.width),
+  color:(o.color&&String(o.color))||'#C9CDD6',nya:gnum(o.nya)||0}; }
 function placementRow(t){
-  const base=[t.ref.id,t.lng,t.lat,t.rot||0];
-  if(isBakedTent(t.ref.id)) return base.concat(['','','','','','','','','']);   // library tent: def resolved by id
-  const r=refOf(t);                                                             // custom object: carry its def
-  return base.concat([r.name||'', r.placering||'', r.electricity||'', r.water?1:0,
-    r.shape==='circle'?'circle':'rect', r.length!=null?r.length:'', r.width!=null?r.width:'',
-    r.color||'', r.nya?1:0]);
+  const base=[t.ref.id,t.lng,t.lat,t.rot||0], id=t.ref.id;
+  // def cells are written for custom objects AND edited library tents. An UNEDITED
+  // library tent leaves them blank so it keeps resolving live by id through refOf()
+  // (re-importing the Excel library still updates it in place).
+  if(isBakedTent(id) && !edits[id]) return base.concat(['','','','','','','','','']);
+  return base.concat(defRow(refOf(t)));
 }
 function placementRef(o){
   const lib=library.find(x=>String(x.id)===String(o.tentId));
-  if(lib) return Object.assign({},lib);                                         // resolve library tents live
-  if(!isBlank(o.name)) return {id:o.tentId,name:String(o.name),placering:o.placering||'',
-    electricity:o.electricity||'',water:gbool(o.water),shape:o.shape==='circle'?'circle':'rect',
-    length:gnum(o.length),width:gnum(o.width),color:(o.color&&String(o.color))||'#C9CDD6',nya:gnum(o.nya)||0};
+  if(lib) return Object.assign({},lib);                                         // resolve library tents live (edits reapplied via reconcileEdits)
+  if(!isBlank(o.name)) return Object.assign({id:o.tentId},defFromRow(o));        // custom object made elsewhere
   return {id:o.tentId,name:String(o.tentId),placering:'',length:null,width:null,color:'#C9CDD6',electricity:'',water:false,nya:0};
+}
+/* A placed library tent resolves from the current library every render, so an edit
+   made on another browser has to travel through the local `edits` map, not the placed
+   `ref`. Rebuild those overrides from the def cells: set when present, clear when the
+   author reverted the tent (blank cells). Custom objects render from their own ref and
+   are left alone. Placement rows already won the last-write-wins race by this point. */
+function reconcileEdits(P){
+  let touched=false;
+  P.forEach(o=>{ if(!isBakedTent(o.tentId)) return;
+    if(isBlank(o.name)){ if(edits[o.tentId]!==undefined){ delete edits[o.tentId]; touched=true; } }
+    else { edits[o.tentId]=defFromRow(o); touched=true; } });
+  if(touched) lsSet(LS.edits,edits);
 }
 /* Config is hard-coded here — there is no in-app settings UI. */
 const SHEET_DEFAULTS={
@@ -860,6 +876,7 @@ function applySheetState(P,N,C,M,keepView){
   const view=(vz!=null&&vx!=null&&vy!=null)?{c:[vy,vx],z:vz}:null;
   const useView=cur||view;
   if(useView) lsSet(LS.view,useView);
+  reconcileEdits(P);   // reapply per-item library-tent edits synced from other browsers
   P.forEach(o=>{
     placed.push({uid:uidSeq++,ref:placementRef(o),lat:gnum(o.y),lng:gnum(o.x),rot:gnum(o.rot)||0,marker:null});
   });

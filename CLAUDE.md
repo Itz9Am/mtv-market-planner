@@ -323,9 +323,9 @@ auto-sync can take over). **Scope is deliberately narrow.**
 
 The spreadsheet stores **only what the application saves**: placements, power and
 water networks, and a little metadata. It does **not** hold the baked **Excel** tent
-library — but it *does* carry **custom objects** (see the placements def columns
-below), because those are user-created in-app state that would otherwise live only in
-the author's `localStorage` and never reach the public view.
+library — but it *does* carry **custom objects and per-item edits** (see the placements
+def columns below), because those are user-created in-app state that would otherwise
+live only in the author's `localStorage` and never reach the public view or other admins.
 
 The Excel library keeps its current pipeline unchanged: the private
 *Marknadsutställare 2026* workbook is exported to xlsx and imported manually via
@@ -345,18 +345,33 @@ cables      src | dst | dstKind | domain | otype | phase
 meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
 ```
 
-The placements **def columns (`name`…`nya`) are written ONLY for custom objects** —
-items whose id is not in the baked `TENTS` (`isBakedTent()` is false). A baked library
-tent leaves them blank and is still resolved by id through `refOf()`, so re-importing
-the Excel library keeps updating already-placed items live (do **not** start writing
-def columns for baked tents — that would freeze them at their saved snapshot). On load,
-`placementRef()` resolves a placement against the current library first; only when the
-id is absent (a custom object made in another browser) does it rebuild the item from
-its def columns, falling back to an id-named stub for old pre-def-column rows. Widening
-the range needed **no** manual sheet change — the columns already existed empty, and an
-`UNFORMATTED_VALUE` read drops the trailing blanks so baked-tent rows still read back as
-four cells. **`mSave` calls `queueSheetSave()`** so renaming/editing an item actually
-pushes — without it the edit only touched `localStorage` and the plan never re-synced.
+The placements **def columns (`name`…`nya`) are written for custom objects AND for
+edited library tents** — i.e. whenever the placed item is not a baked `TENTS` entry
+(`isBakedTent()` false) *or* it has an `edits[id]` override (`placementRow`). An
+**unedited** baked tent leaves those cells blank and is still resolved by id through
+`refOf()`, so re-importing the Excel library keeps updating it live. Do **not** start
+writing def columns for *unedited* baked tents — that would freeze them at their saved
+snapshot and kill live-linking.
+
+Reading them back splits by kind, because `refOf()` treats the two differently:
+
+- **Custom objects** aren't in any other browser's library, so `placementRef()` rebuilds
+  the placed item's `ref` straight from the def columns (id-named stub for old
+  pre-def-column rows). `refOf()` then falls back to that `ref`.
+- **Edited library tents** *are* in the library, so `refOf()` re-resolves them from it
+  every render and would ignore anything stored on `ref`. Their override therefore has to
+  travel through the local `edits` map: `reconcileEdits(P)` (called from
+  `applySheetState` before the items are built) rebuilds `edits[id]` from the def cells —
+  **set** when present, **cleared** when blank (the author reverted the tent). Only then
+  does `refOf(library base) + edits` show the synced change. Note this means a plan load
+  can mutate `edits`; last-write-wins already resolved the race by that point, and
+  `LS.dirty` / `reloadBlocked()` protect a browser's own unsynced edits.
+
+Widening the range needed **no** manual sheet change — the columns already existed empty,
+and an `UNFORMATTED_VALUE` read drops the trailing blanks so unedited baked-tent rows
+still read back as four cells (backward compatible with pre-def-column data). **`mSave`
+calls `queueSheetSave()`** so renaming/editing an item actually pushes — without it the
+edit only touched `localStorage` and the plan never re-synced.
 
 `meta` is a **single data row** (`A2:G2`), not key/value pairs. That keeps every tab
 the same shape — header row plus data rows — so one `rowsToObjects()` helper parses
