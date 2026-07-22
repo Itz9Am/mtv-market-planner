@@ -4,7 +4,8 @@ Site-layout planner for **Medeltidsveckan 2026** (Visby, Gotland). The organiser
 market stalls onto a scaled overhead image, then plans the electrical and water
 distribution on top of the same layout.
 
-Single self-contained HTML file, no framework, no server. Leaflet + SheetJS from CDN.
+Single self-contained HTML file, no framework, no server. Leaflet + Google Identity
+Services from CDN. (SheetJS was dropped when the in-app Excel import was removed.)
 
 ---
 
@@ -111,9 +112,9 @@ before touching the data pipeline.
 
 Three non-obvious rules, all of which caused bugs already:
 
-- **Colour lives in a cell fill**, not a value. Only openpyxl can read it; the
-  browser-side importer (SheetJS) cannot, so re-importing in-app keeps colours only
-  for ids already in the baked-in data.
+- **Colour lives in a cell fill**, not a value. Only openpyxl can read it — which is
+  the reason the library is baked in at build time via `extract_tents.py` and there is
+  no in-app Excel import.
 - **The `tents` column can hold several structures.** Seven vendors do (Urda
   Hantverk has 6). They are expanded into separate entries `1945-1 … 1945-6` named
   `Urda Hantverk (1/6)`. Round structures are drawn as a square of the diameter —
@@ -127,9 +128,12 @@ Three non-obvious rules, all of which caused bugs already:
 ## App architecture
 
 Leaflet with `L.CRS.Simple`; coordinates are **image pixels**, `lat = y`, `lng = x`.
-The base map is a user-uploaded `L.imageOverlay`. `ppm` (pixels per metre) comes from
-a two-click calibration and converts metres to image pixels. **Nothing can be drawn to
-scale until `ppm` is set.**
+The base map is the committed `marknad_base_clean.png` as an `L.imageOverlay` (loaded on
+startup via `DEFAULT_IMG` / the Sheet's `meta.imageUrl`; there is no in-app upload).
+`ppm` (pixels per metre) converts metres to image pixels and comes from the Sheet's
+`meta.ppm` — the in-app two-click calibration was removed. **Nothing can be drawn to
+scale until `ppm` is set**, so a Sheet with an empty `meta.ppm` renders tents at token
+size.
 
 ### Rendering — this part is load-bearing
 
@@ -166,7 +170,7 @@ SVG, which Leaflet rebuilds on pan/zoom, silently destroying the pattern.
 
 `refOf(t)` resolves a placed item against the **current** library by id, then applies
 per-item edits, falling back to the stored snapshot if the id is gone. This means
-editing a tent or re-importing the sheet updates items already on the plan.
+editing a tent (or rebuilding the baked-in library) updates items already on the plan.
 `applyEdits(x)` is the library-side equivalent. Use `refOf(t)` for anything placed —
 never read `t.ref` directly.
 
@@ -229,9 +233,9 @@ blue pipes. No capacity maths. Water-capable items show a blue ring.
 
 `localStorage`, keys prefixed `mtvi_` (see `const LS` at the top of the script), is the
 per-session cache: placements, nodes, cables, image, ppm, view, edits, removed, custom,
-and the Sheet config (`LS.sheetCfg`) each live under their own key. Bump the version
-suffix when a shape changes. The base image is embedded as a data URL and downscaled to
-2600 px on upload; it is kept in `localStorage` but is **never** written to the Sheet
+and the `LS.dirty` sync flag each live under their own key. Bump the version
+suffix when a shape changes. The base image is the committed PNG (kept in `localStorage`
+as its URL after first load); it is **never** written to the Sheet
 (only its hosted URL is — see below).
 
 **The Google Sheet syncs automatically** (see the section below) — it is the portable,
@@ -247,7 +251,7 @@ only Sheet control left in the UI is the **Settings** button plus a small
 `#syncStatus` indicator (`Synced` / `Saving…` / `Sign in to sync` / `Sync error`). The
 module lives under the `/* automatic sync */` and `/* Google Sheets sync */` banners:
 
-- `queueSheetSave()` — called from `savePlaced` / `saveNet` / calibration; debounced
+- `queueSheetSave()` — called from `savePlaced` / `saveNet`; debounced
   (2.5 s) and coalesced so a burst of edits is one write. Guarded by `SYNC.loading` so
   applying a load doesn't echo back a save. Never triggers an auth popup.
 - `runAutoSave()` — silently refreshes the token (`getToken(false)`, `prompt:'none'`);
@@ -267,9 +271,11 @@ module lives under the `/* automatic sync */` and `/* Google Sheets sync */` ban
 
 `LS.dirty` is a flag set on every queued save and cleared on a successful save/load;
 it is what stops a stale startup load from clobbering edits made while offline.
-Config (spreadsheet id, OAuth client id, optional API key, base image URL) lives in
-`localStorage` under `LS.sheetCfg`, prefilled from `SHEET_DEFAULTS`, edited via the
-**Settings** modal. **Scope is deliberately narrow.**
+Config (spreadsheet id, OAuth client id, optional API key, base image URL) is
+**hard-coded** in `SHEET_DEFAULTS` — there is no settings UI. The only Sheet control in
+the app is the `#syncStatus` indicator, which doubles as the sign-in button (clicking it
+runs the interactive consent — needed once, from a user gesture, before silent
+auto-sync can take over). **Scope is deliberately narrow.**
 
 The spreadsheet stores **only what the application saves**: placements, power and
 water networks, and a little metadata. It does **not** hold the tent library.

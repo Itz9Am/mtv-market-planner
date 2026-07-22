@@ -6,7 +6,6 @@
 <title>Marknad Tent Planner — Medeltidsveckan 2026</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{--bg:#1c1e26;--panel:#23262f;--panel2:#2b2f3a;--line:#3a3f4d;--txt:#e8eaf0;--muted:#9aa0b0;--accent:#e0a94a;--accent2:#4a90e0;--danger:#e05a5a;--ok:#5ac47a}
@@ -107,9 +106,8 @@
       <button id="tabVatten" class="tab">Vatten</button>
     </div>
     <div class="bar" id="projectBar">
-      <span id="syncStatus" title="" style="font-size:12px;font-weight:600;color:var(--muted)"></span>
+      <span id="syncStatus" title="Google Sheet sync" style="font-size:12px;font-weight:600;color:var(--muted);cursor:pointer"></span>
       <span style="flex:1"></span>
-      <button id="sheetCfgBtn" title="Google Sheet settings">Settings</button>
     </div>
     <div id="placementUI">
       <div class="bar">
@@ -117,10 +115,7 @@
         <button id="addCustom" class="primary">+ Add custom object</button>
       </div>
       <div class="bar" style="border-top:none">
-        <button id="importBtn">Import Excel</button>
-        <button id="clearPlaced">Clear placed</button>
         <button id="restoreBtn" style="display:none">Restore removed</button>
-        <input type="file" id="importFile" accept=".xlsx,.xlsm" style="display:none"/>
         <span style="flex:1"></span>
         <span class="hint" id="counts" style="padding:6px 0"></span>
       </div>
@@ -140,10 +135,6 @@
   <div id="mapWrap">
     <div id="map"></div>
     <div id="topbar">
-      <button id="uploadImgBtn" class="primary">Upload image</button>
-      <input type="file" id="imgFile" accept="image/*" style="display:none"/>
-      <button id="calibBtn">Set scale</button>
-      <span class="lbl" id="scaleReadout">not calibrated</span>
       <div class="grp" id="placeringControls">
         <button id="lettersBtn" class="wirebtn on" title="Show or hide the Placering letters on tents">Letters</button>
       </div>
@@ -224,46 +215,10 @@
   </div>
 </div>
 
-<div class="modal-bg" id="calibBg">
-  <div class="modal">
-    <h3>Set the scale</h3>
-    <p>Find something in your image whose real length you know — a path length, a building edge, the width of the open field. Click <b>Start</b>, then click its two ends on the image. You'll then enter that real length in metres.</p>
-    <div class="actions"><button id="calibCancel">Cancel</button><button id="calibStart" class="primary">Start clicking</button></div>
-  </div>
-</div>
-
-<div class="modal-bg" id="lenBg">
-  <div class="modal">
-    <h3>Real length</h3>
-    <p>How long is the line you just drew, in metres?</p>
-    <label>Metres</label><input id="lenInput" type="number" step="0.1" value="10"/>
-    <div class="actions"><button id="lenCancel">Cancel</button><button id="lenSave" class="primary">Save scale</button></div>
-  </div>
-</div>
-
-<div class="modal-bg" id="sheetBg">
-  <div class="modal" style="width:420px">
-    <h3>Google Sheet settings</h3>
-    <p>The plan (placements, power &amp; water networks, scale and view) is stored in a
-      Google Sheet. The tent library is <b>not</b> — it keeps its own Excel pipeline.
-      Writing needs an account with <b>Editor</b> access to the sheet.</p>
-    <label>Spreadsheet ID</label><input id="cfgSheetId" placeholder="the long id from the sheet URL"/>
-    <label>OAuth Client ID</label><input id="cfgClientId" placeholder="…apps.googleusercontent.com"/>
-    <label>API key (optional — anonymous read-only)</label><input id="cfgApiKey" placeholder="leave blank to always sign in"/>
-    <label>Base image URL (drawn to scale on load)</label><input id="cfgImageUrl" placeholder="e.g. marknad_base_clean.png"/>
-    <p id="sheetAuthStatus" style="margin-top:12px">Not signed in.</p>
-    <div class="actions">
-      <button id="cfgSignIn">Sign in</button>
-      <span style="flex:1"></span>
-      <button id="sheetCfgCancel">Cancel</button><button id="sheetCfgSave" class="primary">Save settings</button>
-    </div>
-  </div>
-</div>
-
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',sheetCfg:'mtvi_sheetcfg_v1',dirty:'mtvi_dirty_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1'};
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -317,7 +272,6 @@ map.on('zoomend',refreshAll);
 map.on('move zoom',positionCtl);
 map.on('moveend zoomend',()=>{ if(imgBounds){ lsSet(LS.view,{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}); }});
 map.on('click',e=>{
-  if(calibrating){ handleCalibClick(e); return; }
   if(curDomain()){
     if(armNode){ addNode(armNode,e.latlng.lat,e.latlng.lng); armNode=null; banner.style.display='none'; return; }
     if(connectSource){ setConnectSource(null); banner.style.display='none'; clearHl(); refreshHl(); return; }
@@ -571,7 +525,7 @@ function armTent(t,el){
 }
 function withSize(t){ return (t.length&&t.width)?t:Object.assign({},t,{length:t.length||3,width:t.width||3}); }
 function flashBanner(msg,warn){ banner.textContent=msg; banner.style.display='block'; banner.classList.toggle('warn',!!warn); }
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){srcBg.style.display='none';srcEditing=null;armedRef=null;banner.style.display='none';document.querySelectorAll('.tent.armed').forEach(x=>x.classList.remove('armed'));if(calibrating)cancelCalib();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){srcBg.style.display='none';srcEditing=null;armedRef=null;banner.style.display='none';document.querySelectorAll('.tent.armed').forEach(x=>x.classList.remove('armed'));}});
 
 /* drag & drop onto plan */
 const mapWrap=document.getElementById('mapWrap');
@@ -580,7 +534,6 @@ mapWrap.addEventListener('dragleave',e=>{if(e.target===mapWrap)mapWrap.classList
 mapWrap.addEventListener('drop',e=>{e.preventDefault();mapWrap.classList.remove('dragover');if(currentTab!=='placering')return;const id=e.dataTransfer.getData('text/plain');const t=library.find(x=>String(x.id)===String(id));if(!t||placedIds.has(t.id))return;const ll=map.mouseEventToLatLng(e);doPlace(withSize(applyEdits(t)),ll.lat,ll.lng);});
 
 document.getElementById('search').addEventListener('input',e=>renderList(e.target.value));
-document.getElementById('clearPlaced').onclick=()=>{if(!placed.length)return;if(confirm('Remove all placed tents (they return to the list)?')){placed.forEach(removeTentMarker);placed=[];placedIds=new Set();cables=[];saveNet();redrawCables();deselect();savePlaced();renderList(document.getElementById('search').value);}};
 
 /* ---------- add / edit object ---------- */
 const modalBg=document.getElementById('modalBg');
@@ -647,97 +600,10 @@ document.getElementById('mSave').onclick=()=>{
   if(currentTab==='el') renderLegend();
 };
 
-/* ---------- Excel import ---------- */
-document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
-document.getElementById('importFile').addEventListener('change',async e=>{
-  const file=e.target.files[0]; if(!file)return;
-  const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
-  const sheetName=wb.SheetNames.find(n=>/utplacering/i.test(n))||wb.SheetNames[0];
-  const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:null});
-  let hr=rows.findIndex(r=>r&&r.some(c=>c&&String(c).trim()==='applicationName'));
-  if(hr<0){alert('Could not find an "applicationName" column.');return;}
-  const H=rows[hr].map(c=>c==null?'':String(c).trim());
-  const col=n=>H.findIndex(h=>h.toLowerCase()===n.toLowerCase());
-  const ci={name:col('applicationName'),len:col('Length'),wid:col('Width'),pl:col('Placering'),nya:col('Nya'),el:col('electricity'),wat:col('water'),tents:col('tents'),id:0};
-  const slug=t=>String(t).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_|_$/g,'').toLowerCase().slice(0,28)||'item';
-  const seenId={};
-  const colorById={};TENTS.forEach(t=>colorById[t.id]=t.color);
-  const palette=['#B6D7A8','#F9CB9C','#D9EAD3','#FCE5CD','#A4C2F4','#EAD1DC'];let p=0;const imported=[];
-  const dimsOf=o=>{ if(o&&o.type==='round'){const d=parseFloat(o.diameter)||0;return d?[d,d]:[null,null];}
-                    const L=parseFloat(o&&o.length)||null,W=parseFloat(o&&o.width)||null; return [L,W]; };
-  for(let i=hr+1;i<rows.length;i++){const r=rows[i];if(!r)continue;const nm=r[ci.name];if(nm==null||String(nm).trim()==='')continue;const idv=r[ci.id];
-    let rid;
-    if(idv!=null&&String(idv).trim()!==''){ rid=idv; }
-    else { rid='x_'+slug(String(nm).trim()); seenId[rid]=(seenId[rid]||0)+1; if(seenId[rid]>1) rid+='_'+seenId[rid]; }
-    const wv=ci.wat>=0?r[ci.wat]:null;
-    const base={id:rid,name:String(nm).trim(),
-      water:(wv!=null&&String(wv).trim()!==''&&!['no','none','0'].includes(String(wv).trim().toLowerCase())),
-      placering:ci.pl>=0&&r[ci.pl]!=null?String(r[ci.pl]).trim():'',
-      nya:ci.nya>=0&&(r[ci.nya]==1||r[ci.nya]==='1')?1:0,
-      electricity:ci.el>=0&&r[ci.el]!=null?String(r[ci.el]).trim():'',
-      color:colorById[idv]||palette[(p++)%palette.length]};
-    let arr=[];
-    if(ci.tents>=0&&r[ci.tents]){ try{ let d=JSON.parse(r[ci.tents]); if(d&&!Array.isArray(d))d=Object.values(d); if(Array.isArray(d))arr=d; }catch(err){} }
-    if(arr.length>1){
-      arr.forEach((o,k)=>{ const [L,W]=dimsOf(o);
-        imported.push(Object.assign({},base,{id:base.id+'-'+(k+1),name:base.name+' ('+(k+1)+'/'+arr.length+')',length:L,width:W})); });
-    }else{
-      let L=ci.len>=0&&r[ci.len]!=null?parseFloat(r[ci.len])||null:null;
-      let W=ci.wid>=0&&r[ci.wid]!=null?parseFloat(r[ci.wid])||null:null;
-      if((!L||!W)&&arr.length===1){ const d=dimsOf(arr[0]); L=L||d[0]; W=W||d[1]; }
-      imported.push(Object.assign({},base,{length:L,width:W}));
-    }}
-  if(!imported.length){alert('No tent rows found.');return;}
-  library=imported.concat(customTents);
-  renderList(document.getElementById('search').value);
-  refreshAll(); redrawCables(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
-  alert('Imported '+imported.length+' tents from “'+sheetName+'”. Placed items updated in place.');e.target.value='';
-});
-
-/* ---------- size toggle ---------- */
-
-/* ---------- image upload ---------- */
-document.getElementById('uploadImgBtn').onclick=()=>document.getElementById('imgFile').click();
-document.getElementById('imgFile').addEventListener('change',e=>{
-  const f=e.target.files[0]; if(!f)return;
-  const rd=new FileReader();
-  rd.onload=()=>downscale(rd.result,2600,url=>{ setImage(url,false); flashBanner('Now set the scale so tents are the right size',true); });
-  rd.readAsDataURL(f); e.target.value='';
-});
-function downscale(dataURL,maxSide,cb){
-  const img=new Image();
-  img.onload=()=>{ let{width:w,height:h}=img; const s=Math.min(1,maxSide/Math.max(w,h));
-    if(s>=1){cb(dataURL);return;}
-    const c=document.createElement('canvas'); c.width=Math.round(w*s); c.height=Math.round(h*s);
-    c.getContext('2d').drawImage(img,0,0,c.width,c.height); cb(c.toDataURL('image/jpeg',0.9)); };
-  img.src=dataURL;
-}
-
-/* ---------- scale calibration ---------- */
-let calibrating=false, calibPts=[], calibLine=null;
-const calibBg=document.getElementById('calibBg'), lenBg=document.getElementById('lenBg');
-document.getElementById('calibBtn').onclick=()=>{ if(!imgData){alert('Upload an image first.');return;} calibBg.style.display='flex'; };
-document.getElementById('calibCancel').onclick=()=>calibBg.style.display='none';
-document.getElementById('calibStart').onclick=()=>{ calibBg.style.display='none'; startCalib(); };
-function startCalib(){ calibrating=true; calibPts=[]; mapWrap.classList.add('calib'); if(calibLine){map.removeLayer(calibLine);calibLine=null;} flashBanner('Click the FIRST end of your known line…',true); }
-function handleCalibClick(e){
-  calibPts.push(e.latlng);
-  if(calibPts.length===1){ flashBanner('Now click the SECOND end…',true); }
-  else if(calibPts.length===2){
-    calibLine=L.polyline(calibPts,{color:'#ffd24a',weight:3,dashArray:'5,5'}).addTo(map);
-    calibrating=false; mapWrap.classList.remove('calib'); lenBg.style.display='flex'; document.getElementById('lenInput').focus();
-  }
-}
-function cancelCalib(){ calibrating=false; calibPts=[]; mapWrap.classList.remove('calib'); banner.style.display='none'; }
-document.getElementById('lenCancel').onclick=()=>{ lenBg.style.display='none'; if(calibLine){map.removeLayer(calibLine);calibLine=null;} };
-document.getElementById('lenSave').onclick=()=>{
-  const meters=parseFloat(document.getElementById('lenInput').value); if(!meters||meters<=0){alert('Enter a length in metres.');return;}
-  const a=map.project(calibPts[0],0), b=map.project(calibPts[1],0);
-  ppm=Math.hypot(a.x-b.x,a.y-b.y)/meters; lsSet(LS.ppm,ppm); queueSheetSave();   // ppm lives in meta
-  lenBg.style.display='none'; if(calibLine){map.removeLayer(calibLine);calibLine=null;}
-  updateScaleReadout(); refreshAll(); flashBanner('Scale set — drag tents onto the image.',false); setTimeout(()=>banner.style.display='none',2500);
-};
-function updateScaleReadout(){ const el=document.getElementById('scaleReadout'); el.textContent=ppm?`${ppm.toFixed(1)} px/m`:'not calibrated'; el.style.color=ppm?'var(--ok)':'var(--muted)'; }
+/* The base image and scale (ppm) are fixed: the image is the committed
+   marknad_base_clean.png and ppm comes from the Sheet meta row. The Upload,
+   Set-scale, Excel-import and Clear-placed UIs were removed. */
+function updateScaleReadout(){}   // no readout element any more; no-op for call sites
 
 /* ---------- tabs (Placering / El / Vatten) ---------- */
 function setTab(tab){
@@ -803,15 +669,14 @@ const SHEET_HEADERS={
 };
 const SHEET_RANGES={placements:'placements!A1:D',nodes:'nodes!A1:L',cables:'cables!A1:F',meta:'meta!A1:G'};
 const SHEET_CLEAR=['placements!A2:D','nodes!A2:L','cables!A2:F','meta!A2:G'];
+/* Config is hard-coded here — there is no in-app settings UI. */
 const SHEET_DEFAULTS={
   spreadsheetId:'1H47rLODVURUOy91OeuWh-uJiDcj79c-K8Q_HZxNeDDM',
   clientId:'445187642175-7iqlq60l2rlkmhqg0b3elv97pvjeke1q.apps.googleusercontent.com',
   apiKey:'', imageUrl:DEFAULT_IMG
 };
 const GS={token:null,tokenExp:0,tokenClient:null,cbResolve:null,cbReject:null,email:null,lastSavedAt:null,busy:false};
-function sheetCfg(){ return Object.assign({},SHEET_DEFAULTS,lsGet(LS.sheetCfg,{})); }
-function sheetCfgSet(c){ lsSet(LS.sheetCfg,c); }
-function parseSheetId(s){ const m=/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/.exec(s||''); return m?m[1]:(s||'').trim(); }
+function sheetCfg(){ return SHEET_DEFAULTS; }
 
 /* --- pure type + row helpers (extracted & node-tested; see CLAUDE.md) --- */
 function gnum(v){ if(v===''||v==null)return null; const n=Number(v); return Number.isFinite(n)?n:null; }
@@ -969,7 +834,7 @@ const SYNC={timer:null,pending:false,inflight:false,loading:false,errs:0};
 function setSync(s,msg){
   const el=document.getElementById('syncStatus'); if(!el) return;
   const M={saved:['Synced','var(--ok)'],saving:['Saving…','var(--accent)'],pending:['Saving…','var(--accent)'],
-    loading:['Loading…','var(--accent)'],signin:['Sign in to sync (Settings)','var(--accent)'],
+    loading:['Loading…','var(--accent)'],signin:['Sign in to sync','var(--accent)'],
     error:['Sync error — retrying','var(--danger)'],idle:['','var(--muted)']};
   const v=M[s]||M.idle; el.textContent=v[0]; el.style.color=v[1]; el.title=msg||v[0];
 }
@@ -1053,39 +918,12 @@ let pollTimer=null;
 function startPolling(){ if(!pollTimer) pollTimer=setInterval(pollRemote,15000); }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRemote(); });   // catch up on refocus
 
-/* --- settings modal + buttons --- */
-function updateAuthStatus(){
-  const el=document.getElementById('sheetAuthStatus');
-  el.textContent=haveToken()?('Signed in'+(GS.email?(' as '+GS.email):'')+'.'):'Not signed in.';
-}
-function readCfgFields(){
-  return { spreadsheetId:parseSheetId(document.getElementById('cfgSheetId').value),
-    clientId:document.getElementById('cfgClientId').value.trim(),
-    apiKey:document.getElementById('cfgApiKey').value.trim(),
-    imageUrl:document.getElementById('cfgImageUrl').value.trim() };
-}
-document.getElementById('sheetCfgBtn').onclick=()=>{
-  const c=sheetCfg();
-  document.getElementById('cfgSheetId').value=c.spreadsheetId||'';
-  document.getElementById('cfgClientId').value=c.clientId||'';
-  document.getElementById('cfgApiKey').value=c.apiKey||'';
-  document.getElementById('cfgImageUrl').value=c.imageUrl||'';
-  updateAuthStatus();
-  document.getElementById('sheetBg').style.display='flex';
-};
-document.getElementById('sheetCfgCancel').onclick=()=>{ document.getElementById('sheetBg').style.display='none'; };
-document.getElementById('sheetCfgSave').onclick=()=>{
-  sheetCfgSet(readCfgFields()); GS.tokenClient=null; GS.token=null; GS.tokenExp=0;
-  document.getElementById('sheetBg').style.display='none';
-  flashBanner('Sheet settings saved.',false); setTimeout(()=>banner.style.display='none',1500);
-};
-document.getElementById('cfgSignIn').onclick=async()=>{
-  try{ sheetCfgSet(readCfgFields()); GS.tokenClient=null; GS.token=null; GS.tokenExp=0; GS.email=null;
-    await getToken(true,true);   // force the consent screen so the Sheets permission is (re)granted
-    updateAuthStatus();
-    flashBanner('Signed in'+(GS.email?(' as '+GS.email):'')+'.',false); setTimeout(()=>banner.style.display='none',1800);
-    autoLoadStartup();           // now that we can read/write, pull the shared plan (or push local edits)
-  }
+/* --- sign-in (config is hard-coded; no settings UI). The sync indicator is the
+   only Sheet control: click it to sign in, which the browser allows because it's a
+   user gesture. Once signed in, clicking just checks for remote updates. --- */
+document.getElementById('syncStatus').onclick=async()=>{
+  if(haveToken()){ pollRemote(); return; }
+  try{ await getToken(true,true); autoLoadStartup(); }   // force consent, then pull the shared plan
   catch(e){ alert('Sign-in failed.\n\n'+e.message); }
 };
 
@@ -1442,7 +1280,7 @@ loadPlaced();
 updateScaleReadout();
 setLetters(showLetters);
 renderList();
-if(!imgData) flashBanner('Upload a clean overhead image of your area, then Set scale',true);
+if(!imgData) flashBanner('Base image could not be loaded — check the connection and refresh.',true);
 autoLoadStartup();   // pull the shared plan from the Sheet (silent; local unsynced edits win)
 startPolling();      // then watch for saves made elsewhere and reload them in
 [80,300,900].forEach(d=>setTimeout(()=>{map.invalidateSize();positionCtl();},d));
