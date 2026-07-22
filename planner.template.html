@@ -6,7 +6,7 @@
 <title>Marknad Tent Planner — Medeltidsveckan 2026</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{--bg:#1c1e26;--panel:#23262f;--panel2:#2b2f3a;--line:#3a3f4d;--txt:#e8eaf0;--muted:#9aa0b0;--accent:#e0a94a;--accent2:#4a90e0;--danger:#e05a5a;--ok:#5ac47a}
   *{box-sizing:border-box}
@@ -106,9 +106,8 @@
       <button id="tabVatten" class="tab">Vatten</button>
     </div>
     <div class="bar" id="projectBar">
-      <button id="saveProjBtn" class="primary">Save project</button>
-      <button id="loadProjBtn">Load project</button>
-      <input type="file" id="loadProjFile" accept=".json,application/json" style="display:none"/>
+      <span id="syncStatus" title="Google Sheet sync" style="font-size:12px;font-weight:600;color:var(--muted);cursor:pointer"></span>
+      <span style="flex:1"></span>
     </div>
     <div id="placementUI">
       <div class="bar">
@@ -116,10 +115,7 @@
         <button id="addCustom" class="primary">+ Add custom object</button>
       </div>
       <div class="bar" style="border-top:none">
-        <button id="importBtn">Import Excel</button>
-        <button id="clearPlaced">Clear placed</button>
         <button id="restoreBtn" style="display:none">Restore removed</button>
-        <input type="file" id="importFile" accept=".xlsx,.xlsm" style="display:none"/>
         <span style="flex:1"></span>
         <span class="hint" id="counts" style="padding:6px 0"></span>
       </div>
@@ -139,10 +135,6 @@
   <div id="mapWrap">
     <div id="map"></div>
     <div id="topbar">
-      <button id="uploadImgBtn" class="primary">Upload image</button>
-      <input type="file" id="imgFile" accept="image/*" style="display:none"/>
-      <button id="calibBtn">Set scale</button>
-      <span class="lbl" id="scaleReadout">not calibrated</span>
       <div class="grp" id="placeringControls">
         <button id="lettersBtn" class="wirebtn on" title="Show or hide the Placering letters on tents">Letters</button>
       </div>
@@ -223,27 +215,10 @@
   </div>
 </div>
 
-<div class="modal-bg" id="calibBg">
-  <div class="modal">
-    <h3>Set the scale</h3>
-    <p>Find something in your image whose real length you know — a path length, a building edge, the width of the open field. Click <b>Start</b>, then click its two ends on the image. You'll then enter that real length in metres.</p>
-    <div class="actions"><button id="calibCancel">Cancel</button><button id="calibStart" class="primary">Start clicking</button></div>
-  </div>
-</div>
-
-<div class="modal-bg" id="lenBg">
-  <div class="modal">
-    <h3>Real length</h3>
-    <p>How long is the line you just drew, in metres?</p>
-    <label>Metres</label><input id="lenInput" type="number" step="0.1" value="10"/>
-    <div class="actions"><button id="lenCancel">Cancel</button><button id="lenSave" class="primary">Save scale</button></div>
-  </div>
-</div>
-
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1'};
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -263,6 +238,7 @@ function refOf(t){
   return applyEdits(lib||t.ref);
 }
 let library=TENTS.concat(customTents);
+const DEFAULT_IMG='marknad_base_clean.png';   // committed & published next to the HTML
 let imgData=lsGet(LS.img,null), imgBounds=null, imgOverlay=null;
 let ppm=lsGet(LS.ppm,null);
 let currentTab='placering';
@@ -291,12 +267,11 @@ map.createPane('cables');     map.getPane('cables').style.zIndex='610';      // 
 map.createPane('tentlabels'); map.getPane('tentlabels').style.zIndex='620';  // above cables
 map.getPane('tentlabels').style.pointerEvents='none';
 map.createPane('nodes');      map.getPane('nodes').style.zIndex='630';       // cabinets on top
-if(imgData) setImage(imgData,true);
+setImage(imgData||DEFAULT_IMG,true);   // fall back to the committed base plan on a fresh browser
 map.on('zoomend',refreshAll);
 map.on('move zoom',positionCtl);
 map.on('moveend zoomend',()=>{ if(imgBounds){ lsSet(LS.view,{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}); }});
 map.on('click',e=>{
-  if(calibrating){ handleCalibClick(e); return; }
   if(curDomain()){
     if(armNode){ addNode(armNode,e.latlng.lat,e.latlng.lng); armNode=null; banner.style.display='none'; return; }
     if(connectSource){ setConnectSource(null); banner.style.display='none'; clearHl(); refreshHl(); return; }
@@ -319,6 +294,8 @@ function setImage(dataURL,restore){
     try{ localStorage.setItem(LS.img,JSON.stringify(dataURL)); }catch(e){ flashBanner('Image loaded (too large to remember between sessions).',true); }
     map.invalidateSize(); refreshAll();
   };
+  img.onerror=()=>{ if(imgData!==dataURL) return;   // superseded by a newer image, ignore
+    flashBanner('Could not load the base image "'+dataURL+'". Upload one, or set the image URL in Settings.',true); };
   img.src=dataURL;
 }
 
@@ -441,7 +418,7 @@ function removeTentMarker(t){
   ['marker','label','poly','nyaPoly'].forEach(k=>{ if(t[k])map.removeLayer(t[k]); t[k]=null; });
 }
 function refreshAll(){ placed.forEach(renderTentMarker); positionCtl(); }
-function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); }
+function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); queueSheetSave(); }
 function loadPlaced(){ placed=[]; (lsGet(LS.placed,[])||[]).forEach(a=>{placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null});}); placedIds=new Set(placed.map(t=>t.ref.id)); }
 function doPlace(ref,lat,lng){
   const t={uid:uidSeq++,ref:Object.assign({},ref),lat,lng,rot:0,marker:null};
@@ -548,7 +525,7 @@ function armTent(t,el){
 }
 function withSize(t){ return (t.length&&t.width)?t:Object.assign({},t,{length:t.length||3,width:t.width||3}); }
 function flashBanner(msg,warn){ banner.textContent=msg; banner.style.display='block'; banner.classList.toggle('warn',!!warn); }
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){srcBg.style.display='none';srcEditing=null;armedRef=null;banner.style.display='none';document.querySelectorAll('.tent.armed').forEach(x=>x.classList.remove('armed'));if(calibrating)cancelCalib();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){srcBg.style.display='none';srcEditing=null;armedRef=null;banner.style.display='none';document.querySelectorAll('.tent.armed').forEach(x=>x.classList.remove('armed'));}});
 
 /* drag & drop onto plan */
 const mapWrap=document.getElementById('mapWrap');
@@ -557,7 +534,6 @@ mapWrap.addEventListener('dragleave',e=>{if(e.target===mapWrap)mapWrap.classList
 mapWrap.addEventListener('drop',e=>{e.preventDefault();mapWrap.classList.remove('dragover');if(currentTab!=='placering')return;const id=e.dataTransfer.getData('text/plain');const t=library.find(x=>String(x.id)===String(id));if(!t||placedIds.has(t.id))return;const ll=map.mouseEventToLatLng(e);doPlace(withSize(applyEdits(t)),ll.lat,ll.lng);});
 
 document.getElementById('search').addEventListener('input',e=>renderList(e.target.value));
-document.getElementById('clearPlaced').onclick=()=>{if(!placed.length)return;if(confirm('Remove all placed tents (they return to the list)?')){placed.forEach(removeTentMarker);placed=[];placedIds=new Set();cables=[];saveNet();redrawCables();deselect();savePlaced();renderList(document.getElementById('search').value);}};
 
 /* ---------- add / edit object ---------- */
 const modalBg=document.getElementById('modalBg');
@@ -624,97 +600,10 @@ document.getElementById('mSave').onclick=()=>{
   if(currentTab==='el') renderLegend();
 };
 
-/* ---------- Excel import ---------- */
-document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
-document.getElementById('importFile').addEventListener('change',async e=>{
-  const file=e.target.files[0]; if(!file)return;
-  const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
-  const sheetName=wb.SheetNames.find(n=>/utplacering/i.test(n))||wb.SheetNames[0];
-  const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:null});
-  let hr=rows.findIndex(r=>r&&r.some(c=>c&&String(c).trim()==='applicationName'));
-  if(hr<0){alert('Could not find an "applicationName" column.');return;}
-  const H=rows[hr].map(c=>c==null?'':String(c).trim());
-  const col=n=>H.findIndex(h=>h.toLowerCase()===n.toLowerCase());
-  const ci={name:col('applicationName'),len:col('Length'),wid:col('Width'),pl:col('Placering'),nya:col('Nya'),el:col('electricity'),wat:col('water'),tents:col('tents'),id:0};
-  const slug=t=>String(t).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_|_$/g,'').toLowerCase().slice(0,28)||'item';
-  const seenId={};
-  const colorById={};TENTS.forEach(t=>colorById[t.id]=t.color);
-  const palette=['#B6D7A8','#F9CB9C','#D9EAD3','#FCE5CD','#A4C2F4','#EAD1DC'];let p=0;const imported=[];
-  const dimsOf=o=>{ if(o&&o.type==='round'){const d=parseFloat(o.diameter)||0;return d?[d,d]:[null,null];}
-                    const L=parseFloat(o&&o.length)||null,W=parseFloat(o&&o.width)||null; return [L,W]; };
-  for(let i=hr+1;i<rows.length;i++){const r=rows[i];if(!r)continue;const nm=r[ci.name];if(nm==null||String(nm).trim()==='')continue;const idv=r[ci.id];
-    let rid;
-    if(idv!=null&&String(idv).trim()!==''){ rid=idv; }
-    else { rid='x_'+slug(String(nm).trim()); seenId[rid]=(seenId[rid]||0)+1; if(seenId[rid]>1) rid+='_'+seenId[rid]; }
-    const wv=ci.wat>=0?r[ci.wat]:null;
-    const base={id:rid,name:String(nm).trim(),
-      water:(wv!=null&&String(wv).trim()!==''&&!['no','none','0'].includes(String(wv).trim().toLowerCase())),
-      placering:ci.pl>=0&&r[ci.pl]!=null?String(r[ci.pl]).trim():'',
-      nya:ci.nya>=0&&(r[ci.nya]==1||r[ci.nya]==='1')?1:0,
-      electricity:ci.el>=0&&r[ci.el]!=null?String(r[ci.el]).trim():'',
-      color:colorById[idv]||palette[(p++)%palette.length]};
-    let arr=[];
-    if(ci.tents>=0&&r[ci.tents]){ try{ let d=JSON.parse(r[ci.tents]); if(d&&!Array.isArray(d))d=Object.values(d); if(Array.isArray(d))arr=d; }catch(err){} }
-    if(arr.length>1){
-      arr.forEach((o,k)=>{ const [L,W]=dimsOf(o);
-        imported.push(Object.assign({},base,{id:base.id+'-'+(k+1),name:base.name+' ('+(k+1)+'/'+arr.length+')',length:L,width:W})); });
-    }else{
-      let L=ci.len>=0&&r[ci.len]!=null?parseFloat(r[ci.len])||null:null;
-      let W=ci.wid>=0&&r[ci.wid]!=null?parseFloat(r[ci.wid])||null:null;
-      if((!L||!W)&&arr.length===1){ const d=dimsOf(arr[0]); L=L||d[0]; W=W||d[1]; }
-      imported.push(Object.assign({},base,{length:L,width:W}));
-    }}
-  if(!imported.length){alert('No tent rows found.');return;}
-  library=imported.concat(customTents);
-  renderList(document.getElementById('search').value);
-  refreshAll(); redrawCables(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
-  alert('Imported '+imported.length+' tents from “'+sheetName+'”. Placed items updated in place.');e.target.value='';
-});
-
-/* ---------- size toggle ---------- */
-
-/* ---------- image upload ---------- */
-document.getElementById('uploadImgBtn').onclick=()=>document.getElementById('imgFile').click();
-document.getElementById('imgFile').addEventListener('change',e=>{
-  const f=e.target.files[0]; if(!f)return;
-  const rd=new FileReader();
-  rd.onload=()=>downscale(rd.result,2600,url=>{ setImage(url,false); flashBanner('Now set the scale so tents are the right size',true); });
-  rd.readAsDataURL(f); e.target.value='';
-});
-function downscale(dataURL,maxSide,cb){
-  const img=new Image();
-  img.onload=()=>{ let{width:w,height:h}=img; const s=Math.min(1,maxSide/Math.max(w,h));
-    if(s>=1){cb(dataURL);return;}
-    const c=document.createElement('canvas'); c.width=Math.round(w*s); c.height=Math.round(h*s);
-    c.getContext('2d').drawImage(img,0,0,c.width,c.height); cb(c.toDataURL('image/jpeg',0.9)); };
-  img.src=dataURL;
-}
-
-/* ---------- scale calibration ---------- */
-let calibrating=false, calibPts=[], calibLine=null;
-const calibBg=document.getElementById('calibBg'), lenBg=document.getElementById('lenBg');
-document.getElementById('calibBtn').onclick=()=>{ if(!imgData){alert('Upload an image first.');return;} calibBg.style.display='flex'; };
-document.getElementById('calibCancel').onclick=()=>calibBg.style.display='none';
-document.getElementById('calibStart').onclick=()=>{ calibBg.style.display='none'; startCalib(); };
-function startCalib(){ calibrating=true; calibPts=[]; mapWrap.classList.add('calib'); if(calibLine){map.removeLayer(calibLine);calibLine=null;} flashBanner('Click the FIRST end of your known line…',true); }
-function handleCalibClick(e){
-  calibPts.push(e.latlng);
-  if(calibPts.length===1){ flashBanner('Now click the SECOND end…',true); }
-  else if(calibPts.length===2){
-    calibLine=L.polyline(calibPts,{color:'#ffd24a',weight:3,dashArray:'5,5'}).addTo(map);
-    calibrating=false; mapWrap.classList.remove('calib'); lenBg.style.display='flex'; document.getElementById('lenInput').focus();
-  }
-}
-function cancelCalib(){ calibrating=false; calibPts=[]; mapWrap.classList.remove('calib'); banner.style.display='none'; }
-document.getElementById('lenCancel').onclick=()=>{ lenBg.style.display='none'; if(calibLine){map.removeLayer(calibLine);calibLine=null;} };
-document.getElementById('lenSave').onclick=()=>{
-  const meters=parseFloat(document.getElementById('lenInput').value); if(!meters||meters<=0){alert('Enter a length in metres.');return;}
-  const a=map.project(calibPts[0],0), b=map.project(calibPts[1],0);
-  ppm=Math.hypot(a.x-b.x,a.y-b.y)/meters; lsSet(LS.ppm,ppm);
-  lenBg.style.display='none'; if(calibLine){map.removeLayer(calibLine);calibLine=null;}
-  updateScaleReadout(); refreshAll(); flashBanner('Scale set — drag tents onto the image.',false); setTimeout(()=>banner.style.display='none',2500);
-};
-function updateScaleReadout(){ const el=document.getElementById('scaleReadout'); el.textContent=ppm?`${ppm.toFixed(1)} px/m`:'not calibrated'; el.style.color=ppm?'var(--ok)':'var(--muted)'; }
+/* The base image and scale (ppm) are fixed: the image is the committed
+   marknad_base_clean.png and ppm comes from the Sheet meta row. The Upload,
+   Set-scale, Excel-import and Clear-placed UIs were removed. */
+function updateScaleReadout(){}   // no readout element any more; no-op for call sites
 
 /* ---------- tabs (Placering / El / Vatten) ---------- */
 function setTab(tab){
@@ -767,47 +656,283 @@ function renderLegend(){
   if(waiting){ const d=document.createElement('div'); d.className='hint'; d.textContent=waiting+' more tent(s) needing power are not placed yet.'; el.appendChild(d); }
 }
 
-/* ---------- save / load whole project (placement + image + scale) ---------- */
-document.getElementById('saveProjBtn').onclick=()=>{
-  const proj={v:1, image:imgData||null, ppm:ppm||null,
-    view: imgBounds?{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}:null,
-    placed: placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot})),
-    custom: customTents, edits: edits, removed: [...removed], nodes: nodes, cables: cables};
-  const blob=new Blob([JSON.stringify(proj)],{type:'application/json'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='marknad_project.json'; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+/* ---------- Google Sheets sync (shared project state) ----------
+   Stores ONLY what the app saves: placements, el/water networks, and a little
+   metadata. NOT the tent library (that keeps its Excel pipeline). Four flat tabs,
+   each a header row plus data rows, so one rowsToObjects() parses them all.
+   No cell holds JSON: view is three columns, node outputs are five columns. */
+const SHEET_HEADERS={
+  placements:['tentId','x','y','rot'],
+  nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125'],
+  cables:['src','dst','dstKind','domain','otype','phase'],
+  meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy']
 };
-document.getElementById('loadProjBtn').onclick=()=>document.getElementById('loadProjFile').click();
-document.getElementById('loadProjFile').addEventListener('change',e=>{
-  const f=e.target.files[0]; if(!f)return;
-  const rd=new FileReader();
-  rd.onload=()=>{
-    let proj; try{proj=JSON.parse(rd.result);}catch(err){alert('That is not a valid project file.');return;}
-    placed.forEach(removeTentMarker); placed=[]; placedIds=new Set(); deselect();
-    showDomainLayers(); nodes=proj.nodes||[]; cables=proj.cables||[]; saveNet();
-    customTents=proj.custom||[]; lsSet(LS.custom,customTents);
-    edits=proj.edits||{}; lsSet(LS.edits,edits);
-    removed=new Set(proj.removed||[]); saveRemoved();
-    library=TENTS.concat(customTents);
-    ppm=proj.ppm||null; lsSet(LS.ppm,ppm); updateScaleReadout();
-    if(proj.view) lsSet(LS.view,proj.view);
-    (proj.placed||[]).forEach(a=>placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null}));
-    placedIds=new Set(placed.map(t=>t.ref.id));
-    savePlaced();
-    if(proj.image){ setImage(proj.image, !!proj.view); } else { refreshAll(); }
-    renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
-    flashBanner('Project loaded.',false); setTimeout(()=>banner.style.display='none',2200);
-  };
-  rd.readAsText(f); e.target.value='';
-});
+const SHEET_RANGES={placements:'placements!A1:D',nodes:'nodes!A1:L',cables:'cables!A1:F',meta:'meta!A1:G'};
+const SHEET_CLEAR=['placements!A2:D','nodes!A2:L','cables!A2:F','meta!A2:G'];
+/* Config is hard-coded here — there is no in-app settings UI. */
+const SHEET_DEFAULTS={
+  spreadsheetId:'1H47rLODVURUOy91OeuWh-uJiDcj79c-K8Q_HZxNeDDM',
+  clientId:'445187642175-7iqlq60l2rlkmhqg0b3elv97pvjeke1q.apps.googleusercontent.com',
+  apiKey:'', imageUrl:DEFAULT_IMG
+};
+const GS={token:null,tokenExp:0,tokenClient:null,cbResolve:null,cbReject:null,email:null,lastSavedAt:null,busy:false};
+function sheetCfg(){ return SHEET_DEFAULTS; }
+
+/* --- pure type + row helpers (extracted & node-tested; see CLAUDE.md) --- */
+function gnum(v){ if(v===''||v==null)return null; const n=Number(v); return Number.isFinite(n)?n:null; }
+function gbool(v){ return v===true||v==='TRUE'||v==='true'||v===1||v==='1'; }
+function isBlank(v){ return v===''||v==null||v===undefined; }
+function rowsToObjects(values,headers){
+  const rows=values||[], out=[];
+  for(let i=1;i<rows.length;i++){ const r=rows[i]||[];
+    if(r.every(isBlank)) continue;
+    const o={}; headers.forEach((h,j)=>{ o[h]= j<r.length?r[j]:undefined; }); out.push(o); }
+  return out;
+}
+/* CAREFUL: empty out-cells => outs null ("use default complement"); a literal 0 in
+   every cell => an object of zeros ("no sockets"). Never conflate them. */
+function nodeFromRow(o){
+  const cells=[o.out220,o.out16,o.out32,o.out63,o.out125];
+  const outs=cells.every(isBlank)?null
+    :{'220V':gnum(o.out220)||0,'16A':gnum(o.out16)||0,'32A':gnum(o.out32)||0,'63A':gnum(o.out63)||0,'125A':gnum(o.out125)||0};
+  const n={id:String(o.id),domain:o.domain,kind:o.kind,rating:gnum(o.rating)||0,lat:gnum(o.y),lng:gnum(o.x)};
+  if(o.kind==='source'){ n.unl=gbool(o.unl); n.outs=n.unl?null:outs; }
+  else if(outs){ n.outs=outs; }
+  return n;
+}
+function nodeToRow(n){
+  const isSrc=n.kind==='source';
+  const outs=n.outs;
+  const cells=outs?[outs['220V']||0,outs['16A']||0,outs['32A']||0,outs['63A']||0,outs['125A']||0]:['','','','',''];
+  return [n.id,n.domain,n.kind,n.rating,n.lng,n.lat,isSrc?(n.unl!==false):''].concat(cells);
+}
+function cableFromRow(o){
+  const c={src:String(o.src),dst:o.dstKind==='node'?String(o.dst):o.dst,dstKind:o.dstKind,domain:o.domain};
+  if(!isBlank(o.otype)) c.otype=o.otype;
+  const ph=gnum(o.phase); if(ph!=null) c.phase=ph;
+  return c;
+}
+function cableToRow(c){ return [c.src,c.dst,c.dstKind,c.domain,isBlank(c.otype)?'':c.otype,c.phase!=null?c.phase:'']; }
+
+/* --- OAuth (Google Identity Services token client) --- */
+function ensureGis(){
+  return new Promise((res,rej)=>{
+    if(window.google&&google.accounts&&google.accounts.oauth2) return res();
+    let n=0; const t=setInterval(()=>{
+      if(window.google&&google.accounts&&google.accounts.oauth2){clearInterval(t);res();}
+      else if(++n>100){clearInterval(t);rej(new Error('Google sign-in library did not load. Check your connection.'));}
+    },100);
+  });
+}
+function ensureTokenClient(){
+  if(GS.tokenClient) return;
+  GS.tokenClient=google.accounts.oauth2.initTokenClient({
+    client_id:sheetCfg().clientId,
+    scope:'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email',
+    callback:(resp)=>{ const ok=GS.cbResolve, no=GS.cbReject; GS.cbResolve=GS.cbReject=null;
+      if(resp.error){ if(no)no(new Error(resp.error_description||resp.error)); return; }
+      GS.token=resp.access_token; GS.tokenExp=Date.now()+((resp.expires_in||3600)*1000);
+      fetchEmail().finally(()=>{ if(ok)ok(GS.token); }); },
+    error_callback:(err)=>{ const no=GS.cbReject; GS.cbResolve=GS.cbReject=null;
+      if(no)no(new Error((err&&err.type)?('Sign-in '+err.type):'Sign-in was cancelled.')); }
+  });
+}
+async function fetchEmail(){
+  try{ const r=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+GS.token}});
+    if(r.ok){ const j=await r.json(); GS.email=j.email||GS.email; } }catch(e){}
+}
+function haveToken(){ return GS.token && Date.now()<GS.tokenExp-60000; }
+function getToken(interactive,forceConsent){
+  return ensureGis().then(()=>{
+    if(!sheetCfg().clientId) return Promise.reject(new Error('Set the OAuth Client ID in Sheet settings first.'));
+    if(haveToken() && !forceConsent) return GS.token;
+    ensureTokenClient();
+    return new Promise((res,rej)=>{ GS.cbResolve=res; GS.cbReject=rej;
+      // forceConsent re-shows the permission screen so a missing Sheets scope can be granted
+      GS.tokenClient.requestAccessToken({prompt:forceConsent?'consent':(interactive?'':'none')}); });
+  });
+}
+function isScopeErr(status,msg){ return status===401||status===403||/scope|permission|insufficient/i.test(msg||''); }
+
+/* --- Sheets REST calls --- */
+async function sheetErr(r){ try{ const j=await r.json(); return (j.error&&j.error.message)||''; }catch(e){ return ''; } }
+async function sheetBatchGet(ranges){
+  const cfg=sheetCfg();
+  if(!cfg.spreadsheetId) throw new Error('Set the Spreadsheet ID in Sheet settings first.');
+  const q=ranges.map(r=>'ranges='+encodeURIComponent(r)).join('&')+'&valueRenderOption=UNFORMATTED_VALUE';
+  const base='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(cfg.spreadsheetId)+'/values:batchGet?'+q;
+  const keyGet=async()=>{ const r=await fetch(base+'&key='+encodeURIComponent(cfg.apiKey));
+    if(!r.ok) throw new Error('Read failed ('+r.status+'). '+await sheetErr(r));
+    return (await r.json()).valueRanges||[]; };
+  if(!haveToken() && cfg.apiKey) return keyGet();                 // anonymous read of a link-public sheet
+  await getToken(true);
+  const r=await fetch(base,{headers:{Authorization:'Bearer '+GS.token}});
+  if(r.ok) return (await r.json()).valueRanges||[];
+  const msg=await sheetErr(r);
+  if(isScopeErr(r.status,msg)){
+    GS.token=null; GS.tokenExp=0;                                // drop the under-scoped token
+    if(cfg.apiKey) return keyGet();                              // link-public sheets still read with a key
+    throw new Error('Read failed ('+r.status+'): '+msg+'\n\nThe signed-in Google account is missing the Sheets permission. Open Settings → Sign in again and grant it, or add the '+
+      'https://www.googleapis.com/auth/spreadsheets scope to the OAuth consent screen (and enable the Google Sheets API).');
+  }
+  throw new Error('Read failed ('+r.status+'). '+msg);
+  // returned in the same order as `ranges`
+}
+async function sheetApi(path,body){
+  const cfg=sheetCfg();
+  const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(cfg.spreadsheetId)+path;
+  const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+GS.token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){ const msg=await sheetErr(r);
+    const scope=r.status===401||/insufficient|scope/i.test(msg);
+    if(scope){ GS.token=null; GS.tokenExp=0;
+      throw new Error('Write failed ('+r.status+'): '+msg+'\n\nThe signed-in account lacks the Sheets write scope. Open Settings → Sign in again and grant it, or add the '+
+        'https://www.googleapis.com/auth/spreadsheets scope to the OAuth consent screen.'); }
+    if(r.status===403){                                     // token is fine; the account can't edit this file
+      throw new Error('Write failed ('+r.status+'): '+msg+'\n\nThe signed-in Google account'+(GS.email?(' ('+GS.email+')'):'')+
+        ' does not have Editor access to this spreadsheet. Share the sheet with that account as Editor, or Settings → Sign in with an account that can edit it.'); }
+    throw new Error('Write failed ('+r.status+'). '+msg); }
+  return r.json();
+}
+
+/* --- state <-> sheet --- */
+function metaRow(savedAt,savedBy){
+  const c=map.getCenter(), view=imgBounds?{x:c.lng,y:c.lat,z:map.getZoom()}:null;
+  return [ppm||'', sheetCfg().imageUrl||'', view?view.x:'', view?view.y:'', view?view.z:'', savedAt, savedBy];
+}
+function sheetData(savedAt,savedBy){
+  return [
+    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>[t.ref.id,t.lng,t.lat,t.rot||0]))},
+    {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(nodeToRow))},
+    {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(cableToRow))},
+    {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy)]}
+  ];
+}
+function applySheetState(P,N,C,M,keepView){
+  const cur=(keepView&&imgBounds)?{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}:null; // preserve pan/zoom
+  placed.forEach(removeTentMarker); placed=[]; placedIds=new Set(); deselect(); showDomainLayers();
+  nodes=N.map(nodeFromRow); cables=C.map(cableFromRow); saveNet();
+  ppm=gnum(M.ppm); lsSet(LS.ppm,ppm); updateScaleReadout();
+  const vz=gnum(M.viewZoom), vx=gnum(M.viewX), vy=gnum(M.viewY);
+  const view=(vz!=null&&vx!=null&&vy!=null)?{c:[vy,vx],z:vz}:null;
+  const useView=cur||view;
+  if(useView) lsSet(LS.view,useView);
+  P.forEach(o=>{
+    const lib=library.find(x=>String(x.id)===String(o.tentId));
+    const ref=lib?Object.assign({},lib):{id:o.tentId,name:String(o.tentId),placering:'',length:null,width:null,color:'#C9CDD6',electricity:'',water:false,nya:0};
+    placed.push({uid:uidSeq++,ref:ref,lat:gnum(o.y),lng:gnum(o.x),rot:gnum(o.rot)||0,marker:null});
+  });
+  placedIds=new Set(placed.map(t=>t.ref.id));
+  savePlaced();
+  const imgUrl=(M.imageUrl&&String(M.imageUrl).trim())||sheetCfg().imageUrl;
+  if(keepView && imgUrl===imgData){ if(useView) map.setView(useView.c,useView.z); refreshAll(); }  // same image: no reflash
+  else if(imgUrl){ setImage(imgUrl, !!useView); }
+  else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
+  renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
+}
+/* --- automatic sync: debounced save on every change, load on startup --- */
+const SYNC={timer:null,pending:false,inflight:false,loading:false,errs:0};
+function setSync(s,msg){
+  const el=document.getElementById('syncStatus'); if(!el) return;
+  const M={saved:['Synced','var(--ok)'],saving:['Saving…','var(--accent)'],pending:['Saving…','var(--accent)'],
+    loading:['Loading…','var(--accent)'],signin:['Sign in to sync','var(--accent)'],
+    error:['Sync error — retrying','var(--danger)'],idle:['','var(--muted)']};
+  const v=M[s]||M.idle; el.textContent=v[0]; el.style.color=v[1]; el.title=msg||v[0];
+}
+/* Called from every mutation (savePlaced / saveNet / calibration). Debounced and
+   coalesced so a burst of edits becomes one write. Never pops up auth. */
+function queueSheetSave(){
+  if(SYNC.loading || !sheetCfg().spreadsheetId) return;   // not while loading; not if unconfigured
+  lsSet(LS.dirty,1); SYNC.pending=true; SYNC.errs=0; setSync('pending');
+  clearTimeout(SYNC.timer); SYNC.timer=setTimeout(runAutoSave,2500);
+}
+async function runAutoSave(){
+  if(SYNC.inflight || !SYNC.pending) return;
+  if(!haveToken()){ try{ await getToken(false); }              // silent refresh only — never a popup mid-edit
+    catch(e){ setSync('signin'); return; } }                   // stays pending; retries on next change / sign-in
+  SYNC.inflight=true; SYNC.pending=false; setSync('saving');
+  try{
+    const savedAt=new Date().toISOString(), savedBy=GS.email||'admin';
+    await sheetApi('/values:batchClear',{ranges:SHEET_CLEAR});
+    await sheetApi('/values:batchUpdate',{valueInputOption:'RAW',data:sheetData(savedAt,savedBy)});
+    GS.lastSavedAt=savedAt; lsSet(LS.dirty,0); SYNC.errs=0;
+    setSync(SYNC.pending?'pending':'saved');
+  }catch(e){ SYNC.errs++; SYNC.pending=true; setSync('error',e.message); }
+  SYNC.inflight=false;
+  if(SYNC.pending && SYNC.errs<4){ clearTimeout(SYNC.timer);   // backoff on error, quick follow-up on a fresh edit
+    SYNC.timer=setTimeout(runAutoSave, SYNC.errs?4000*SYNC.errs:1200); }
+}
+/* Pull the shared plan on startup (or after sign-in), silently. Unsynced local
+   edits win — we push them instead of overwriting. */
+async function autoLoadStartup(){
+  const cfg=sheetCfg();
+  if(!cfg.spreadsheetId) return;
+  if(lsGet(LS.dirty,0)){ setSync('pending'); queueSheetSave(); return; }
+  if(!haveToken() && !cfg.apiKey){ try{ await getToken(false); }catch(e){ setSync('signin'); return; } }
+  setSync('loading');
+  try{
+    const vr=await sheetBatchGet([SHEET_RANGES.placements,SHEET_RANGES.nodes,SHEET_RANGES.cables,SHEET_RANGES.meta]);
+    const P=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
+    const N=rowsToObjects(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
+    const C=rowsToObjects(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
+    const M=rowsToObjects(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
+    if(P.length||N.length||C.length||(M&&M.ppm!=null)){
+      SYNC.loading=true; applySheetState(P,N,C,M); SYNC.loading=false;
+    }
+    GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
+  }catch(e){ SYNC.loading=false; setSync(haveToken()||cfg.apiKey?'error':'signin',e.message); }
+}
+
+/* --- live reload: poll meta.savedAt; when someone else saves, pull it in --- */
+let pointerDown=false;   // don't reload mid-drag (Leaflet would lose the dragged layer)
+['mousedown','touchstart'].forEach(e=>document.addEventListener(e,()=>{pointerDown=true;},true));
+['mouseup','touchend','touchcancel'].forEach(e=>document.addEventListener(e,()=>{pointerDown=false;},true));
+async function remoteReload(){
+  SYNC.loading=true;
+  try{
+    const vr=await sheetBatchGet([SHEET_RANGES.placements,SHEET_RANGES.nodes,SHEET_RANGES.cables,SHEET_RANGES.meta]);
+    const P=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
+    const N=rowsToObjects(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
+    const C=rowsToObjects(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
+    const M=rowsToObjects(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
+    applySheetState(P,N,C,M,true);                 // keepView: don't yank the user's pan/zoom
+    GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
+    return M;
+  } finally { SYNC.loading=false; }
+}
+function reloadBlocked(){ return SYNC.loading||SYNC.inflight||SYNC.pending||pointerDown||document.hidden; }
+async function pollRemote(){
+  const cfg=sheetCfg();
+  if(!cfg.spreadsheetId || reloadBlocked()) return;   // busy, mid-edit, or tab hidden
+  if(!haveToken() && !cfg.apiKey) return;              // can't read silently
+  try{
+    const vr=await sheetBatchGet([SHEET_RANGES.meta]);
+    const M=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.meta)[0]||{};
+    if(M.savedAt && M.savedAt!==GS.lastSavedAt && !reloadBlocked()){   // re-check after the await
+      const m=await remoteReload();
+      flashBanner('Plan updated from the Sheet'+(m&&m.savedBy?(' · '+m.savedBy):'')+'.',false);
+      setTimeout(()=>banner.style.display='none',2200);
+    }
+  }catch(e){/* transient poll error — try again next tick */}
+}
+let pollTimer=null;
+function startPolling(){ if(!pollTimer) pollTimer=setInterval(pollRemote,15000); }
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRemote(); });   // catch up on refocus
+
+/* --- sign-in (config is hard-coded; no settings UI). The sync indicator is the
+   only Sheet control: click it to sign in, which the browser allows because it's a
+   user gesture. Once signed in, clicking just checks for remote updates. --- */
+document.getElementById('syncStatus').onclick=async()=>{
+  if(haveToken()){ pollRemote(); return; }
+  try{ await getToken(true,true); autoLoadStartup(); }   // force consent, then pull the shared plan
+  catch(e){ alert('Sign-in failed.\n\n'+e.message); }
+};
 
 /* ---------- Networks: El (source+cabinets, 3-phase) and Vatten (brunn/handfat) ---------- */
 function ampOf(s){ const m=/(\d+)\s*A/i.exec(s||''); return m?parseInt(m[1]):0; }
 function tentAmp(id){ const t=placed.find(x=>String(x.ref.id)===String(id)); return t?ampOf(refOf(t).electricity):0; }
 function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
 function tentPos(id){ const t=placed.find(x=>x.ref.id===id); return t?[t.lat,t.lng]:null; }
-function saveNet(){ lsSet(LS.nodes,nodes); lsSet(LS.cables,cables); }
+function saveNet(){ lsSet(LS.nodes,nodes); lsSet(LS.cables,cables); queueSheetSave(); }
 function curDomain(){ return currentTab==='el'?'el':currentTab==='vatten'?'water':null; }
 
 // a tent's demand from its sheet electricity: {phase:1|3, amp}
@@ -1155,7 +1280,9 @@ loadPlaced();
 updateScaleReadout();
 setLetters(showLetters);
 renderList();
-if(!imgData) flashBanner('Upload a clean overhead image of your area, then Set scale',true);
+if(!imgData) flashBanner('Base image could not be loaded — check the connection and refresh.',true);
+autoLoadStartup();   // pull the shared plan from the Sheet (silent; local unsynced edits win)
+startPolling();      // then watch for saves made elsewhere and reload them in
 [80,300,900].forEach(d=>setTimeout(()=>{map.invalidateSize();positionCtl();},d));
 window.addEventListener('resize',()=>{map.invalidateSize();positionCtl();});
 window.addEventListener('load',()=>{map.invalidateSize();positionCtl();});

@@ -4,26 +4,34 @@ Site-layout planner for **Medeltidsveckan 2026** (Visby, Gotland). The organiser
 market stalls onto a scaled overhead image, then plans the electrical and water
 distribution on top of the same layout.
 
-Single self-contained HTML file, no framework, no server. Leaflet + SheetJS from CDN.
+Single self-contained HTML file, no framework, no server. Leaflet + Google Identity
+Services from CDN. (SheetJS was dropped when the in-app Excel import was removed.)
 
 ---
 
 ## Repo layout
 
+Everything lives **flat in the repo root** — there are no `src/`, `data/`, `dist/`, or
+`scripts/` directories.
+
 ```
-src/planner.template.html   the app; contains the literal token __TENTS_JSON__
-data/tents.json             tent library extracted from the Excel workbook
-scripts/extract_tents.py    xlsx  -> data/tents.json      (openpyxl)
-scripts/build.py            template + data -> dist/      (+ syntax & sanity checks)
-dist/marknad_tent_planner.html   the artefact the user actually opens
+planner.template.html          the app; contains the literal token __TENTS_JSON__
+tents.json                     tent library extracted from the Excel workbook
+extract_tents.py               xlsx  -> tents.json          (openpyxl)
+build.py                       template + data -> marknad_tent_planner.html  (+ checks)
+marknad_base_clean.png         the base plan image (published alongside the HTML)
+.github/workflows/pages.yml    CI: build + publish to GitHub Pages
 ```
 
-**Always edit `src/planner.template.html`, never `dist/`.** `dist/` is generated and
-will be overwritten.
+`marknad_tent_planner.html` is the **generated** artefact. It is **git-ignored, not
+committed** — CI builds and publishes it (see *Deployment* below). Run `build.py`
+locally to regenerate it when you want to open the app in a browser yourself.
+
+**Always edit `planner.template.html`, never the generated `marknad_tent_planner.html`.**
 
 ```bash
-python3 scripts/extract_tents.py Marknadsutstallare_2026-2.xlsx   # only when the sheet changes
-python3 scripts/build.py                                          # after every edit
+python3 extract_tents.py Marknadsutstallare_2026-2.xlsx   # only when the sheet changes
+python3 build.py                                          # after every edit
 ```
 
 `build.py` runs `node --check` on the embedded script, warns on emoji, and warns on
@@ -35,7 +43,7 @@ duplicate tent ids. A build that prints warnings is a build that will misbehave.
 
 There is no test suite and the app cannot be opened in this environment, so:
 
-1. `python3 scripts/build.py` — must print `syntax OK` with no warnings.
+1. `python3 build.py` — must print `syntax OK` with no warnings.
 2. For anything touching the electrical/water graph, **extract the pure functions and
    run them under node**. This has caught two real bugs that syntax checking missed
    (a `ReferenceError` from a deleted helper, and socket exhaustion). Pattern:
@@ -48,9 +56,40 @@ There is no test suite and the app cannot be opened in this environment, so:
 
 ---
 
+## Deployment (GitHub Pages)
+
+The app is published by CI, not by committing HTML. `.github/workflows/pages.yml`
+builds `planner.template.html` + `tents.json` into HTML and pushes it to the
+**`gh-pages`** branch, which Pages serves. Both the built `index.html` and
+`marknad_base_clean.png` are published together, so the app's default
+`meta.imageUrl` (relative `marknad_base_clean.png`) resolves next to the page.
+
+- **Push to `main`** → the live site at the repo root
+  (`https://<owner>.github.io/<repo>/`), via `peaceiris/actions-gh-pages`
+  (`keep_files: true`, so it never wipes the preview directory).
+- **Pull request** → a preview at `…/pr-preview/pr-<N>/`, via
+  `rossjrw/pr-preview-action`. The action comments the URL on the PR and
+  **deletes the preview when the PR closes** (the workflow also listens to the
+  `closed` event for that cleanup). This is how you try a change before merging.
+
+All deploys share one `concurrency` group with `cancel-in-progress: false` so
+parallel jobs never race on `gh-pages`.
+
+Both the live site and every preview share the **same origin**
+(`https://<owner>.github.io`), so a single **Authorized JavaScript origin** on the
+OAuth client covers all of them — paths don't matter for OAuth, only scheme+host.
+
+One-time setup outside the code: in repo **Settings → Pages**, set the source to
+**Deploy from a branch → `gh-pages` / `root`**. Preview deploys need the workflow's
+`contents: write` + `pull-requests: write` permissions (already declared).
+`pull_request` runs from forks get a read-only token and cannot deploy a preview;
+branch PRs within this repo (the normal flow here) work.
+
+---
+
 ## Data model
 
-`data/tents.json` is an array of "placeable items" (tents, but also organiser
+`tents.json` is an array of "placeable items" (tents, but also organiser
 structures and custom objects). 150 entries currently.
 
 ```jsonc
@@ -68,14 +107,14 @@ structures and custom objects). 150 entries currently.
 ```
 
 Source of truth: `Utplaceringsdokument` sheet, header row 2. Column map and the
-extraction rules are documented at the top of `scripts/extract_tents.py` — read it
+extraction rules are documented at the top of `extract_tents.py` — read it
 before touching the data pipeline.
 
 Three non-obvious rules, all of which caused bugs already:
 
-- **Colour lives in a cell fill**, not a value. Only openpyxl can read it; the
-  browser-side importer (SheetJS) cannot, so re-importing in-app keeps colours only
-  for ids already in the baked-in data.
+- **Colour lives in a cell fill**, not a value. Only openpyxl can read it — which is
+  the reason the library is baked in at build time via `extract_tents.py` and there is
+  no in-app Excel import.
 - **The `tents` column can hold several structures.** Seven vendors do (Urda
   Hantverk has 6). They are expanded into separate entries `1945-1 … 1945-6` named
   `Urda Hantverk (1/6)`. Round structures are drawn as a square of the diameter —
@@ -89,9 +128,12 @@ Three non-obvious rules, all of which caused bugs already:
 ## App architecture
 
 Leaflet with `L.CRS.Simple`; coordinates are **image pixels**, `lat = y`, `lng = x`.
-The base map is a user-uploaded `L.imageOverlay`. `ppm` (pixels per metre) comes from
-a two-click calibration and converts metres to image pixels. **Nothing can be drawn to
-scale until `ppm` is set.**
+The base map is the committed `marknad_base_clean.png` as an `L.imageOverlay` (loaded on
+startup via `DEFAULT_IMG` / the Sheet's `meta.imageUrl`; there is no in-app upload).
+`ppm` (pixels per metre) converts metres to image pixels and comes from the Sheet's
+`meta.ppm` — the in-app two-click calibration was removed. **Nothing can be drawn to
+scale until `ppm` is set**, so a Sheet with an empty `meta.ppm` renders tents at token
+size.
 
 ### Rendering — this part is load-bearing
 
@@ -128,7 +170,7 @@ SVG, which Leaflet rebuilds on pan/zoom, silently destroying the pattern.
 
 `refOf(t)` resolves a placed item against the **current** library by id, then applies
 per-item edits, falling back to the stored snapshot if the id is gone. This means
-editing a tent or re-importing the sheet updates items already on the plan.
+editing a tent (or rebuilding the baked-in library) updates items already on the plan.
 `applyEdits(x)` is the library-side equivalent. Use `refOf(t)` for anything placed —
 never read `t.ref` directly.
 
@@ -189,36 +231,63 @@ blue pipes. No capacity maths. Water-capable items show a blue ring.
 
 ## Persistence
 
-`localStorage`, keys prefixed `mtvi_` (see `const LS` at the top of the script). Bump
-the version suffix when a shape changes.
+`localStorage`, keys prefixed `mtvi_` (see `const LS` at the top of the script), is the
+per-session cache: placements, nodes, cables, image, ppm, view, edits, removed, custom,
+and the `LS.dirty` sync flag each live under their own key. Bump the version
+suffix when a shape changes. The base image is the committed PNG (kept in `localStorage`
+as its URL after first load); it is **never** written to the Sheet
+(only its hosted URL is — see below).
 
-**Save/Load project** writes one JSON file — the portable unit of work:
-
-```jsonc
-{ "v":1, "image":"data:image/jpeg;base64,…", "ppm":12.4,
-  "view":{"c":[y,x],"z":2}, "placed":[{"ref":{…},"lat":..,"lng":..,"rot":..}],
-  "custom":[…], "edits":{…}, "removed":[…], "nodes":[…], "cables":[…] }
-```
-
-The base image is embedded as a data URL and downscaled to 2600 px on upload.
+**The Google Sheet syncs automatically** (see the section below) — it is the portable,
+shared unit of work. There are no Save/Load buttons and no local JSON file path.
 
 ---
 
-## Next task: Google Sheets for saved state
+## Google Sheets for saved state — the only save/load path (automatic sync)
 
-Agreed design, not yet built. **Scope is deliberately narrow — read this before
-designing anything.**
+Built, and **fully automatic — there are no Save/Load buttons**. Every change writes to
+the shared Sheet on a debounce, and the plan is pulled from the Sheet on startup. The
+only Sheet control left in the UI is the **Settings** button plus a small
+`#syncStatus` indicator (`Synced` / `Saving…` / `Sign in to sync` / `Sync error`). The
+module lives under the `/* automatic sync */` and `/* Google Sheets sync */` banners:
 
-The new spreadsheet stores **only what the application saves**: placements, power and
+- `queueSheetSave()` — called from `savePlaced` / `saveNet`; debounced
+  (2.5 s) and coalesced so a burst of edits is one write. Guarded by `SYNC.loading` so
+  applying a load doesn't echo back a save. Never triggers an auth popup.
+- `runAutoSave()` — silently refreshes the token (`getToken(false)`, `prompt:'none'`);
+  if that can't happen it shows *Sign in to sync* and leaves the change pending. Writes
+  `values:batchClear` + `values:batchUpdate`. Retries with backoff, capped.
+- `autoLoadStartup()` — pulls the four tabs on startup / after sign-in, silently
+  (API key or silent token, never a popup). **Unsynced local edits win**: if
+  `LS.dirty` is set it pushes the local state instead of overwriting from the Sheet.
+- `pollRemote()` / `remoteReload()` — live reload. Every 15 s (and on tab refocus) it
+  reads only `meta!A2:G`; if `savedAt` differs from `GS.lastSavedAt` (someone else
+  saved) it pulls the whole plan. `reloadBlocked()` suppresses it while the user has
+  pending edits, is mid-drag (`pointerDown` — reloading would tear a layer out from
+  under Leaflet's drag handler), or the tab is hidden. `applySheetState(…,keepView)`
+  keeps the local pan/zoom and skips the image reflash when the URL is unchanged.
+- pure row helpers (`rowsToObjects nodeFromRow nodeToRow cableFromRow cableToRow gnum
+  gbool isBlank`) and the GIS token client (`getToken` / `ensureTokenClient`).
+
+`LS.dirty` is a flag set on every queued save and cleared on a successful save/load;
+it is what stops a stale startup load from clobbering edits made while offline.
+Config (spreadsheet id, OAuth client id, optional API key, base image URL) is
+**hard-coded** in `SHEET_DEFAULTS` — there is no settings UI. The only Sheet control in
+the app is the `#syncStatus` indicator, which doubles as the sign-in button (clicking it
+runs the interactive consent — needed once, from a user gesture, before silent
+auto-sync can take over). **Scope is deliberately narrow.**
+
+The spreadsheet stores **only what the application saves**: placements, power and
 water networks, and a little metadata. It does **not** hold the tent library.
 
 The tent library keeps its current pipeline unchanged: the private
 *Marknadsutställare 2026* workbook is exported to xlsx and imported manually via
-`scripts/extract_tents.py`. This is what lets category colours survive (they are cell
-fills, readable only by openpyxl) and it means the new sheet never touches the
+`extract_tents.py`. This is what lets category colours survive (they are cell
+fills, readable only by openpyxl) and it means the sheet never touches the
 sensitive columns. Do not add a `tents` tab and do not use `IMPORTRANGE`.
 
-**Tabs** (created by hand; all app-written, flat rows):
+**Tabs** (created by hand — they already exist in the live sheet; all app-written,
+flat rows):
 
 ```
 placements  tentId | x | y | rot
@@ -230,7 +299,7 @@ meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
 
 `meta` is a **single data row** (`A2:G2`), not key/value pairs. That keeps every tab
 the same shape — header row plus data rows — so one `rowsToObjects()` helper parses
-all four, and the whole of `meta` is written atomically in one `values.update`.
+all four, and the whole of `meta` is written atomically as one range in the batch write.
 `view` is split into three numeric columns rather than JSON-in-a-cell so the sheet
 stays readable when debugging by eye.
 
@@ -240,12 +309,18 @@ is closed and hard-coded in two places (`outputs()` and the source/cabinet modal
 
 > **Careful:** `outs === null` means *"use the default complement for this rating"* and
 > is NOT the same as an object of zeros, which means *"this unit has no sockets"*.
-> Empty cells must load back as `null`; a literal `0` must load as `0`. Conflating them
+> Empty cells load back as `null`; a literal `0` loads as `0`. Conflating them
 > turns every default cabinet into one with no outlets and nothing will connect.
+> `nodeFromRow` / `nodeToRow` enforce this and are covered by the node tests — extend
+> those tests before touching the mapping.
 
-Read with `values.batchGet`, write one `values.update` per tab. `tentId` joins to the
-baked-in library and is resolved through `refOf()`, which already handles a missing id
-by falling back to a snapshot.
+Reads are one `values.batchGet` with `valueRenderOption=UNFORMATTED_VALUE` (so numbers
+and booleans come back typed and trailing empty cells are omitted — that omission is
+what makes empty-vs-zero detectable). Writes are a `values:batchClear` of the data rows
+(`A2:` down, headers kept) followed by one `values:batchUpdate` for all four tabs; the
+clear is what removes stale rows when the plan shrinks. `tentId` joins to the baked-in
+library and is resolved through `refOf()`, which handles a missing id by falling back
+to a snapshot; on Sheet load a missing id gets a minimal stub `ref`.
 
 **Auth**, verified against current Google docs:
 
@@ -253,22 +328,34 @@ by falling back to a snapshot.
   reads sheets that are already link-public. Restrictions are HTTP-referrer/IP plus
   API-service only. Public read therefore = API key + "Anyone with the link → Viewer".
 - Admin writes = **OAuth 2.0 client ID** (Google Identity Services token client,
-  scope `https://www.googleapis.com/auth/spreadsheets`). The client ID is public by
+  scopes `https://www.googleapis.com/auth/spreadsheets` plus `userinfo.email` so
+  `savedBy` can be filled from the signed-in account). The client ID is public by
   design; real enforcement is Drive sharing — only accounts with **Editor** on the
   sheet can write. Prefer an **Internal** consent screen if the admins share a
   Workspace domain, to skip verification.
+- The OAuth client is a **web** client; its **Authorized JavaScript origins** must
+  list the origin the HTML is served from. `file://` has a null origin and will fail —
+  the app has to be hosted (e.g. GitHub Pages). The client *secret* is unused; the
+  browser token flow needs only the client id.
 
 **Constraints to design around:**
 
 - The base image cannot live in a cell. Host the PNG alongside the HTML and put its
   URL in `meta.imageUrl`, together with `meta.ppm` — without both, a fresh browser can
-  load coordinates but cannot draw anything to scale.
+  load coordinates but cannot draw anything to scale. On save the URL written is
+  `sheetCfg().imageUrl` (default `marknad_base_clean.png`), **not** whatever image is
+  currently loaded — a data-URL upload is never pushed to the sheet.
 - `tentId` must stay stable across re-imports. Numeric ids are safe; the synthetic
   `x_<slug>` ids for organiser structures change if a row is renamed.
-- Last write wins. Write `savedAt`/`savedBy` to `meta` and warn the user if the remote
-  value changed since load, otherwise two admins silently clobber each other.
-- Sheets API quotas are ~300 req/min per project, 60/min per user; batch and cache.
-- Keep the existing local Save/Load project JSON working as an offline path.
+- Last write wins, **silently** — auto-save no longer runs the interactive
+  "overwrite?" confirm (it can't block on every keystroke). `meta.savedAt`/`savedBy`
+  and `GS.lastSavedAt` are still written/tracked, so a concurrency check can be
+  reinstated, but two admins editing the same Sheet at once will clobber each other.
+- Sheets API quotas are ~300 req/min per project, 60/min per user; the 2.5 s debounce
+  plus coalescing keeps a burst of edits to one `batchClear`+`batchUpdate` pair, and the
+  15 s live-reload poll is a single small `meta` read (~4/min). View (pan/zoom) changes
+  deliberately do **not** trigger a save — the current view is captured on the next real
+  edit — so idle panning doesn't burn quota.
 
 ---
 

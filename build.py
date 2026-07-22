@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Inject data/tents.json into src/planner.template.html -> dist/marknad_tent_planner.html
+"""Inject tents.json into planner.template.html -> marknad_tent_planner.html
 
 The template contains the literal placeholder __TENTS_JSON__ inside its <script> block.
 Run after any edit to the template or the data.
 
-    python3 scripts/build.py
+    python3 build.py
+
+All files live flat in the repo root (template, data, and generated artifact together).
 """
 import json
 import pathlib
@@ -12,10 +14,10 @@ import re
 import subprocess
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-TEMPLATE = ROOT / "src" / "planner.template.html"
-DATA = ROOT / "data" / "tents.json"
-OUT = ROOT / "dist" / "marknad_tent_planner.html"
+ROOT = pathlib.Path(__file__).resolve().parent
+TEMPLATE = ROOT / "planner.template.html"
+DATA = ROOT / "tents.json"
+OUT = ROOT / "marknad_tent_planner.html"
 PLACEHOLDER = "__TENTS_JSON__"
 
 
@@ -35,7 +37,7 @@ def main() -> int:
 
     # 1. JS must parse. node is optional but strongly preferred.
     try:
-        tmp = ROOT / "dist" / ".check.js"
+        tmp = ROOT / ".check.js"
         tmp.write_text(script, encoding="utf-8")
         r = subprocess.run(["node", "--check", str(tmp)],
                            capture_output=True, text=True)
