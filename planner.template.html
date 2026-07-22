@@ -49,7 +49,7 @@
   .delbtn:hover{border-color:var(--danger);color:var(--danger)}
   #mapWrap{flex:1;position:relative}
   #map{position:absolute;inset:0}
-  #topbar{position:absolute;top:10px;left:10px;z-index:600;display:flex;gap:8px;align-items:center;background:rgba(20,22,30,.92);border:1px solid var(--line);border-radius:10px;padding:6px 8px;flex-wrap:wrap;max-width:calc(100% - 20px)}
+  #topbar{position:absolute;top:10px;right:10px;z-index:600;display:flex;gap:8px;align-items:center;background:rgba(20,22,30,.92);border:1px solid var(--line);border-radius:10px;padding:6px 8px;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100% - 20px)}
   #topbar .lbl{font-size:11px;color:var(--muted)}
   #topbar .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   #topbar .seg button{border:none;border-radius:0;padding:6px 12px}
@@ -94,9 +94,18 @@
   .node.water.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px #2b8cff}
   .node.brunn{border-radius:50%}
   .legsub{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);padding:12px 10px 3px}
+  /* public (no-login) view: map only, no editing UI. admin view: full UI. */
+  body.public #sidebar{display:none}
+  /* public view keeps the topbar, but only the Placering group (Letters toggle) is ever
+     shown there — El/Vatten groups stay display:none since tabs are hidden in public */
+  #adminBtn{position:absolute;right:12px;bottom:12px;z-index:700;width:30px;height:34px;border-radius:8px;background:rgba(20,22,30,.5);border:1px solid var(--line);color:var(--muted);opacity:.3;display:none;align-items:center;justify-content:center;font-size:16px;line-height:1;padding:0;transition:opacity .15s,color .15s,border-color .15s}
+  #adminBtn:hover{opacity:1;color:var(--txt);border-color:var(--accent)}
+  body.public #adminBtn{display:flex}
+  #exitAdmin{font-size:11px;padding:5px 9px;color:var(--muted)}
+  #exitAdmin:hover{border-color:var(--accent);color:var(--txt)}
 </style>
 </head>
-<body>
+<body class="public">
 <div id="app">
   <div id="sidebar">
     <h1>Marknad Tent Planner<small>Medeltidsveckan 2026</small></h1>
@@ -108,6 +117,7 @@
     <div class="bar" id="projectBar">
       <span id="syncStatus" title="Google Sheet sync" style="font-size:12px;font-weight:600;color:var(--muted);cursor:pointer"></span>
       <span style="flex:1"></span>
+      <button id="exitAdmin" title="Return to the public map view">Exit admin</button>
     </div>
     <div id="placementUI">
       <div class="bar">
@@ -156,6 +166,7 @@
     </div>
     <div id="dropHint">Drop to place tent here</div>
     <div id="banner"></div>
+    <button id="adminBtn" title="Admin login">&#8942;</button>
     <div id="tentCtl">
       <button id="rotL" title="Rotate left (left arrow)">&#8634;</button>
       <button id="rotR" title="Rotate right (right arrow)">&#8635;</button>
@@ -218,10 +229,15 @@
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1'};
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+/* Public (no-login) view shows only the map with the tents and auto-syncs read-only.
+   Admin view (unlocked by signing in) is the full editing UI. Body starts .public so a
+   fresh viewer never flashes the editing tools; applyMode() flips it if admin is stored. */
+let ADMIN=lsGet(LS.admin,false);
+if(ADMIN) document.body.className='admin';
 
 let customTents=lsGet(LS.custom,[]);
 let edits=lsGet(LS.edits,{});
@@ -357,15 +373,16 @@ function capHtmlFor(t){
 }
 function tentClick(t,e){
   L.DomEvent.stopPropagation(e);
+  if(!ADMIN) return;   // public view: tents are look-only
   if(currentTab==='el'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); else highlightFromTent(t.ref.id); return; }
   if(currentTab==='vatten'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); return; }
   selectTent(t.uid);
 }
 function attachPolyHandlers(t){
   t.poly.on('click',e=>tentClick(t,e));
-  t.poly.on('dblclick',e=>{L.DomEvent.stopPropagation(e); if(currentTab==='placering') openEdit(refOf(t));});
+  t.poly.on('dblclick',e=>{L.DomEvent.stopPropagation(e); if(ADMIN&&currentTab==='placering') openEdit(refOf(t));});
   t.poly.on('mousedown',e=>{
-    if(currentTab!=='placering')return;
+    if(!ADMIN||currentTab!=='placering')return;
     L.DomEvent.stop(e); selectTent(t.uid); map.dragging.disable();
     const s=e.latlng, o={lat:t.lat,lng:t.lng};
     const move=ev=>{ t.lat=o.lat+(ev.latlng.lat-s.lat); t.lng=o.lng+(ev.latlng.lng-s.lng);
@@ -409,10 +426,10 @@ function renderTentMarker(t){
     t.marker.on('drag',()=>{const p=t.marker.getLatLng();t.lat=p.lat;t.lng=p.lng;t.label.setLatLng(p);positionCtl();if(curDomain())redrawCables();});
     t.marker.on('dragend',()=>{savePlaced();if(curDomain())redrawCables();});
     t.marker.on('click',e=>tentClick(t,e));
-    t.marker.on('dblclick',e=>{L.DomEvent.stopPropagation(e); if(currentTab==='placering') openEdit(refOf(t));});
+    t.marker.on('dblclick',e=>{L.DomEvent.stopPropagation(e); if(ADMIN&&currentTab==='placering') openEdit(refOf(t));});
   }else{ t.marker.setIcon(boxIcon); t.marker.setLatLng([t.lat,t.lng]); }
   t.marker.setZIndexOffset(t.uid===selectedUid?1000:0);
-  if(t.marker.dragging){ curDomain()?t.marker.dragging.disable():t.marker.dragging.enable(); }
+  if(t.marker.dragging){ (!ADMIN||curDomain())?t.marker.dragging.disable():t.marker.dragging.enable(); }
 }
 function removeTentMarker(t){
   ['marker','label','poly','nyaPoly'].forEach(k=>{ if(t[k])map.removeLayer(t[k]); t[k]=null; });
@@ -455,7 +472,7 @@ document.getElementById('delBtn').onclick=()=>{
   deselect(); savePlaced(); renderList(document.getElementById('search').value);
 };
 document.addEventListener('keydown',e=>{
-  if(selectedUid==null)return;
+  if(!ADMIN||selectedUid==null)return;
   const tag=(e.target.tagName||'').toLowerCase(); if(tag==='input'||tag==='select')return;
   if(e.key==='ArrowLeft'){rotate(e.shiftKey?-1:-5);e.preventDefault();}
   else if(e.key==='ArrowRight'){rotate(e.shiftKey?1:5);e.preventDefault();}
@@ -927,6 +944,25 @@ document.getElementById('syncStatus').onclick=async()=>{
   catch(e){ alert('Sign-in failed.\n\n'+e.message); }
 };
 
+/* --- public / admin mode --- */
+function applyMode(){
+  document.body.classList.toggle('admin',ADMIN);
+  document.body.classList.toggle('public',!ADMIN);
+  if(!ADMIN && currentTab!=='placering') setTab('placering');   // public only ever shows the tents
+  deselect();
+  setTimeout(()=>{ map.invalidateSize(); refreshAll(); positionCtl(); },0);
+}
+function enterAdmin(){ ADMIN=true; lsSet(LS.admin,true); applyMode(); }
+function exitAdminMode(){ ADMIN=false; lsSet(LS.admin,false); applyMode(); }
+/* The "somewhat hidden" admin entry: a faint corner button. Signing in unlocks the
+   editing UI; without a valid Editor token nothing can be written anyway (Drive sharing
+   is the real gate), so this just reveals the tools. */
+document.getElementById('adminBtn').onclick=async()=>{
+  try{ await getToken(true,true); enterAdmin(); autoLoadStartup(); }
+  catch(e){ alert('Admin sign-in failed.\n\n'+e.message); }
+};
+document.getElementById('exitAdmin').onclick=exitAdminMode;
+
 /* ---------- Networks: El (source+cabinets, 3-phase) and Vatten (brunn/handfat) ---------- */
 function ampOf(s){ const m=/(\d+)\s*A/i.exec(s||''); return m?parseInt(m[1]):0; }
 function tentAmp(id){ const t=placed.find(x=>String(x.ref.id)===String(id)); return t?ampOf(refOf(t).electricity):0; }
@@ -1280,6 +1316,7 @@ loadPlaced();
 updateScaleReadout();
 setLetters(showLetters);
 renderList();
+applyMode();          // public map-only view by default; admin UI if previously unlocked
 if(!imgData) flashBanner('Base image could not be loaded — check the connection and refresh.',true);
 autoLoadStartup();   // pull the shared plan from the Sheet (silent; local unsynced edits win)
 startPolling();      // then watch for saves made elsewhere and reload them in
