@@ -679,13 +679,16 @@ function renderLegend(){
    each a header row plus data rows, so one rowsToObjects() parses them all.
    No cell holds JSON: view is three columns, node outputs are five columns. */
 const SHEET_HEADERS={
-  placements:['tentId','x','y','rot'],
+  // Custom objects live only in the app (not the Excel library), so a placed custom
+  // carries its own definition inline (cols E..M). For library tents those cols are
+  // blank and the tentId resolves against the baked-in library as before.
+  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape'],
   nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125'],
   cables:['src','dst','dstKind','domain','otype','phase'],
   meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy']
 };
-const SHEET_RANGES={placements:'placements!A1:D',nodes:'nodes!A1:L',cables:'cables!A1:F',meta:'meta!A1:G'};
-const SHEET_CLEAR=['placements!A2:D','nodes!A2:L','cables!A2:F','meta!A2:G'];
+const SHEET_RANGES={placements:'placements!A1:M',nodes:'nodes!A1:L',cables:'cables!A1:F',meta:'meta!A1:G'};
+const SHEET_CLEAR=['placements!A2:M','nodes!A2:L','cables!A2:F','meta!A2:G'];
 /* Config is hard-coded here — there is no in-app settings UI. */
 const SHEET_DEFAULTS={
   spreadsheetId:'1H47rLODVURUOy91OeuWh-uJiDcj79c-K8Q_HZxNeDDM',
@@ -730,6 +733,16 @@ function cableFromRow(o){
   return c;
 }
 function cableToRow(c){ return [c.src,c.dst,c.dstKind,c.domain,isBlank(c.otype)?'':c.otype,c.phase!=null?c.phase:'']; }
+/* Rebuild a custom-object library entry from its inline placements-row definition. */
+function customFromRow(o){
+  const c={id:String(o.tentId),name:String(o.name),placering:isBlank(o.placering)?'':String(o.placering),
+    length:gnum(o.length),width:gnum(o.width),
+    color:(!isBlank(o.color)&&/^#[0-9a-fA-F]{6}$/.test(String(o.color)))?String(o.color):'#B6D7A8',
+    electricity:isBlank(o.electricity)?'':String(o.electricity),
+    water:gbool(o.water),nya:gnum(o.nya)||0,shape:o.shape==='circle'?'circle':'rect'};
+  if(c.length==null)c.length=3; if(c.width==null)c.width=3;
+  return c;
+}
 
 /* --- OAuth (Google Identity Services token client) --- */
 function ensureGis(){
@@ -812,13 +825,23 @@ async function sheetApi(path,body){
 }
 
 /* --- state <-> sheet --- */
+function isCustomId(id){ return String(id).indexOf('custom_')===0; }
+/* A placed item is 4 base cols; a custom object also carries its live definition so it
+   survives a load on a browser that never had it in localStorage (cols blank otherwise). */
+function placementRow(t){
+  const id=t.ref.id, base=[id,t.lng,t.lat,t.rot||0];
+  if(!isCustomId(id)) return base.concat(['','','','','','','','','']);
+  const r=refOf(t);
+  return base.concat([r.name||'',r.placering||'',r.length!=null?r.length:'',r.width!=null?r.width:'',
+    r.color||'',r.electricity||'',r.water?1:'',r.nya||0,r.shape==='circle'?'circle':'rect']);
+}
 function metaRow(savedAt,savedBy){
   const c=map.getCenter(), view=imgBounds?{x:c.lng,y:c.lat,z:map.getZoom()}:null;
   return [ppm||'', sheetCfg().imageUrl||'', view?view.x:'', view?view.y:'', view?view.z:'', savedAt, savedBy];
 }
 function sheetData(savedAt,savedBy){
   return [
-    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>[t.ref.id,t.lng,t.lat,t.rot||0]))},
+    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(placementRow))},
     {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(nodeToRow))},
     {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(cableToRow))},
     {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy)]}
@@ -833,11 +856,19 @@ function applySheetState(P,N,C,M,keepView){
   const view=(vz!=null&&vx!=null&&vy!=null)?{c:[vy,vx],z:vz}:null;
   const useView=cur||view;
   if(useView) lsSet(LS.view,useView);
+  let customAdded=false;
   P.forEach(o=>{
-    const lib=library.find(x=>String(x.id)===String(o.tentId));
+    let lib=library.find(x=>String(x.id)===String(o.tentId));
+    // A placed custom object carries its own definition in the row; rebuild it into the
+    // library the first time we see it so refOf() resolves it and it returns to the list on delete.
+    if(!lib && isCustomId(o.tentId) && !isBlank(o.name)){
+      lib=customFromRow(o);
+      if(!customTents.some(c=>String(c.id)===String(lib.id))){ customTents.push(lib); library.push(lib); customAdded=true; }
+    }
     const ref=lib?Object.assign({},lib):{id:o.tentId,name:String(o.tentId),placering:'',length:null,width:null,color:'#C9CDD6',electricity:'',water:false,nya:0};
     placed.push({uid:uidSeq++,ref:ref,lat:gnum(o.y),lng:gnum(o.x),rot:gnum(o.rot)||0,marker:null});
   });
+  if(customAdded) lsSet(LS.custom,customTents);
   placedIds=new Set(placed.map(t=>t.ref.id));
   savePlaced();
   const imgUrl=(M.imageUrl&&String(M.imageUrl).trim())||sheetCfg().imageUrl;
