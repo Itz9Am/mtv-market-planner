@@ -110,10 +110,6 @@
       <button id="saveSheetBtn" class="primary" title="Write the current plan to the shared Google Sheet">Save to Sheet</button>
       <button id="loadSheetBtn" title="Load the plan from the shared Google Sheet">Load from Sheet</button>
       <button id="sheetCfgBtn" title="Google Sheet settings">Settings</button>
-      <span style="flex:1"></span>
-      <button id="saveProjBtn" title="Download the plan as a local JSON file">Save file</button>
-      <button id="loadProjBtn" title="Load a plan from a local JSON file">Load file</button>
-      <input type="file" id="loadProjFile" accept=".json,application/json" style="display:none"/>
     </div>
     <div id="placementUI">
       <div class="bar">
@@ -790,41 +786,6 @@ function renderLegend(){
   const waiting=library.filter(x=>!placedIds.has(x.id)&&!removed.has(String(x.id))&&tentReq(applyEdits(x).electricity)).length;
   if(waiting){ const d=document.createElement('div'); d.className='hint'; d.textContent=waiting+' more tent(s) needing power are not placed yet.'; el.appendChild(d); }
 }
-
-/* ---------- save / load whole project (placement + image + scale) ---------- */
-document.getElementById('saveProjBtn').onclick=()=>{
-  const proj={v:1, image:imgData||null, ppm:ppm||null,
-    view: imgBounds?{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}:null,
-    placed: placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot})),
-    custom: customTents, edits: edits, removed: [...removed], nodes: nodes, cables: cables};
-  const blob=new Blob([JSON.stringify(proj)],{type:'application/json'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='marknad_project.json'; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1500);
-};
-document.getElementById('loadProjBtn').onclick=()=>document.getElementById('loadProjFile').click();
-document.getElementById('loadProjFile').addEventListener('change',e=>{
-  const f=e.target.files[0]; if(!f)return;
-  const rd=new FileReader();
-  rd.onload=()=>{
-    let proj; try{proj=JSON.parse(rd.result);}catch(err){alert('That is not a valid project file.');return;}
-    placed.forEach(removeTentMarker); placed=[]; placedIds=new Set(); deselect();
-    showDomainLayers(); nodes=proj.nodes||[]; cables=proj.cables||[]; saveNet();
-    customTents=proj.custom||[]; lsSet(LS.custom,customTents);
-    edits=proj.edits||{}; lsSet(LS.edits,edits);
-    removed=new Set(proj.removed||[]); saveRemoved();
-    library=TENTS.concat(customTents);
-    ppm=proj.ppm||null; lsSet(LS.ppm,ppm); updateScaleReadout();
-    if(proj.view) lsSet(LS.view,proj.view);
-    (proj.placed||[]).forEach(a=>placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null}));
-    placedIds=new Set(placed.map(t=>t.ref.id));
-    savePlaced();
-    if(proj.image){ setImage(proj.image, !!proj.view); } else { refreshAll(); }
-    renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
-    flashBanner('Project loaded.',false); setTimeout(()=>banner.style.display='none',2200);
-  };
-  rd.readAsText(f); e.target.value='';
-});
 
 /* ---------- Google Sheets sync (shared project state) ----------
    Stores ONLY what the app saves: placements, el/water networks, and a little
