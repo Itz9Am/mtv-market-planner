@@ -283,6 +283,7 @@ function refOf(t){
   return applyEdits(lib||t.ref);
 }
 let library=TENTS.concat(customTents);
+const DEFAULT_IMG='marknad_base_clean.png';   // committed & published next to the HTML
 let imgData=lsGet(LS.img,null), imgBounds=null, imgOverlay=null;
 let ppm=lsGet(LS.ppm,null);
 let currentTab='placering';
@@ -311,7 +312,7 @@ map.createPane('cables');     map.getPane('cables').style.zIndex='610';      // 
 map.createPane('tentlabels'); map.getPane('tentlabels').style.zIndex='620';  // above cables
 map.getPane('tentlabels').style.pointerEvents='none';
 map.createPane('nodes');      map.getPane('nodes').style.zIndex='630';       // cabinets on top
-if(imgData) setImage(imgData,true);
+setImage(imgData||DEFAULT_IMG,true);   // fall back to the committed base plan on a fresh browser
 map.on('zoomend',refreshAll);
 map.on('move zoom',positionCtl);
 map.on('moveend zoomend',()=>{ if(imgBounds){ lsSet(LS.view,{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}); }});
@@ -339,6 +340,8 @@ function setImage(dataURL,restore){
     try{ localStorage.setItem(LS.img,JSON.stringify(dataURL)); }catch(e){ flashBanner('Image loaded (too large to remember between sessions).',true); }
     map.invalidateSize(); refreshAll();
   };
+  img.onerror=()=>{ if(imgData!==dataURL) return;   // superseded by a newer image, ignore
+    flashBanner('Could not load the base image "'+dataURL+'". Upload one, or set the image URL in Settings.',true); };
   img.src=dataURL;
 }
 
@@ -803,7 +806,7 @@ const SHEET_CLEAR=['placements!A2:D','nodes!A2:L','cables!A2:F','meta!A2:G'];
 const SHEET_DEFAULTS={
   spreadsheetId:'1H47rLODVURUOy91OeuWh-uJiDcj79c-K8Q_HZxNeDDM',
   clientId:'445187642175-7iqlq60l2rlkmhqg0b3elv97pvjeke1q.apps.googleusercontent.com',
-  apiKey:'', imageUrl:'marknad_base_clean.png'
+  apiKey:'', imageUrl:DEFAULT_IMG
 };
 const GS={token:null,tokenExp:0,tokenClient:null,cbResolve:null,cbReject:null,email:null,lastSavedAt:null,busy:false};
 function sheetCfg(){ return Object.assign({},SHEET_DEFAULTS,lsGet(LS.sheetCfg,{})); }
