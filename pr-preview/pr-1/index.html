@@ -877,15 +877,17 @@ async function fetchEmail(){
     if(r.ok){ const j=await r.json(); GS.email=j.email||GS.email; } }catch(e){}
 }
 function haveToken(){ return GS.token && Date.now()<GS.tokenExp-60000; }
-function getToken(interactive){
+function getToken(interactive,forceConsent){
   return ensureGis().then(()=>{
     if(!sheetCfg().clientId) return Promise.reject(new Error('Set the OAuth Client ID in Sheet settings first.'));
-    if(haveToken()) return GS.token;
+    if(haveToken() && !forceConsent) return GS.token;
     ensureTokenClient();
     return new Promise((res,rej)=>{ GS.cbResolve=res; GS.cbReject=rej;
-      GS.tokenClient.requestAccessToken({prompt:interactive?'':'none'}); });
+      // forceConsent re-shows the permission screen so a missing Sheets scope can be granted
+      GS.tokenClient.requestAccessToken({prompt:forceConsent?'consent':(interactive?'':'none')}); });
   });
 }
+function isScopeErr(status,msg){ return status===401||status===403||/scope|permission|insufficient/i.test(msg||''); }
 
 /* --- Sheets REST calls --- */
 async function sheetErr(r){ try{ const j=await r.json(); return (j.error&&j.error.message)||''; }catch(e){ return ''; } }
@@ -893,19 +895,33 @@ async function sheetBatchGet(ranges){
   const cfg=sheetCfg();
   if(!cfg.spreadsheetId) throw new Error('Set the Spreadsheet ID in Sheet settings first.');
   const q=ranges.map(r=>'ranges='+encodeURIComponent(r)).join('&')+'&valueRenderOption=UNFORMATTED_VALUE';
-  let url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(cfg.spreadsheetId)+'/values:batchGet?'+q;
-  let headers={};
-  if(!haveToken() && cfg.apiKey){ url+='&key='+encodeURIComponent(cfg.apiKey); }   // anonymous read of a link-public sheet
-  else { await getToken(true); headers={Authorization:'Bearer '+GS.token}; }
-  const r=await fetch(url,{headers});
-  if(!r.ok) throw new Error('Read failed ('+r.status+'). '+await sheetErr(r));
-  return (await r.json()).valueRanges||[];   // returned in the same order as `ranges`
+  const base='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(cfg.spreadsheetId)+'/values:batchGet?'+q;
+  const keyGet=async()=>{ const r=await fetch(base+'&key='+encodeURIComponent(cfg.apiKey));
+    if(!r.ok) throw new Error('Read failed ('+r.status+'). '+await sheetErr(r));
+    return (await r.json()).valueRanges||[]; };
+  if(!haveToken() && cfg.apiKey) return keyGet();                 // anonymous read of a link-public sheet
+  await getToken(true);
+  const r=await fetch(base,{headers:{Authorization:'Bearer '+GS.token}});
+  if(r.ok) return (await r.json()).valueRanges||[];
+  const msg=await sheetErr(r);
+  if(isScopeErr(r.status,msg)){
+    GS.token=null; GS.tokenExp=0;                                // drop the under-scoped token
+    if(cfg.apiKey) return keyGet();                              // link-public sheets still read with a key
+    throw new Error('Read failed ('+r.status+'): '+msg+'\n\nThe signed-in Google account is missing the Sheets permission. Open Settings → Sign in again and grant it, or add the '+
+      'https://www.googleapis.com/auth/spreadsheets scope to the OAuth consent screen (and enable the Google Sheets API).');
+  }
+  throw new Error('Read failed ('+r.status+'). '+msg);
+  // returned in the same order as `ranges`
 }
 async function sheetApi(path,body){
   const cfg=sheetCfg();
   const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(cfg.spreadsheetId)+path;
   const r=await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+GS.token,'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok) throw new Error('Write failed ('+r.status+'). '+await sheetErr(r));
+  if(!r.ok){ const msg=await sheetErr(r);
+    if(isScopeErr(r.status,msg)){ GS.token=null; GS.tokenExp=0;
+      throw new Error('Write failed ('+r.status+'): '+msg+'\n\nThe signed-in account lacks the Sheets write permission. Open Settings → Sign in again and grant it, or add the '+
+        'https://www.googleapis.com/auth/spreadsheets scope to the OAuth consent screen (writes also need Editor access to the sheet).'); }
+    throw new Error('Write failed ('+r.status+'). '+msg); }
   return r.json();
 }
 
@@ -1005,8 +1021,10 @@ document.getElementById('sheetCfgSave').onclick=()=>{
   flashBanner('Sheet settings saved.',false); setTimeout(()=>banner.style.display='none',1500);
 };
 document.getElementById('cfgSignIn').onclick=async()=>{
-  try{ sheetCfgSet(readCfgFields()); GS.tokenClient=null; GS.token=null;
-    await getToken(true); updateAuthStatus(); }
+  try{ sheetCfgSet(readCfgFields()); GS.tokenClient=null; GS.token=null; GS.tokenExp=0; GS.email=null;
+    await getToken(true,true);   // force the consent screen so the Sheets permission is (re)granted
+    updateAuthStatus();
+    flashBanner('Signed in'+(GS.email?(' as '+GS.email):'')+'.',false); setTimeout(()=>banner.style.display='none',1800); }
   catch(e){ alert('Sign-in failed.\n\n'+e.message); }
 };
 document.getElementById('saveSheetBtn').onclick=doSheetSave;
