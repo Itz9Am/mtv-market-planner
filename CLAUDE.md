@@ -14,16 +14,19 @@ Everything lives **flat in the repo root** — there are no `src/`, `data/`, `di
 `scripts/` directories.
 
 ```
-planner.template.html       the app; contains the literal token __TENTS_JSON__
-tents.json                  tent library extracted from the Excel workbook
-extract_tents.py            xlsx  -> tents.json           (openpyxl)
-build.py                    template + data -> marknad_tent_planner.html  (+ checks)
-marknad_tent_planner.html   the generated artefact the user actually opens
-marknad_base_clean.png      the base plan image (hosted alongside the HTML)
+planner.template.html          the app; contains the literal token __TENTS_JSON__
+tents.json                     tent library extracted from the Excel workbook
+extract_tents.py               xlsx  -> tents.json          (openpyxl)
+build.py                       template + data -> marknad_tent_planner.html  (+ checks)
+marknad_base_clean.png         the base plan image (published alongside the HTML)
+.github/workflows/pages.yml    CI: build + publish to GitHub Pages
 ```
 
-**Always edit `planner.template.html`, never `marknad_tent_planner.html`.** The latter
-is generated and will be overwritten.
+`marknad_tent_planner.html` is the **generated** artefact. It is **git-ignored, not
+committed** — CI builds and publishes it (see *Deployment* below). Run `build.py`
+locally to regenerate it when you want to open the app in a browser yourself.
+
+**Always edit `planner.template.html`, never the generated `marknad_tent_planner.html`.**
 
 ```bash
 python3 extract_tents.py Marknadsutstallare_2026-2.xlsx   # only when the sheet changes
@@ -49,6 +52,37 @@ There is no test suite and the app cannot be opened in this environment, so:
    and assert the outcome.
 3. `grep` for identifiers you renamed. Several regressions came from replacing a
    function while a call site elsewhere still referenced the old name.
+
+---
+
+## Deployment (GitHub Pages)
+
+The app is published by CI, not by committing HTML. `.github/workflows/pages.yml`
+builds `planner.template.html` + `tents.json` into HTML and pushes it to the
+**`gh-pages`** branch, which Pages serves. Both the built `index.html` and
+`marknad_base_clean.png` are published together, so the app's default
+`meta.imageUrl` (relative `marknad_base_clean.png`) resolves next to the page.
+
+- **Push to `main`** → the live site at the repo root
+  (`https://<owner>.github.io/<repo>/`), via `peaceiris/actions-gh-pages`
+  (`keep_files: true`, so it never wipes the preview directory).
+- **Pull request** → a preview at `…/pr-preview/pr-<N>/`, via
+  `rossjrw/pr-preview-action`. The action comments the URL on the PR and
+  **deletes the preview when the PR closes** (the workflow also listens to the
+  `closed` event for that cleanup). This is how you try a change before merging.
+
+All deploys share one `concurrency` group with `cancel-in-progress: false` so
+parallel jobs never race on `gh-pages`.
+
+Both the live site and every preview share the **same origin**
+(`https://<owner>.github.io`), so a single **Authorized JavaScript origin** on the
+OAuth client covers all of them — paths don't matter for OAuth, only scheme+host.
+
+One-time setup outside the code: in repo **Settings → Pages**, set the source to
+**Deploy from a branch → `gh-pages` / `root`**. Preview deploys need the workflow's
+`contents: write` + `pull-requests: write` permissions (already declared).
+`pull_request` runs from forks get a read-only token and cannot deploy a preview;
+branch PRs within this repo (the normal flow here) work.
 
 ---
 

@@ -1,0 +1,63 @@
+name: Publish to GitHub Pages
+
+# Builds the planner (template + tents.json -> HTML) and publishes it to the
+# gh-pages branch, which GitHub Pages serves.
+#   - push to main      -> the live site at the repo root
+#   - pull request       -> a preview at /pr-preview/pr-<N>/ (commented on the PR,
+#                           and removed again when the PR is closed)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: write        # push the built site to the gh-pages branch
+  pull-requests: write   # let the preview action comment the URL on the PR
+
+# Serialise every gh-pages write (main + all PRs) so concurrent jobs never
+# race on the same branch. Do not cancel in-progress runs — a cancelled push
+# can leave gh-pages half-written.
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # Not needed on PR-close runs (nothing to build, only cleanup).
+      - name: Build the planner
+        if: github.event.action != 'closed'
+        run: |
+          python3 build.py
+          mkdir -p _site
+          cp marknad_tent_planner.html _site/index.html
+          cp marknad_base_clean.png _site/
+
+      # Live site: push _site to the root of gh-pages on every push to main.
+      # keep_files preserves the pr-preview/ directory that PR builds write.
+      - name: Deploy live site
+        if: github.event_name == 'push'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          keep_files: true
+
+      # PR previews: deploy _site to gh-pages/pr-preview/pr-<N>/, comment the
+      # URL on the PR, and delete the preview when the PR is closed.
+      - name: Deploy PR preview
+        if: github.event_name == 'pull_request'
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: ./_site
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
