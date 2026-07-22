@@ -322,9 +322,12 @@ runs the interactive consent — needed once, from a user gesture, before silent
 auto-sync can take over). **Scope is deliberately narrow.**
 
 The spreadsheet stores **only what the application saves**: placements, power and
-water networks, and a little metadata. It does **not** hold the tent library.
+water networks, and a little metadata. It does **not** hold the baked **Excel** tent
+library — but it *does* carry **custom objects** (see the placements def columns
+below), because those are user-created in-app state that would otherwise live only in
+the author's `localStorage` and never reach the public view.
 
-The tent library keeps its current pipeline unchanged: the private
+The Excel library keeps its current pipeline unchanged: the private
 *Marknadsutställare 2026* workbook is exported to xlsx and imported manually via
 `extract_tents.py`. This is what lets category colours survive (they are cell
 fills, readable only by openpyxl) and it means the sheet never touches the
@@ -334,12 +337,26 @@ sensitive columns. Do not add a `tents` tab and do not use `IMPORTRANGE`.
 flat rows):
 
 ```
-placements  tentId | x | y | rot
+placements  tentId | x | y | rot |
+            name | placering | electricity | water | shape | length | width | color | nya
 nodes       id | domain | kind | rating | x | y | unl |
             out220 | out16 | out32 | out63 | out125
 cables      src | dst | dstKind | domain | otype | phase
 meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
 ```
+
+The placements **def columns (`name`…`nya`) are written ONLY for custom objects** —
+items whose id is not in the baked `TENTS` (`isBakedTent()` is false). A baked library
+tent leaves them blank and is still resolved by id through `refOf()`, so re-importing
+the Excel library keeps updating already-placed items live (do **not** start writing
+def columns for baked tents — that would freeze them at their saved snapshot). On load,
+`placementRef()` resolves a placement against the current library first; only when the
+id is absent (a custom object made in another browser) does it rebuild the item from
+its def columns, falling back to an id-named stub for old pre-def-column rows. Widening
+the range needed **no** manual sheet change — the columns already existed empty, and an
+`UNFORMATTED_VALUE` read drops the trailing blanks so baked-tent rows still read back as
+four cells. **`mSave` calls `queueSheetSave()`** so renaming/editing an item actually
+pushes — without it the edit only touched `localStorage` and the plan never re-synced.
 
 `meta` is a **single data row** (`A2:G2`), not key/value pairs. That keeps every tab
 the same shape — header row plus data rows — so one `rowsToObjects()` helper parses

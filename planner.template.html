@@ -615,6 +615,7 @@ document.getElementById('mSave').onclick=()=>{
   renderList(document.getElementById('search').value);
   refreshAll(); redrawCables();
   if(currentTab==='el') renderLegend();
+  queueSheetSave();   // push the edited name/def so the public view (and other admins) update
 };
 
 /* The base image and scale (ppm) are fixed: the image is the committed
@@ -675,17 +676,43 @@ function renderLegend(){
 
 /* ---------- Google Sheets sync (shared project state) ----------
    Stores ONLY what the app saves: placements, el/water networks, and a little
-   metadata. NOT the tent library (that keeps its Excel pipeline). Four flat tabs,
-   each a header row plus data rows, so one rowsToObjects() parses them all.
-   No cell holds JSON: view is three columns, node outputs are five columns. */
+   metadata. NOT the Excel tent library (that keeps its Excel pipeline). Four flat
+   tabs, each a header row plus data rows, so one rowsToObjects() parses them all.
+   No cell holds JSON: view is three columns, node outputs are five columns.
+
+   The placements tab carries the extra def columns (name..nya) ONLY for custom
+   objects — user-created items that exist in no browser but the one that made them.
+   Baked library tents leave those cells blank and are still resolved by id through
+   refOf(), so re-importing the library keeps updating placed items live. On load a
+   placement whose id is not in the library is rebuilt from its def columns (a custom
+   object made elsewhere), falling back to an id-named stub for pre-def-column rows. */
 const SHEET_HEADERS={
-  placements:['tentId','x','y','rot'],
+  placements:['tentId','x','y','rot','name','placering','electricity','water','shape','length','width','color','nya'],
   nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125'],
   cables:['src','dst','dstKind','domain','otype','phase'],
   meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy']
 };
-const SHEET_RANGES={placements:'placements!A1:D',nodes:'nodes!A1:L',cables:'cables!A1:F',meta:'meta!A1:G'};
-const SHEET_CLEAR=['placements!A2:D','nodes!A2:L','cables!A2:F','meta!A2:G'];
+const SHEET_RANGES={placements:'placements!A1:M',nodes:'nodes!A1:L',cables:'cables!A1:F',meta:'meta!A1:G'};
+const SHEET_CLEAR=['placements!A2:M','nodes!A2:L','cables!A2:F','meta!A2:G'];
+/* Is this id one of the baked-in Excel library tents (vs. a custom object)? Only
+   non-baked items get their definition written to / read from the sheet. */
+function isBakedTent(id){ return TENTS.some(x=>String(x.id)===String(id)); }
+function placementRow(t){
+  const base=[t.ref.id,t.lng,t.lat,t.rot||0];
+  if(isBakedTent(t.ref.id)) return base.concat(['','','','','','','','','']);   // library tent: def resolved by id
+  const r=refOf(t);                                                             // custom object: carry its def
+  return base.concat([r.name||'', r.placering||'', r.electricity||'', r.water?1:0,
+    r.shape==='circle'?'circle':'rect', r.length!=null?r.length:'', r.width!=null?r.width:'',
+    r.color||'', r.nya?1:0]);
+}
+function placementRef(o){
+  const lib=library.find(x=>String(x.id)===String(o.tentId));
+  if(lib) return Object.assign({},lib);                                         // resolve library tents live
+  if(!isBlank(o.name)) return {id:o.tentId,name:String(o.name),placering:o.placering||'',
+    electricity:o.electricity||'',water:gbool(o.water),shape:o.shape==='circle'?'circle':'rect',
+    length:gnum(o.length),width:gnum(o.width),color:(o.color&&String(o.color))||'#C9CDD6',nya:gnum(o.nya)||0};
+  return {id:o.tentId,name:String(o.tentId),placering:'',length:null,width:null,color:'#C9CDD6',electricity:'',water:false,nya:0};
+}
 /* Config is hard-coded here — there is no in-app settings UI. */
 const SHEET_DEFAULTS={
   spreadsheetId:'1H47rLODVURUOy91OeuWh-uJiDcj79c-K8Q_HZxNeDDM',
@@ -818,7 +845,7 @@ function metaRow(savedAt,savedBy){
 }
 function sheetData(savedAt,savedBy){
   return [
-    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>[t.ref.id,t.lng,t.lat,t.rot||0]))},
+    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(placementRow))},
     {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(nodeToRow))},
     {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(cableToRow))},
     {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy)]}
@@ -834,9 +861,7 @@ function applySheetState(P,N,C,M,keepView){
   const useView=cur||view;
   if(useView) lsSet(LS.view,useView);
   P.forEach(o=>{
-    const lib=library.find(x=>String(x.id)===String(o.tentId));
-    const ref=lib?Object.assign({},lib):{id:o.tentId,name:String(o.tentId),placering:'',length:null,width:null,color:'#C9CDD6',electricity:'',water:false,nya:0};
-    placed.push({uid:uidSeq++,ref:ref,lat:gnum(o.y),lng:gnum(o.x),rot:gnum(o.rot)||0,marker:null});
+    placed.push({uid:uidSeq++,ref:placementRef(o),lat:gnum(o.y),lng:gnum(o.x),rot:gnum(o.rot)||0,marker:null});
   });
   placedIds=new Set(placed.map(t=>t.ref.id));
   savePlaced();
