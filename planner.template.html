@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Marknad Tent Planner — Medeltidsveckan 2026</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{--bg:#1c1e26;--panel:#23262f;--panel2:#2b2f3a;--line:#3a3f4d;--txt:#e8eaf0;--muted:#9aa0b0;--accent:#e0a94a;--accent2:#4a90e0;--danger:#e05a5a;--ok:#5ac47a}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt)}
+  #app{display:flex;height:100vh;overflow:hidden}
+  #sidebar{width:340px;min-width:340px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;height:100%}
+  #sidebar h1{font-size:15px;margin:0;padding:14px 16px;border-bottom:1px solid var(--line)}
+  #sidebar h1 small{display:block;color:var(--muted);font-weight:400;font-size:11px;margin-top:3px}
+  .bar{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .bar input[type=search]{flex:1;min-width:120px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:7px 10px;border-radius:7px;font-size:13px}
+  button{cursor:pointer;font-size:12px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);padding:7px 10px;border-radius:7px;font-family:inherit}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);color:#221a08;border-color:var(--accent);font-weight:600}
+  button.primary:hover{filter:brightness(1.08)}
+  .hint{color:var(--muted);font-size:11px;padding:2px 14px 8px;line-height:1.5}
+  .tabs{display:flex;border-bottom:1px solid var(--line)}
+  .tabs .tab{flex:1;border:none;border-radius:0;background:transparent;padding:11px;font-size:13px;color:var(--muted);border-bottom:2px solid transparent}
+  .tabs .tab:hover{color:var(--txt)}
+  .tabs .tab.on{color:var(--txt);border-bottom-color:var(--accent);font-weight:600}
+  #elLegend{padding:6px 4px}
+  .legrow{display:flex;align-items:center;gap:10px;padding:9px 10px;margin:5px 6px;background:var(--panel2);border:1px solid var(--line);border-radius:9px}
+  .legrow .lname{flex:1;font-size:12.5px;font-weight:600}
+  .legrow .lcount{font-size:12px;color:var(--muted)}
+  #tentList{flex:1;min-height:0;overflow-y:auto;padding:6px 8px 40px}
+  #elUI,#vattenUI{flex:1;min-height:0;overflow-y:auto;padding-bottom:40px}
+  #placementUI{flex:none}
+  .grouphdr{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);padding:10px 8px 3px}
+  .tent{display:flex;align-items:center;gap:10px;padding:8px 9px;margin:5px 4px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;cursor:grab;user-select:none;transition:border-color .12s,transform .06s}
+  .tent:hover{border-color:var(--accent)}
+  .tent:active{cursor:grabbing;transform:scale(.99)}
+  .tent.armed{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2) inset}
+  .sw{width:26px;height:26px;border-radius:6px;flex:none;border:1px solid rgba(255,255,255,.25);position:relative;overflow:hidden}
+  .sw .stripes{position:absolute;inset:0;background:repeating-linear-gradient(45deg,#ff1493 0 4px,transparent 4px 9px)}
+  .tinfo{flex:1;min-width:0}
+  .tname{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tmeta{font-size:11px;color:var(--muted);margin-top:2px;display:flex;gap:8px}
+  .tmeta .letters{color:var(--accent);font-weight:700}
+  .editbtn{font-size:11px;padding:5px 9px;flex:none}
+  .delbtn{font-size:11px;padding:5px 8px;flex:none;color:var(--muted)}
+  .delbtn:hover{border-color:var(--danger);color:var(--danger)}
+  #mapWrap{flex:1;position:relative}
+  #map{position:absolute;inset:0}
+  #topbar{position:absolute;top:10px;left:10px;z-index:600;display:flex;gap:8px;align-items:center;background:rgba(20,22,30,.92);border:1px solid var(--line);border-radius:10px;padding:6px 8px;flex-wrap:wrap;max-width:calc(100% - 20px)}
+  #topbar .lbl{font-size:11px;color:var(--muted)}
+  #topbar .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  #topbar .seg button{border:none;border-radius:0;padding:6px 12px}
+  #topbar .seg button.on{background:var(--accent2);color:#fff}
+  #dropHint{position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:500;background:rgba(20,22,30,.9);border:1px solid var(--line);color:var(--txt);padding:8px 14px;border-radius:20px;font-size:12px;pointer-events:none;opacity:0;transition:opacity .15s}
+  #mapWrap.dragover #dropHint{opacity:1;border-color:var(--accent2)}
+  #banner{position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:550;background:var(--accent2);color:#fff;padding:8px 14px;border-radius:20px;font-size:12px;display:none;box-shadow:0 3px 12px rgba(0,0,0,.4);max-width:80%;text-align:center}
+  #banner.warn{background:#8a5a1a;border:1px solid var(--accent)}
+  .tent-box{position:relative;border:1.5px solid rgba(0,0,0,.6);box-sizing:border-box;cursor:move}
+  .tent-box .stripes{position:absolute;inset:0;background:repeating-linear-gradient(45deg,#ff1493 0 6px,transparent 6px 13px);pointer-events:none}
+  .tent-box.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--accent2);z-index:1000!important}
+  .tent-cap{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;pointer-events:none;text-align:center;line-height:1.12;white-space:nowrap}
+  .tent-cap .ln{display:inline-block;font-size:11px;font-weight:700;color:#fff;background:rgba(15,17,22,.74);padding:0 4px;border-radius:4px}
+  .tent-cap .ltr{display:block;font-size:11px;font-weight:800;color:#ffe08a;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000;letter-spacing:.5px;margin-top:1px}
+  #tentCtl{position:absolute;z-index:1200;display:none;gap:4px;background:rgba(20,22,30,.95);padding:5px;border-radius:22px;border:1px solid var(--line);transform:translate(-50%,-100%);box-shadow:0 4px 14px rgba(0,0,0,.5)}
+  #tentCtl button{width:34px;height:34px;border-radius:50%;padding:0;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;font-variant-emoji:text}
+  #tentCtl button.del{border-color:var(--danger);color:var(--danger)}
+  #tentCtl button.del:hover{background:var(--danger);color:#fff}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:3000;display:none;align-items:center;justify-content:center}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;width:340px;max-width:92vw}
+  .modal h3{margin:0 0 6px;font-size:15px}
+  .modal p{color:var(--muted);font-size:12px;line-height:1.5;margin:6px 0}
+  .modal label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  .modal input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:8px 10px;border-radius:7px;font-size:13px}
+  .row{display:flex;gap:10px}.row>div{flex:1}
+  .modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+  .leaflet-container{background:#111;outline:none}
+  .calib #map{cursor:crosshair}
+  .wirebtn.on{background:var(--accent2);color:#fff;border-color:var(--accent2);font-weight:600}
+  .wiring #map{cursor:crosshair}
+  path.nya-fill{fill:url(#nyaPat);fill-opacity:.95;pointer-events:none}
+  .leaflet-overlay-pane path{cursor:move}
+  #topbar .grp{display:flex;gap:6px;align-items:center}
+  .node{width:58px;height:44px;background:#181b22;border:2px solid #888;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+  .node.source{background:#0e2033;border-radius:50%}
+  .node .er{font-size:12px;font-weight:800;color:#fff;line-height:1}
+  .node .eu{font-size:9px;font-weight:600;margin-top:1px}
+  .node.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px #ff2ec4}
+  .node.hl{box-shadow:0 0 0 3px #ffd400,0 0 12px rgba(255,212,0,.6)}
+  .node.sel.hl{box-shadow:0 0 0 2px #fff,0 0 0 5px #ffd400}
+  .node.water{background:#0d2436}
+  .node.water.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px #2b8cff}
+  .node.brunn{border-radius:50%}
+  .legsub{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);padding:12px 10px 3px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <h1>Marknad Tent Planner<small>Medeltidsveckan 2026</small></h1>
+    <div class="tabs">
+      <button id="tabPlacering" class="tab on">Placering</button>
+      <button id="tabEl" class="tab">El</button>
+      <button id="tabVatten" class="tab">Vatten</button>
+    </div>
+    <div class="bar" id="projectBar">
+      <button id="saveProjBtn" class="primary">Save project</button>
+      <button id="loadProjBtn">Load project</button>
+      <input type="file" id="loadProjFile" accept=".json,application/json" style="display:none"/>
+    </div>
+    <div id="placementUI">
+      <div class="bar">
+        <input type="search" id="search" placeholder="Search tents…"/>
+        <button id="addCustom" class="primary">+ Add custom object</button>
+      </div>
+      <div class="bar" style="border-top:none">
+        <button id="importBtn">Import Excel</button>
+        <button id="clearPlaced">Clear placed</button>
+        <button id="restoreBtn" style="display:none">Restore removed</button>
+        <input type="file" id="importFile" accept=".xlsx,.xlsm" style="display:none"/>
+        <span style="flex:1"></span>
+        <span class="hint" id="counts" style="padding:6px 0"></span>
+      </div>
+      <div class="hint">Drag a tent onto the plan, or click it then click the plan. Each tent is placed once and leaves the list. Double-click a placed tent to edit it. Select a placed tent to rotate (left / right arrows, Shift = fine, or the rotate buttons); delete it to return it to the list.</div>
+    </div>
+    <div id="tentList"></div>
+    <div id="elUI" style="display:none">
+      <div class="hint">Electrical view. Add a <b>Source</b> (a popup sets its amps and outputs) and cabinets from the toolbar. To wire, turn on the <b>Wire</b> tool, click a source/cabinet, then click what it feeds. With Wire off, clicking just selects and highlights the supply chain. Cabinets are three-phase: single-phase 220V loads are balanced across L1/L2/L3, three-phase loads sit on all phases, and any phase over the rating is flagged red. Click a cable to remove it; select a node and press Delete.</div>
+      <div id="elLegend"></div>
+    </div>
+    <div id="vattenUI" style="display:none">
+      <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. Click a pipe to remove it; select a fixture and press Delete.</div>
+      <div id="vattenLegend"></div>
+    </div>
+  </div>
+
+  <div id="mapWrap">
+    <div id="map"></div>
+    <div id="topbar">
+      <button id="uploadImgBtn" class="primary">Upload image</button>
+      <input type="file" id="imgFile" accept="image/*" style="display:none"/>
+      <button id="calibBtn">Set scale</button>
+      <span class="lbl" id="scaleReadout">not calibrated</span>
+      <div class="grp" id="placeringControls">
+        <button id="lettersBtn" class="wirebtn on" title="Show or hide the Placering letters on tents">Letters</button>
+      </div>
+      <div class="grp" id="elControls" style="display:none">
+        <button class="ela" data-src="1">Source</button>
+        <span class="lbl">cabinet</span>
+        <button class="ela" data-r="125">125A</button>
+        <button class="ela" data-r="63">63A</button>
+        <button class="ela" data-r="32">32A</button>
+        <button class="ela" data-r="16">16A</button>
+        <button class="ela" data-custom="1">Custom</button>
+        <button id="wireEl" class="wirebtn">Wire</button>
+      </div>
+      <div class="grp" id="vattenControls" style="display:none">
+        <button class="wta" data-w="brunn">Brunn</button>
+        <button class="wta" data-w="handfat">Handfat</button>
+        <button id="wireVa" class="wirebtn">Wire</button>
+      </div>
+    </div>
+    <div id="dropHint">Drop to place tent here</div>
+    <div id="banner"></div>
+    <div id="tentCtl">
+      <button id="rotL" title="Rotate left (left arrow)">&#8634;</button>
+      <button id="rotR" title="Rotate right (right arrow)">&#8635;</button>
+      <button id="delBtn" class="del" title="Delete (returns to list)">&#10005;</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h3 id="modalTitle">Add custom object</h3>
+    <label>Name</label><input id="mName" placeholder="Name"/>
+    <label>Letters (Placering)</label><input id="mLetters" placeholder="e.g. MAT, STV3"/>
+    <div class="row">
+      <div><label>Power input (electricity)</label><input id="mEl" placeholder="e.g. 220v 6A, none"/></div>
+      <div><label>Water input</label><select id="mWater" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:8px;border-radius:7px"><option value="0">No</option><option value="1">Yes</option></select></div>
+    </div>
+    <label>Shape</label>
+    <select id="mShape" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:8px;border-radius:7px"><option value="rect">Rectangle</option><option value="circle">Circle</option></select>
+    <div class="row">
+      <div><label id="mLenLabel">Length (m)</label><input id="mLen" type="number" step="0.1" value="3"/></div>
+      <div id="mWidWrap"><label>Width (m)</label><input id="mWid" type="number" step="0.1" value="3"/></div>
+    </div>
+    <div class="row">
+      <div><label>Colour</label><input id="mColor" type="color" value="#B6D7A8" style="height:38px;padding:2px"/></div>
+      <div><label>Pink stripes (Nya)</label>
+        <select id="mNya" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:8px;border-radius:7px"><option value="0">No</option><option value="1">Yes</option></select>
+      </div>
+    </div>
+    <div class="actions"><button id="mCancel">Cancel</button><button id="mSave" class="primary">Save</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="srcBg">
+  <div class="modal">
+    <h3 id="srcTitle">Power source</h3>
+    <p>Set the rating and which outputs this unit provides. The rating applies <b>per phase</b> (L1/L2/L3), so a 63A unit carries 63A on each of L1/L2/L3 (three 32A tents fit easily, one per phase).</p>
+    <label>Rating / incoming current (A)</label><input id="srcAmp" type="number" min="1" step="1" value="63"/>
+    <label id="srcUnlRow" style="display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--txt)">
+      <input type="checkbox" id="srcUnl" checked style="width:auto"/> Unlimited outputs (limited only by amps)
+    </label>
+    <div id="srcOuts" style="display:none">
+      <div class="row">
+        <div><label>220V outputs</label><input id="o220" type="number" min="0" step="1" value="4"/></div>
+        <div><label>16A outputs</label><input id="o16" type="number" min="0" step="1" value="1"/></div>
+      </div>
+      <div class="row">
+        <div><label>32A outputs</label><input id="o32" type="number" min="0" step="1" value="1"/></div>
+        <div><label>63A outputs</label><input id="o63" type="number" min="0" step="1" value="1"/></div>
+      </div>
+      <div class="row">
+        <div><label>125A outputs</label><input id="o125" type="number" min="0" step="1" value="0"/></div>
+        <div></div>
+      </div>
+    </div>
+    <div class="actions"><button id="srcCancel">Cancel</button><button id="srcSave" class="primary">Save</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="calibBg">
+  <div class="modal">
+    <h3>Set the scale</h3>
+    <p>Find something in your image whose real length you know — a path length, a building edge, the width of the open field. Click <b>Start</b>, then click its two ends on the image. You'll then enter that real length in metres.</p>
+    <div class="actions"><button id="calibCancel">Cancel</button><button id="calibStart" class="primary">Start clicking</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="lenBg">
+  <div class="modal">
+    <h3>Real length</h3>
+    <p>How long is the line you just drew, in metres?</p>
+    <label>Metres</label><input id="lenInput" type="number" step="0.1" value="10"/>
+    <div class="actions"><button id="lenCancel">Cancel</button><button id="lenSave" class="primary">Save scale</button></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const TENTS = __TENTS_JSON__;
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2'};
+function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+let customTents=lsGet(LS.custom,[]);
+let edits=lsGet(LS.edits,{});
+let removed=new Set(lsGet(LS.removed,[]));
+let showLetters=lsGet(LS.letters,true);
+function saveRemoved(){ lsSet(LS.removed,[...removed]); }               // per-id field overrides
+let editingId=null;                         // which tent the modal is editing (null = add new)
+function applyEdits(t){ const e=edits[t.id]; return e?Object.assign({},t,e):t; }
+/* Placed items link LIVE to the library: they resolve by id each render, so re-importing
+   or editing the source data updates them in place. Falls back to the stored snapshot
+   if that id no longer exists (e.g. vendor removed from the sheet). */
+function refOf(t){
+  const lib=library.find(x=>String(x.id)===String(t.ref.id));
+  return applyEdits(lib||t.ref);
+}
+let library=TENTS.concat(customTents);
+let imgData=lsGet(LS.img,null), imgBounds=null, imgOverlay=null;
+let ppm=lsGet(LS.ppm,null);
+let currentTab='placering';
+const EL_COLORS={'220v 6A':'#9FC5E8','380v 16A':'#F9CB9C','380v 32A':'#E06666','none':'#C9CDD6','':'#8A90A0'};
+const EL_LIST=['220v 6A','380v 16A','380v 32A','none','']; // legend order
+function elColor(e){ e=(e||'').trim(); return EL_COLORS[e]!==undefined?EL_COLORS[e]:'#C4A6E0'; }
+function elLabel(e){ e=(e||'').trim(); if(e==='none')return 'No el'; if(e==='')return '?'; return e; }
+let placed=[], placedIds=new Set(), selectedUid=null, uidSeq=1, armedRef=null;
+/* El-tab power: source + cabinets (nodes) and cables */
+let nodes=lsGet(LS.nodes,[]);       // [{id,kind:'source'|'elskap',rating,lat,lng}]
+let cables=lsGet(LS.cables,[]);     // [{src,dst,dstKind:'tent'|'node',otype}]
+const nodeMarkers={};               // nodeId -> Leaflet marker
+let cableLines=[];                  // Leaflet polylines (runtime)
+let connectSource=null;             // nodeId selected to connect from
+let armNode=null;                   // {kind,rating} pending placement
+const CABLE_COLOR='#ff2ec4';
+/* chain highlighting (El tab) */
+let hl={nodes:new Set(),tents:new Set(),cables:new Set()};
+function clearHl(){ hl={nodes:new Set(),tents:new Set(),cables:new Set()}; }
+function refreshHl(){ refreshAll(); nodes.forEach(renderNode); redrawCables(); }
+
+/* ---------- map (image plan, CRS.Simple) ---------- */
+const map=L.map('map',{crs:L.CRS.Simple,minZoom:-6,maxZoom:8,zoomSnap:0.25,zoomDelta:0.5,scrollWheelZoom:true,attributionControl:false});
+map.setView([0,0],0);
+map.createPane('cables');     map.getPane('cables').style.zIndex='610';      // above tent boxes (markerPane 600)
+map.createPane('tentlabels'); map.getPane('tentlabels').style.zIndex='620';  // above cables
+map.getPane('tentlabels').style.pointerEvents='none';
+map.createPane('nodes');      map.getPane('nodes').style.zIndex='630';       // cabinets on top
+if(imgData) setImage(imgData,true);
+map.on('zoomend',refreshAll);
+map.on('move zoom',positionCtl);
+map.on('moveend zoomend',()=>{ if(imgBounds){ lsSet(LS.view,{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}); }});
+map.on('click',e=>{
+  if(calibrating){ handleCalibClick(e); return; }
+  if(curDomain()){
+    if(armNode){ addNode(armNode,e.latlng.lat,e.latlng.lng); armNode=null; banner.style.display='none'; return; }
+    if(connectSource){ setConnectSource(null); banner.style.display='none'; clearHl(); refreshHl(); return; }
+    if(hl.nodes.size||hl.tents.size){ clearHl(); refreshHl(); banner.style.display='none'; }
+    return;
+  }
+  if(armedRef){ doPlace(armedRef,e.latlng.lat,e.latlng.lng); return; }
+  deselect();
+});
+
+function setImage(dataURL,restore){
+  imgData=dataURL;
+  const img=new Image();
+  img.onload=()=>{
+    imgBounds=[[0,0],[img.height,img.width]];
+    if(imgOverlay) map.removeLayer(imgOverlay);
+    imgOverlay=L.imageOverlay(dataURL,imgBounds).addTo(map);
+    const v=restore?lsGet(LS.view,null):null;
+    if(v){ map.setView(v.c,v.z); } else { map.fitBounds(imgBounds); }
+    try{ localStorage.setItem(LS.img,JSON.stringify(dataURL)); }catch(e){ flashBanner('Image loaded (too large to remember between sessions).',true); }
+    map.invalidateSize(); refreshAll();
+  };
+  img.src=dataURL;
+}
+
+/* ---------- metres screen pixels ---------- */
+function metersToPx(meters){
+  if(!ppm) return null;
+  const p1=map.latLngToContainerPoint([0,0]);
+  const p2=map.latLngToContainerPoint([0,meters*ppm]);
+  return Math.abs(p2.x-p1.x);
+}
+
+/* ---------- placed tents ---------- */
+/* True-scale tents are drawn as real map polygons (in image-pixel coords via ppm),
+   so they scale exactly with zoom and never drift. Labels stay fixed-size on top. */
+function ensureDefs(){
+  if(document.getElementById('nyaPat'))return;
+  const NS='http://www.w3.org/2000/svg';
+  const host=document.createElementNS(NS,'svg');
+  host.setAttribute('width','0');host.setAttribute('height','0');
+  host.style.cssText='position:absolute;width:0;height:0;overflow:hidden';
+  const defs=document.createElementNS(NS,'defs');
+  const p=document.createElementNS(NS,'pattern');
+  p.setAttribute('id','nyaPat');p.setAttribute('width','14');p.setAttribute('height','14');
+  p.setAttribute('patternUnits','userSpaceOnUse');p.setAttribute('patternTransform','rotate(45)');
+  const mk=(x,w,fill,op)=>{const r=document.createElementNS(NS,'rect');
+    r.setAttribute('x',x);r.setAttribute('width',w);r.setAttribute('height','14');
+    r.setAttribute('fill',fill);r.setAttribute('opacity',op);return r;};
+  p.appendChild(mk(0,7,'#ff1493','1'));      // solid pink band
+  p.appendChild(mk(7,1.5,'#7a0040','.9'));   // dark edge for contrast on light fills
+  defs.appendChild(p);host.appendChild(defs);document.body.appendChild(host);
+}
+function tentCorners(t){
+  const ref=refOf(t);
+  const hw=((ref.width||3)*ppm)/2, hh=((ref.length||3)*ppm)/2;
+  if(ref.shape==='circle'){
+    const r=Math.max(hw,hh), pts=[];
+    for(let i=0;i<36;i++){ const a=i/36*2*Math.PI; pts.push([t.lat+r*Math.sin(a), t.lng+r*Math.cos(a)]); }
+    return pts;
+  }
+  const th=(t.rot||0)*Math.PI/180, cos=Math.cos(th), sin=Math.sin(th);
+  return [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(([u,v])=>{
+    const x=u*cos-v*sin, y=u*sin+v*cos;
+    return [t.lat-y, t.lng+x];
+  });
+}
+function tentStyle(t){
+  const ref=refOf(t);
+  const isEl=currentTab==='el';
+  const fill=isEl?elColor(ref.electricity):ref.color;
+  const sel=t.uid===selectedUid, hlt=hl.tents.has(t.ref.id), wat=(currentTab==='vatten'&&ref.water);
+  return {color: sel?'#ffffff':(hlt?'#ffd400':(wat?'#2b8cff':'rgba(0,0,0,.65)')),
+          weight: sel?3:((hlt||wat)?3:1.5), fillColor:fill, fillOpacity:.85};
+}
+function capHtmlFor(t){
+  const ref=refOf(t);
+  const sub=currentTab==='el'?elLabel(ref.electricity):(showLetters?ref.placering:'');
+  const letters=sub?`<span class="ltr">${esc(sub)}</span>`:'';
+  return `<div class="tent-cap"><span class="ln">${esc(ref.name)}</span>${letters}</div>`;
+}
+function tentClick(t,e){
+  L.DomEvent.stopPropagation(e);
+  if(currentTab==='el'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); else highlightFromTent(t.ref.id); return; }
+  if(currentTab==='vatten'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); return; }
+  selectTent(t.uid);
+}
+function attachPolyHandlers(t){
+  t.poly.on('click',e=>tentClick(t,e));
+  t.poly.on('dblclick',e=>{L.DomEvent.stopPropagation(e); if(currentTab==='placering') openEdit(refOf(t));});
+  t.poly.on('mousedown',e=>{
+    if(currentTab!=='placering')return;
+    L.DomEvent.stop(e); selectTent(t.uid); map.dragging.disable();
+    const s=e.latlng, o={lat:t.lat,lng:t.lng};
+    const move=ev=>{ t.lat=o.lat+(ev.latlng.lat-s.lat); t.lng=o.lng+(ev.latlng.lng-s.lng);
+                     t.poly.setLatLngs(tentCorners(t)); if(t.nyaPoly)t.nyaPoly.setLatLngs(tentCorners(t));
+                     t.label.setLatLng([t.lat,t.lng]); positionCtl(); };
+    const up=()=>{ map.off('mousemove',move); map.off('mouseup',up); map.dragging.enable(); savePlaced(); if(curDomain())redrawCables(); };
+    map.on('mousemove',move); map.on('mouseup',up);
+  });
+}
+function renderTentMarker(t){
+  const ref=refOf(t);
+  const capIcon=L.divIcon({className:'tent-cap-div',html:capHtmlFor(t),iconSize:[0,0],iconAnchor:[0,0]});
+  if(!t.label) t.label=L.marker([t.lat,t.lng],{icon:capIcon,pane:'tentlabels',interactive:false}).addTo(map);
+  else { t.label.setIcon(capIcon); t.label.setLatLng([t.lat,t.lng]); }
+
+  if(ppm){
+    if(t.marker){ map.removeLayer(t.marker); t.marker=null; }
+    const corners=tentCorners(t);
+    if(!t.poly){ ensureDefs(); t.poly=L.polygon(corners,tentStyle(t)).addTo(map); attachPolyHandlers(t); }
+    else { t.poly.setLatLngs(corners); t.poly.setStyle(tentStyle(t)); }
+    if(ref.nya && currentTab!=='el'){
+      if(!t.nyaPoly){ ensureDefs(); t.nyaPoly=L.polygon(corners,{className:'nya-fill',stroke:true,color:'#ff1493',weight:2.5,opacity:1,fillOpacity:1,interactive:false}).addTo(map); }
+      else t.nyaPoly.setLatLngs(corners);
+    }else if(t.nyaPoly){ map.removeLayer(t.nyaPoly); t.nyaPoly=null; }
+    return;
+  }
+  // fixed-size token mode (or before calibration)
+  if(t.poly){ map.removeLayer(t.poly); t.poly=null; }
+  if(t.nyaPoly){ map.removeLayer(t.nyaPoly); t.nyaPoly=null; }
+  const W=ref.width||3, L2=ref.length||3, base=46, m=Math.max(W,L2)||1;
+  const w=Math.max(9,(W/m)*base), h=Math.max(9,(L2/m)*base);
+  const isEl=currentTab==='el';
+  const color=isEl?elColor(ref.electricity):ref.color;
+  const stripes=(!isEl && ref.nya)?'<div class="stripes"></div>':'';
+  const wring=(currentTab==='vatten'&&ref.water)?';box-shadow:0 0 0 2px #2b8cff':(hl.tents.has(t.ref.id)?';box-shadow:0 0 0 3px #ffd400':'');
+  const boxHtml=`<div class="tent-box ${t.uid===selectedUid?'sel':''}" style="width:${w}px;height:${h}px;background:${color};transform:rotate(${t.rot}deg)${wring}">${stripes}</div>`;
+  const boxIcon=L.divIcon({className:'tent-div',html:boxHtml,iconSize:[w,h],iconAnchor:[w/2,h/2]});
+  if(!t.marker){
+    t.marker=L.marker([t.lat,t.lng],{icon:boxIcon,draggable:true,autoPan:true}).addTo(map);
+    t.marker.on('dragstart',()=>selectTent(t.uid));
+    t.marker.on('drag',()=>{const p=t.marker.getLatLng();t.lat=p.lat;t.lng=p.lng;t.label.setLatLng(p);positionCtl();if(curDomain())redrawCables();});
+    t.marker.on('dragend',()=>{savePlaced();if(curDomain())redrawCables();});
+    t.marker.on('click',e=>tentClick(t,e));
+    t.marker.on('dblclick',e=>{L.DomEvent.stopPropagation(e); if(currentTab==='placering') openEdit(refOf(t));});
+  }else{ t.marker.setIcon(boxIcon); t.marker.setLatLng([t.lat,t.lng]); }
+  t.marker.setZIndexOffset(t.uid===selectedUid?1000:0);
+  if(t.marker.dragging){ curDomain()?t.marker.dragging.disable():t.marker.dragging.enable(); }
+}
+function removeTentMarker(t){
+  ['marker','label','poly','nyaPoly'].forEach(k=>{ if(t[k])map.removeLayer(t[k]); t[k]=null; });
+}
+function refreshAll(){ placed.forEach(renderTentMarker); positionCtl(); }
+function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); }
+function loadPlaced(){ placed=[]; (lsGet(LS.placed,[])||[]).forEach(a=>{placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null});}); placedIds=new Set(placed.map(t=>t.ref.id)); }
+function doPlace(ref,lat,lng){
+  const t={uid:uidSeq++,ref:Object.assign({},ref),lat,lng,rot:0,marker:null};
+  placed.push(t); placedIds.add(ref.id); renderTentMarker(t); selectTent(t.uid); savePlaced();
+  armedRef=null; document.querySelectorAll('.tent.armed').forEach(x=>x.classList.remove('armed')); banner.style.display='none';
+  renderList(document.getElementById('search').value);
+}
+
+/* ---------- selection ---------- */
+const ctl=document.getElementById('tentCtl');
+function applySelStyles(){
+  placed.forEach(t=>{
+    if(t.poly){ t.poly.setStyle(tentStyle(t)); if(t.uid===selectedUid&&t.poly.bringToFront)t.poly.bringToFront(); return; }
+    if(!t.marker)return; const el=t.marker.getElement(); if(!el)return;
+    const box=el.querySelector('.tent-box'); if(box) box.classList.toggle('sel',t.uid===selectedUid);
+    t.marker.setZIndexOffset(t.uid===selectedUid?1000:0); });
+}
+function selectTent(uid){ selectedUid=uid; applySelStyles(); const t=placed.find(x=>x.uid===uid); if(t){ctl.style.display='flex';positionCtl();} }
+function deselect(){ selectedUid=null; applySelStyles(); ctl.style.display='none'; }
+function positionCtl(){
+  if(selectedUid==null){ctl.style.display='none';return;}
+  const t=placed.find(x=>x.uid===selectedUid); if(!t){ctl.style.display='none';return;}
+  const pt=map.latLngToContainerPoint([t.lat,t.lng]);
+  const h=metersToPx(t.ref.length||3)||46;
+  ctl.style.left=pt.x+'px'; ctl.style.top=(pt.y-h/2-12)+'px';
+}
+function rotate(d){ const t=placed.find(x=>x.uid===selectedUid); if(!t)return; t.rot=(t.rot+d)%360; renderTentMarker(t); savePlaced(); }
+document.getElementById('rotL').onclick=()=>rotate(-15);
+document.getElementById('rotR').onclick=()=>rotate(15);
+document.getElementById('delBtn').onclick=()=>{
+  const t=placed.find(x=>x.uid===selectedUid); if(!t)return;
+  removeTentMarker(t); placed=placed.filter(x=>x.uid!==t.uid); placedIds.delete(t.ref.id);
+  cables=cables.filter(c=>!(c.dstKind==='tent'&&c.dst===t.ref.id)); saveNet(); redrawCables();
+  deselect(); savePlaced(); renderList(document.getElementById('search').value);
+};
+document.addEventListener('keydown',e=>{
+  if(selectedUid==null)return;
+  const tag=(e.target.tagName||'').toLowerCase(); if(tag==='input'||tag==='select')return;
+  if(e.key==='ArrowLeft'){rotate(e.shiftKey?-1:-5);e.preventDefault();}
+  else if(e.key==='ArrowRight'){rotate(e.shiftKey?1:5);e.preventDefault();}
+  else if(e.key==='Delete'||e.key==='Backspace'){document.getElementById('delBtn').click();e.preventDefault();}
+});
+
+/* ---------- sidebar list (sorted by colour, red last, then letters) ---------- */
+const listEl=document.getElementById('tentList');
+const banner=document.getElementById('banner');
+const COLOR_ORDER=['#B6D7A8','#D9EAD3','#C9DAF8','#A4C2F4','#F9CB9C','#FCE5CD','#FFF2CC','#EAD1DC','#CCCCCC','#999999'];
+function colorRank(c){ c=(c||'').toUpperCase(); if(c==='#FF0000')return 999; const i=COLOR_ORDER.map(x=>x.toUpperCase()).indexOf(c); return i<0?900:i; }
+function sortLib(arr){
+  return arr.slice().sort((a,b)=>{
+    const cr=colorRank(a.color)-colorRank(b.color); if(cr)return cr;
+    const la=(a.placering||'').toUpperCase(), lb=(b.placering||'').toUpperCase();
+    if(la&&!lb)return -1; if(!la&&lb)return 1;
+    if(la!==lb)return la<lb?-1:1;
+    return a.name.localeCompare(b.name);
+  });
+}
+function fmtSize(t){ if(t.shape==='circle')return t.length?`${t.length} m dia.`:'no size'; return (t.length&&t.width)?`${t.length}×${t.width} m`:'no size';}
+function updateCounts(){
+  const avail=library.filter(t=>!placedIds.has(t.id)&&!removed.has(String(t.id))).length;
+  document.getElementById('counts').textContent=avail+' available · '+placed.length+' placed'+(removed.size?' · '+removed.size+' removed':'');
+  const rb=document.getElementById('restoreBtn');
+  rb.style.display=removed.size?'':'none'; rb.textContent='Restore removed ('+removed.size+')';
+}
+function renderList(filter=''){
+  const f=(filter||'').trim().toLowerCase();
+  const merged=library.map(applyEdits);
+  const items=sortLib(merged.filter(t=>!placedIds.has(t.id) && !removed.has(String(t.id)) && (!f||t.name.toLowerCase().includes(f)||(t.placering||'').toLowerCase().includes(f))));
+  listEl.innerHTML='';
+  items.forEach(m=>{
+    const el=document.createElement('div'); el.className='tent'; el.draggable=true; el.dataset.id=m.id;
+    el.innerHTML=`<div class="sw" style="background:${m.color};border-radius:${m.shape==='circle'?'50%':'6px'}">${m.nya?'<div class="stripes"></div>':''}</div>
+      <div class="tinfo"><div class="tname">${esc(m.name)}</div><div class="tmeta">${m.placering?`<span class="letters">${esc(m.placering)}</span>`:''}<span>${fmtSize(m)}</span></div></div>
+      <button class="editbtn">Edit</button><button class="delbtn" title="Remove from list">✕</button>`;
+    el.addEventListener('dragstart',ev=>{ev.dataTransfer.setData('text/plain',m.id);ev.dataTransfer.effectAllowed='copy';});
+    el.addEventListener('click',ev=>{
+      if(ev.target.classList.contains('editbtn')){ openEdit(m); return; }
+      if(ev.target.classList.contains('delbtn')){ removeFromList(m); return; }
+      armTent(m,el); });
+    listEl.appendChild(el);
+  });
+  updateCounts();
+}
+function removeFromList(m){
+  const isCustom=customTents.some(c=>String(c.id)===String(m.id));
+  if(!confirm('Remove “'+m.name+'” from the list?'+(isCustom?' This custom object will be deleted.':' You can restore it later.')))return;
+  if(isCustom){
+    customTents=customTents.filter(c=>String(c.id)!==String(m.id));
+    library=library.filter(c=>String(c.id)!==String(m.id));
+    lsSet(LS.custom,customTents);
+  }else{
+    removed.add(String(m.id)); saveRemoved();
+  }
+  renderList(document.getElementById('search').value);
+}
+document.getElementById('restoreBtn').onclick=()=>{
+  if(!removed.size)return;
+  if(confirm('Restore '+removed.size+' removed tent(s) to the list?')){ removed.clear(); saveRemoved(); renderList(document.getElementById('search').value); }
+};
+function armTent(t,el){
+  if(armedRef&&armedRef.id===t.id){armedRef=null;el.classList.remove('armed');banner.style.display='none';return;}
+  armedRef=t; document.querySelectorAll('.tent.armed').forEach(x=>x.classList.remove('armed')); el.classList.add('armed');
+  flashBanner(`Click the plan to place “${t.name}” · Esc to cancel`); banner.classList.remove('warn');
+}
+function withSize(t){ return (t.length&&t.width)?t:Object.assign({},t,{length:t.length||3,width:t.width||3}); }
+function flashBanner(msg,warn){ banner.textContent=msg; banner.style.display='block'; banner.classList.toggle('warn',!!warn); }
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){srcBg.style.display='none';srcEditing=null;armedRef=null;banner.style.display='none';document.querySelectorAll('.tent.armed').forEach(x=>x.classList.remove('armed'));if(calibrating)cancelCalib();}});
+
+/* drag & drop onto plan */
+const mapWrap=document.getElementById('mapWrap');
+mapWrap.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';mapWrap.classList.add('dragover');});
+mapWrap.addEventListener('dragleave',e=>{if(e.target===mapWrap)mapWrap.classList.remove('dragover');});
+mapWrap.addEventListener('drop',e=>{e.preventDefault();mapWrap.classList.remove('dragover');if(currentTab!=='placering')return;const id=e.dataTransfer.getData('text/plain');const t=library.find(x=>String(x.id)===String(id));if(!t||placedIds.has(t.id))return;const ll=map.mouseEventToLatLng(e);doPlace(withSize(applyEdits(t)),ll.lat,ll.lng);});
+
+document.getElementById('search').addEventListener('input',e=>renderList(e.target.value));
+document.getElementById('clearPlaced').onclick=()=>{if(!placed.length)return;if(confirm('Remove all placed tents (they return to the list)?')){placed.forEach(removeTentMarker);placed=[];placedIds=new Set();cables=[];saveNet();redrawCables();deselect();savePlaced();renderList(document.getElementById('search').value);}};
+
+/* ---------- add / edit object ---------- */
+const modalBg=document.getElementById('modalBg');
+const mShape=document.getElementById('mShape');
+function updateShapeUI(){
+  const circle=mShape.value==='circle';
+  document.getElementById('mWidWrap').style.display=circle?'none':'';
+  document.getElementById('mLenLabel').textContent=circle?'Diameter (m)':'Length (m)';
+}
+mShape.onchange=updateShapeUI;
+function openAdd(){
+  editingId=null;
+  document.getElementById('modalTitle').textContent='Add custom object';
+  document.getElementById('mName').value='';
+  document.getElementById('mLetters').value='';
+  document.getElementById('mEl').value='';
+  document.getElementById('mWater').value='0';
+  document.getElementById('mLen').value='3';
+  document.getElementById('mWid').value='3';
+  document.getElementById('mColor').value='#B6D7A8';
+  document.getElementById('mNya').value='0';
+  mShape.value='rect'; updateShapeUI();
+  modalBg.style.display='flex'; document.getElementById('mName').focus();
+}
+function openEdit(m){
+  editingId=m.id;
+  document.getElementById('modalTitle').textContent='Edit object';
+  document.getElementById('mName').value=m.name||'';
+  document.getElementById('mLetters').value=m.placering||'';
+  document.getElementById('mEl').value=m.electricity||'';
+  document.getElementById('mWater').value=String(m.water?1:0);
+  document.getElementById('mLen').value=m.length!=null?m.length:'';
+  document.getElementById('mWid').value=m.width!=null?m.width:'';
+  document.getElementById('mColor').value=/^#[0-9a-fA-F]{6}$/.test(m.color||'')?m.color:'#B6D7A8';
+  document.getElementById('mNya').value=String(m.nya?1:0);
+  mShape.value=m.shape==='circle'?'circle':'rect'; updateShapeUI();
+  modalBg.style.display='flex'; document.getElementById('mName').focus();
+}
+document.getElementById('addCustom').onclick=openAdd;
+document.getElementById('mCancel').onclick=()=>{modalBg.style.display='none';editingId=null;};
+document.getElementById('mSave').onclick=()=>{
+  const name=document.getElementById('mName').value.trim(); if(!name){alert('Name required');return;}
+  const circle=mShape.value==='circle';
+  let len=parseFloat(document.getElementById('mLen').value)||null;
+  let wid=circle?len:(parseFloat(document.getElementById('mWid').value)||null);
+  const data={name,
+    placering:document.getElementById('mLetters').value.trim(),
+    electricity:document.getElementById('mEl').value.trim(),
+    water:document.getElementById('mWater').value==='1',
+    shape:circle?'circle':'rect',
+    length:len, width:wid,
+    color:document.getElementById('mColor').value,
+    nya:parseInt(document.getElementById('mNya').value)||0};
+  if(editingId==null){
+    const t=Object.assign({id:'custom_'+Date.now()},data);
+    if(t.length==null)t.length=3; if(t.width==null)t.width=3;
+    customTents.push(t); library.push(t); lsSet(LS.custom,customTents);
+  }else{
+    edits[editingId]=data; lsSet(LS.edits,edits);
+  }
+  modalBg.style.display='none'; editingId=null;
+  renderList(document.getElementById('search').value);
+  refreshAll(); redrawCables();
+  if(currentTab==='el') renderLegend();
+};
+
+/* ---------- Excel import ---------- */
+document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
+document.getElementById('importFile').addEventListener('change',async e=>{
+  const file=e.target.files[0]; if(!file)return;
+  const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+  const sheetName=wb.SheetNames.find(n=>/utplacering/i.test(n))||wb.SheetNames[0];
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:null});
+  let hr=rows.findIndex(r=>r&&r.some(c=>c&&String(c).trim()==='applicationName'));
+  if(hr<0){alert('Could not find an "applicationName" column.');return;}
+  const H=rows[hr].map(c=>c==null?'':String(c).trim());
+  const col=n=>H.findIndex(h=>h.toLowerCase()===n.toLowerCase());
+  const ci={name:col('applicationName'),len:col('Length'),wid:col('Width'),pl:col('Placering'),nya:col('Nya'),el:col('electricity'),wat:col('water'),tents:col('tents'),id:0};
+  const slug=t=>String(t).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_|_$/g,'').toLowerCase().slice(0,28)||'item';
+  const seenId={};
+  const colorById={};TENTS.forEach(t=>colorById[t.id]=t.color);
+  const palette=['#B6D7A8','#F9CB9C','#D9EAD3','#FCE5CD','#A4C2F4','#EAD1DC'];let p=0;const imported=[];
+  const dimsOf=o=>{ if(o&&o.type==='round'){const d=parseFloat(o.diameter)||0;return d?[d,d]:[null,null];}
+                    const L=parseFloat(o&&o.length)||null,W=parseFloat(o&&o.width)||null; return [L,W]; };
+  for(let i=hr+1;i<rows.length;i++){const r=rows[i];if(!r)continue;const nm=r[ci.name];if(nm==null||String(nm).trim()==='')continue;const idv=r[ci.id];
+    let rid;
+    if(idv!=null&&String(idv).trim()!==''){ rid=idv; }
+    else { rid='x_'+slug(String(nm).trim()); seenId[rid]=(seenId[rid]||0)+1; if(seenId[rid]>1) rid+='_'+seenId[rid]; }
+    const wv=ci.wat>=0?r[ci.wat]:null;
+    const base={id:rid,name:String(nm).trim(),
+      water:(wv!=null&&String(wv).trim()!==''&&!['no','none','0'].includes(String(wv).trim().toLowerCase())),
+      placering:ci.pl>=0&&r[ci.pl]!=null?String(r[ci.pl]).trim():'',
+      nya:ci.nya>=0&&(r[ci.nya]==1||r[ci.nya]==='1')?1:0,
+      electricity:ci.el>=0&&r[ci.el]!=null?String(r[ci.el]).trim():'',
+      color:colorById[idv]||palette[(p++)%palette.length]};
+    let arr=[];
+    if(ci.tents>=0&&r[ci.tents]){ try{ let d=JSON.parse(r[ci.tents]); if(d&&!Array.isArray(d))d=Object.values(d); if(Array.isArray(d))arr=d; }catch(err){} }
+    if(arr.length>1){
+      arr.forEach((o,k)=>{ const [L,W]=dimsOf(o);
+        imported.push(Object.assign({},base,{id:base.id+'-'+(k+1),name:base.name+' ('+(k+1)+'/'+arr.length+')',length:L,width:W})); });
+    }else{
+      let L=ci.len>=0&&r[ci.len]!=null?parseFloat(r[ci.len])||null:null;
+      let W=ci.wid>=0&&r[ci.wid]!=null?parseFloat(r[ci.wid])||null:null;
+      if((!L||!W)&&arr.length===1){ const d=dimsOf(arr[0]); L=L||d[0]; W=W||d[1]; }
+      imported.push(Object.assign({},base,{length:L,width:W}));
+    }}
+  if(!imported.length){alert('No tent rows found.');return;}
+  library=imported.concat(customTents);
+  renderList(document.getElementById('search').value);
+  refreshAll(); redrawCables(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
+  alert('Imported '+imported.length+' tents from “'+sheetName+'”. Placed items updated in place.');e.target.value='';
+});
+
+/* ---------- size toggle ---------- */
+
+/* ---------- image upload ---------- */
+document.getElementById('uploadImgBtn').onclick=()=>document.getElementById('imgFile').click();
+document.getElementById('imgFile').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>downscale(rd.result,2600,url=>{ setImage(url,false); flashBanner('Now set the scale so tents are the right size',true); });
+  rd.readAsDataURL(f); e.target.value='';
+});
+function downscale(dataURL,maxSide,cb){
+  const img=new Image();
+  img.onload=()=>{ let{width:w,height:h}=img; const s=Math.min(1,maxSide/Math.max(w,h));
+    if(s>=1){cb(dataURL);return;}
+    const c=document.createElement('canvas'); c.width=Math.round(w*s); c.height=Math.round(h*s);
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height); cb(c.toDataURL('image/jpeg',0.9)); };
+  img.src=dataURL;
+}
+
+/* ---------- scale calibration ---------- */
+let calibrating=false, calibPts=[], calibLine=null;
+const calibBg=document.getElementById('calibBg'), lenBg=document.getElementById('lenBg');
+document.getElementById('calibBtn').onclick=()=>{ if(!imgData){alert('Upload an image first.');return;} calibBg.style.display='flex'; };
+document.getElementById('calibCancel').onclick=()=>calibBg.style.display='none';
+document.getElementById('calibStart').onclick=()=>{ calibBg.style.display='none'; startCalib(); };
+function startCalib(){ calibrating=true; calibPts=[]; mapWrap.classList.add('calib'); if(calibLine){map.removeLayer(calibLine);calibLine=null;} flashBanner('Click the FIRST end of your known line…',true); }
+function handleCalibClick(e){
+  calibPts.push(e.latlng);
+  if(calibPts.length===1){ flashBanner('Now click the SECOND end…',true); }
+  else if(calibPts.length===2){
+    calibLine=L.polyline(calibPts,{color:'#ffd24a',weight:3,dashArray:'5,5'}).addTo(map);
+    calibrating=false; mapWrap.classList.remove('calib'); lenBg.style.display='flex'; document.getElementById('lenInput').focus();
+  }
+}
+function cancelCalib(){ calibrating=false; calibPts=[]; mapWrap.classList.remove('calib'); banner.style.display='none'; }
+document.getElementById('lenCancel').onclick=()=>{ lenBg.style.display='none'; if(calibLine){map.removeLayer(calibLine);calibLine=null;} };
+document.getElementById('lenSave').onclick=()=>{
+  const meters=parseFloat(document.getElementById('lenInput').value); if(!meters||meters<=0){alert('Enter a length in metres.');return;}
+  const a=map.project(calibPts[0],0), b=map.project(calibPts[1],0);
+  ppm=Math.hypot(a.x-b.x,a.y-b.y)/meters; lsSet(LS.ppm,ppm);
+  lenBg.style.display='none'; if(calibLine){map.removeLayer(calibLine);calibLine=null;}
+  updateScaleReadout(); refreshAll(); flashBanner('Scale set — drag tents onto the image.',false); setTimeout(()=>banner.style.display='none',2500);
+};
+function updateScaleReadout(){ const el=document.getElementById('scaleReadout'); el.textContent=ppm?`${ppm.toFixed(1)} px/m`:'not calibrated'; el.style.color=ppm?'var(--ok)':'var(--muted)'; }
+
+/* ---------- tabs (Placering / El / Vatten) ---------- */
+function setTab(tab){
+  currentTab=tab;
+  document.getElementById('tabPlacering').classList.toggle('on',tab==='placering');
+  document.getElementById('tabEl').classList.toggle('on',tab==='el');
+  document.getElementById('tabVatten').classList.toggle('on',tab==='vatten');
+  const pl=tab==='placering';
+  document.getElementById('placementUI').style.display=pl?'':'none';
+  document.getElementById('tentList').style.display=pl?'':'none';
+  document.getElementById('elUI').style.display=tab==='el'?'':'none';
+  document.getElementById('vattenUI').style.display=tab==='vatten'?'':'none';
+  document.getElementById('placeringControls').style.display=pl?'flex':'none';
+  document.getElementById('elControls').style.display=tab==='el'?'flex':'none';
+  document.getElementById('vattenControls').style.display=tab==='vatten'?'flex':'none';
+  armedRef=null; document.querySelectorAll('.tent.armed').forEach(x=>x.classList.remove('armed'));
+  armNode=null; connectSource=null; banner.style.display='none'; clearHl();
+  wireMode=false; document.getElementById('wireEl').classList.remove('on'); document.getElementById('wireVa').classList.remove('on'); mapWrap.classList.remove('wiring');
+  deselect();
+  refreshAll();
+  showDomainLayers();
+  if(tab==='el') renderLegend();
+  if(tab==='vatten') renderVattenLegend();
+}
+document.getElementById('tabPlacering').onclick=()=>setTab('placering');
+document.getElementById('tabEl').onclick=()=>setTab('el');
+document.getElementById('tabVatten').onclick=()=>setTab('vatten');
+function renderLegend(){
+  const el=document.getElementById('elLegend'); if(!el)return; el.innerHTML='';
+  const cnt={}; placed.forEach(t=>{const e=(refOf(t).electricity||'').trim(); cnt[e]=(cnt[e]||0)+1;});
+  const t1=document.createElement('div'); t1.className='legsub'; t1.textContent='Power type'; el.appendChild(t1);
+  EL_LIST.forEach(v=>{
+    const row=document.createElement('div'); row.className='legrow';
+    row.innerHTML=`<div class="sw" style="background:${elColor(v)}"></div><div class="lname">${esc(elLabel(v))}</div><div class="lcount">${cnt[v]||0} placed</div>`;
+    el.appendChild(row);
+  });
+  const elnodes=nodes.filter(n=>n.domain==='el');
+  const t2=document.createElement('div'); t2.className='legsub'; t2.textContent=`Power (${elnodes.length} source/cabinets)`; el.appendChild(t2);
+  if(!elnodes.length){ const d=document.createElement('div'); d.className='hint'; d.textContent='Add a source or cabinet from the toolbar, click it, then click tents (or another cabinet) to run cables.'; el.appendChild(d); }
+  elnodes.forEach(n=>{
+    const p=phaseLoads(n.id), peak=Math.max(p[0],p[1],p[2]), over=peak>nodeRatingAmp(n);
+    const free=(n.kind==='source'&&n.unl!==false)?'unlimited':Object.keys(complementMap(n)).map(k=>`${freeCount(n,k)}×${k}`).join(' ');
+    const row=document.createElement('div'); row.className='legrow';
+    row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${over?'#ff6b6b':'var(--muted)'}">${peak}/${nodeRatingAmp(n)} A</div>`;
+    el.appendChild(row);
+  });
+  const noPower=placed.filter(t=>needsPower(t)&&!hasPower(t));
+  unconnectedSection(el,'Without power',noPower,tr=>elLabel(tr.electricity),'Every placed tent that needs power is connected.');
+  const waiting=library.filter(x=>!placedIds.has(x.id)&&!removed.has(String(x.id))&&tentReq(applyEdits(x).electricity)).length;
+  if(waiting){ const d=document.createElement('div'); d.className='hint'; d.textContent=waiting+' more tent(s) needing power are not placed yet.'; el.appendChild(d); }
+}
+
+/* ---------- save / load whole project (placement + image + scale) ---------- */
+document.getElementById('saveProjBtn').onclick=()=>{
+  const proj={v:1, image:imgData||null, ppm:ppm||null,
+    view: imgBounds?{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}:null,
+    placed: placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot})),
+    custom: customTents, edits: edits, removed: [...removed], nodes: nodes, cables: cables};
+  const blob=new Blob([JSON.stringify(proj)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='marknad_project.json'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+};
+document.getElementById('loadProjBtn').onclick=()=>document.getElementById('loadProjFile').click();
+document.getElementById('loadProjFile').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    let proj; try{proj=JSON.parse(rd.result);}catch(err){alert('That is not a valid project file.');return;}
+    placed.forEach(removeTentMarker); placed=[]; placedIds=new Set(); deselect();
+    showDomainLayers(); nodes=proj.nodes||[]; cables=proj.cables||[]; saveNet();
+    customTents=proj.custom||[]; lsSet(LS.custom,customTents);
+    edits=proj.edits||{}; lsSet(LS.edits,edits);
+    removed=new Set(proj.removed||[]); saveRemoved();
+    library=TENTS.concat(customTents);
+    ppm=proj.ppm||null; lsSet(LS.ppm,ppm); updateScaleReadout();
+    if(proj.view) lsSet(LS.view,proj.view);
+    (proj.placed||[]).forEach(a=>placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null}));
+    placedIds=new Set(placed.map(t=>t.ref.id));
+    savePlaced();
+    if(proj.image){ setImage(proj.image, !!proj.view); } else { refreshAll(); }
+    renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
+    flashBanner('Project loaded.',false); setTimeout(()=>banner.style.display='none',2200);
+  };
+  rd.readAsText(f); e.target.value='';
+});
+
+/* ---------- Networks: El (source+cabinets, 3-phase) and Vatten (brunn/handfat) ---------- */
+function ampOf(s){ const m=/(\d+)\s*A/i.exec(s||''); return m?parseInt(m[1]):0; }
+function tentAmp(id){ const t=placed.find(x=>String(x.ref.id)===String(id)); return t?ampOf(refOf(t).electricity):0; }
+function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
+function tentPos(id){ const t=placed.find(x=>x.ref.id===id); return t?[t.lat,t.lng]:null; }
+function saveNet(){ lsSet(LS.nodes,nodes); lsSet(LS.cables,cables); }
+function curDomain(){ return currentTab==='el'?'el':currentTab==='vatten'?'water':null; }
+
+// a tent's demand from its sheet electricity: {phase:1|3, amp}
+/* smallest standard 3-phase outlet that can carry a cabinet of this rating */
+function ratingType(r){ return r>=125?'125A':r>=63?'63A':r>=32?'32A':'16A'; }
+function socketKey(el,amp){
+  if(el.startsWith('220')||el.startsWith('230')) return '220V';
+  const std=[16,32,63,125].filter(a=>a>=amp);
+  return (std.length?std[0]:125)+'A';
+}
+/* A tent is fed from a single phase, so a 3-phase unit carries 3 x its rating in total
+   (e.g. 63A cabinet = 63A on L1 + 63A on L2 + 63A on L3). */
+function tentReq(el){ el=(el||'').toLowerCase().trim(); if(!el||el==='none')return null;
+  const amp=ampOf(el)||6;
+  return {phase:1,amp,key:socketKey(el,amp)}; }
+
+// el node output complement (three-phase cabinets)
+function outputs(n){
+  if(n.domain!=='el') return [];
+  if(n.kind==='source'){
+    if(n.unl!==false) return [];
+    const m=n.outs||{}, o=[];
+    ['220V','16A','32A','63A'].forEach(k=>{ const c=m[k]||0;
+      for(let i=0;i<c;i++) o.push({r:k==='220V'?16:parseInt(k),ph:k==='220V'?1:3,key:k}); });
+    return o;
+  }
+  if(n.outs){
+    const o=[]; ['220V','16A','32A','63A','125A'].forEach(k=>{ const c=n.outs[k]||0;
+      for(let i=0;i<c;i++) o.push({r:k==='220V'?16:parseInt(k),ph:k==='220V'?1:3,key:k}); });
+    return o;
+  }
+  /* three-phase unit: default to one outlet of each type per phase (3), plus 220V sockets */
+  const n220=n.rating>=125?9:6, o=[];
+  for(let i=0;i<n220;i++) o.push({r:16,ph:1,key:'220V'});
+  [16,32,63,125].filter(a=>a<=n.rating).forEach(a=>{ for(let i=0;i<3;i++) o.push({r:a,ph:3,key:a+'A'}); });
+  return o;
+}
+function complementMap(n){ const m={}; outputs(n).forEach(o=>{m[o.key]=(m[o.key]||0)+1;}); return m; }
+function usedOut(id,key){ return cables.filter(c=>c.src===id && c.otype===key).length; }
+function freeCount(n,key){
+  if(n.kind==='source' && n.unl!==false){ const amp=key==='220V'?16:(parseInt(key)||0); return amp<=n.rating?Infinity:0; }
+  return (complementMap(n)[key]||0)-usedOut(n.id,key);
+}
+function pickOutput(n,req){
+  const unl=(n.kind==='source' && n.unl!==false);
+  const cand=(req.key==='220V')?['220V']:[16,32,63,125].filter(a=>a>=req.amp).map(a=>a+'A');
+  for(const k of cand){
+    const need=(k==='220V')?16:parseInt(k);
+    if(unl){ if(need<=n.rating) return k; continue; }
+    if(freeCount(n,k)>0) return k;
+  }
+  return null;
+}
+function inputOf(id){ const c=cables.find(x=>x.dstKind==='node'&&x.dst===id); return c?c.src:null; }
+function createsCycle(srcId,dstId){ let cur=srcId,g=0; while(cur&&g++<300){ if(cur===dstId)return true; cur=inputOf(cur);} return false; }
+function nodeRatingAmp(n){ return n.rating||0; }
+// per-phase load [L1,L2,L3] for an el node (recurses through fed cabinets)
+function phaseLoads(id,seen){ seen=seen||new Set(); const out=[0,0,0]; if(seen.has(id))return out; seen.add(id);
+  cables.filter(c=>c.src===id && c.domain==='el').forEach(c=>{
+    if(c.dstKind==='tent'){ const a=tentAmp(c.dst); if(c.phase>=1&&c.phase<=3) out[c.phase-1]+=a; else {out[0]+=a;out[1]+=a;out[2]+=a;} }
+    else { const cl=phaseLoads(c.dst,seen); out[0]+=cl[0];out[1]+=cl[1];out[2]+=cl[2]; }
+  });
+  return out;
+}
+function peakLoad(id){ const p=phaseLoads(id); return Math.max(p[0],p[1],p[2]); }
+function overloaded(n){ return n.domain==='el' && peakLoad(n.id)>nodeRatingAmp(n); }
+function nodeName(n){ if(n.domain==='water') return n.kind==='brunn'?'brunn':'handfat'; return n.kind==='source'?('source ('+n.rating+'A in)'):(n.rating+'A cabinet'); }
+
+// walk upstream from a node, collecting every feeding cabinet/source and the cables between
+function addUpstream(nodeId){
+  let cur=nodeId, guard=0;
+  hl.nodes.add(cur);
+  while(guard++<300){
+    const c=cables.find(x=>x.dstKind==='node'&&x.dst===cur&&x.domain==='el');
+    if(!c)break;
+    hl.cables.add(c); hl.nodes.add(c.src); cur=c.src;
+  }
+}
+function highlightFromTent(tentId){
+  clearHl();
+  const c=cables.find(x=>x.dstKind==='tent'&&x.dst===tentId&&x.domain==='el');
+  if(!c){ flashBanner('That tent is not connected to any cabinet.',true); refreshHl(); return; }
+  hl.tents.add(tentId); hl.cables.add(c); addUpstream(c.src);
+  const chain=[...hl.nodes].map(id=>nodes.find(n=>n.id===id)).filter(Boolean)
+    .map(n=>n.kind==='source'?(n.rating+'A source'):(n.rating+'A')).join(' <- ');
+  flashBanner('Supply chain: '+chain,false);
+  refreshHl();
+}
+function highlightFromNode(nodeId){
+  clearHl();
+  addUpstream(nodeId);
+  cables.filter(c=>c.src===nodeId&&c.domain==='el').forEach(c=>{
+    hl.cables.add(c);
+    if(c.dstKind==='tent') hl.tents.add(c.dst); else hl.nodes.add(c.dst);
+  });
+  refreshHl();
+}
+
+document.querySelectorAll('#elControls .ela').forEach(b=>{
+  b.onclick=()=>{
+    if(b.dataset.src){ openSrcModal(null,'source'); return; }
+    if(b.dataset.custom){ openSrcModal(null,'elskap'); return; }
+    armNode={domain:'el',kind:'elskap',rating:parseInt(b.dataset.r)}; setConnectSource(null);
+    flashBanner('Click on the plan to place the '+armNode.rating+'A cabinet · Esc to cancel',true); };
+});
+/* source configuration modal */
+let srcEditing=null, srcKind='source';
+const srcBg=document.getElementById('srcBg');
+function srcOutsVis(){ const unl=(srcKind==='source')&&document.getElementById('srcUnl').checked; document.getElementById('srcOuts').style.display=unl?'none':''; }
+document.getElementById('srcUnl').onchange=srcOutsVis;
+function openSrcModal(nodeId,kind){
+  srcEditing=nodeId;
+  const n=nodeId?nodes.find(x=>x.id===nodeId):null;
+  srcKind=n?n.kind:(kind||'source');
+  const isSrc=srcKind==='source';
+  document.getElementById('srcTitle').textContent=(n?'Edit ':'New ')+(isSrc?'power source':'cabinet');
+  document.getElementById('srcAmp').value=n?n.rating:(isSrc?63:125);
+  document.getElementById('srcUnlRow').style.display=isSrc?'flex':'none';
+  document.getElementById('srcUnl').checked=isSrc?(n?(n.unl!==false):true):false;
+  const o=(n&&n.outs)||(isSrc?{'220V':4,'16A':1,'32A':1,'63A':1,'125A':0}:{'220V':4,'16A':1,'32A':1,'63A':1,'125A':0});
+  document.getElementById('o220').value=o['220V']||0;
+  document.getElementById('o16').value=o['16A']||0;
+  document.getElementById('o32').value=o['32A']||0;
+  document.getElementById('o63').value=o['63A']||0;
+  document.getElementById('o125').value=o['125A']||0;
+  srcOutsVis(); srcBg.style.display='flex'; document.getElementById('srcAmp').focus();
+}
+document.getElementById('srcCancel').onclick=()=>{srcBg.style.display='none';srcEditing=null;};
+document.getElementById('srcSave').onclick=()=>{
+  const amp=parseInt(document.getElementById('srcAmp').value);
+  if(!amp||amp<=0){alert('Enter the incoming current in amps.');return;}
+  const unl=document.getElementById('srcUnl').checked;
+  const outs={'220V':parseInt(document.getElementById('o220').value)||0,
+              '16A':parseInt(document.getElementById('o16').value)||0,
+              '32A':parseInt(document.getElementById('o32').value)||0,
+              '63A':parseInt(document.getElementById('o63').value)||0,
+              '125A':parseInt(document.getElementById('o125').value)||0};
+  const isSrc=srcKind==='source';
+  srcBg.style.display='none';
+  if(srcEditing){
+    const n=nodes.find(x=>x.id===srcEditing);
+    if(n){ n.rating=amp; if(n.kind==='source'){ n.unl=unl; n.outs=unl?null:outs; } else { n.outs=outs; }
+           saveNet(); renderNode(n); redrawCables(); renderLegend(); }
+    srcEditing=null; return;
+  }
+  armNode=isSrc?{domain:'el',kind:'source',rating:amp,unl,outs:unl?null:outs}
+               :{domain:'el',kind:'elskap',rating:amp,outs};
+  setConnectSource(null);
+  flashBanner('Click on the plan to place the '+amp+'A '+(isSrc?'source':'cabinet')+' · Esc to cancel',true);
+};
+document.querySelectorAll('#vattenControls .wta').forEach(b=>{
+  b.onclick=()=>{ armNode={domain:'water',kind:b.dataset.w,rating:0}; setConnectSource(null);
+    flashBanner('Click on the plan to place the '+b.dataset.w+' · Esc to cancel',true); };
+});
+let wireMode=false;
+function setWire(on){
+  wireMode=on;
+  document.getElementById('wireEl').classList.toggle('on',on);
+  document.getElementById('wireVa').classList.toggle('on',on);
+  mapWrap.classList.toggle('wiring',on);
+  if(!on){ setConnectSource(null); banner.style.display='none'; }
+  else flashBanner('Wire tool on: click a source/cabinet, then click what it feeds. Click Wire again to stop.',true);
+  nodes.forEach(renderNode);
+}
+function setLetters(on){ showLetters=on; lsSet(LS.letters,on);
+  document.getElementById('lettersBtn').classList.toggle('on',on); refreshAll(); }
+document.getElementById('lettersBtn').onclick=()=>setLetters(!showLetters);
+document.getElementById('wireEl').onclick=()=>setWire(!wireMode);
+document.getElementById('wireVa').onclick=()=>setWire(!wireMode);
+
+function addNode(spec,lat,lng){
+  const n={id:'node_'+Date.now()+'_'+Math.floor(Math.random()*1000),domain:spec.domain,kind:spec.kind,rating:spec.rating,lat,lng};
+  if(spec.kind==='source'){ n.unl=spec.unl!==false; n.outs=spec.outs||null; }
+  else if(spec.outs){ n.outs=spec.outs; }
+  nodes.push(n); saveNet(); renderNode(n); setConnectSource(n.id);
+}
+function renderNode(n){
+  if(n.domain!==curDomain()) return;
+  let title,sub,cls,brdr,over=false;
+  if(n.domain==='el'){
+    const pl=phaseLoads(n.id), load=Math.max(pl[0],pl[1],pl[2]); over=load>nodeRatingAmp(n);
+    title=n.kind==='source'?(n.rating+'A IN'):(n.rating+'A'); sub=pl[0]+'/'+pl[1]+'/'+pl[2];
+    cls='node'+(n.kind==='source'?' source':''); brdr=ratingColor(nodeRatingAmp(n));
+  }else{
+    title=n.kind==='brunn'?'Brunn':'Handfat'; sub=''; cls='node water'+(n.kind==='brunn'?' brunn':''); brdr='#2b8cff';
+  }
+  let free='';
+  if(n.domain==='el'){
+    const pl2=phaseLoads(n.id), r=nodeRatingAmp(n);
+    const socks=(n.kind==='source'&&n.unl!==false)?'unlimited':Object.keys(complementMap(n)).map(k=>freeCount(n,k)+'×'+k).join(' ');
+    free='L1 '+pl2[0]+'/'+r+'A  L2 '+pl2[1]+'/'+r+'A  L3 '+pl2[2]+'/'+r+'A  (total '+(r*3)+'A)  ·  free '+socks;
+  }
+  const html='<div class="'+cls+' '+(connectSource===n.id?'sel':'')+(hl.nodes.has(n.id)?' hl':'')+'" style="border-color:'+brdr+'">'
+    +'<div class="er">'+title+'</div>'+(sub?'<div class="eu" style="color:'+(over?'#ff6b6b':'#cfd3dc')+'">'+sub+'</div>':'')+'</div>';
+  const icon=L.divIcon({className:'node-div',html,iconSize:[58,44],iconAnchor:[29,22]});
+  let m=nodeMarkers[n.id];
+  if(!m){
+    m=L.marker([n.lat,n.lng],{icon,draggable:true,pane:'nodes',title:free}).addTo(map);
+    m.on('click',ev=>{L.DomEvent.stopPropagation(ev); if(armNode||n.domain!==curDomain())return;
+      if(wireMode && connectSource && connectSource!==n.id){ connect(connectSource,{kind:'node',id:n.id}); return; }
+      const sel=connectSource!==n.id; setConnectSource(sel?n.id:null);
+      if(sel&&n.domain==='el') highlightFromNode(n.id); else { clearHl(); refreshHl(); } });
+    m.on('dblclick',ev=>{L.DomEvent.stopPropagation(ev); if(n.domain==='el') openSrcModal(n.id);});
+    m.on('drag',()=>{const p=m.getLatLng();n.lat=p.lat;n.lng=p.lng;redrawCables();});
+    m.on('dragend',saveNet);
+    nodeMarkers[n.id]=m;
+  }else{ m.setIcon(icon); m.setLatLng([n.lat,n.lng]); m.options.title=free; }
+  if(m.dragging){ wireMode?m.dragging.disable():m.dragging.enable(); }
+}
+function setConnectSource(id){
+  connectSource=id; nodes.forEach(renderNode);
+  if(id && wireMode){ const n=nodes.find(x=>x.id===id); flashBanner('Click a '+(n.domain==='water'?'handfat or water object':'tent (or another cabinet)')+' to wire it to the '+nodeName(n)+' · Esc to stop',true); }
+  else if(!id) banner.style.display='none';
+}
+function connect(srcId,dst){
+  const src=nodes.find(n=>n.id===srcId); if(!src)return;
+  if(src.domain==='water'){
+    if(dst.kind==='tent'){
+      const t=placed.find(x=>x.ref.id===dst.id); if(!t)return; const tr=refOf(t);
+      if(!tr.water){ flashBanner(tr.name+' has no water input.',true); return; }
+      cables=cables.filter(c=>!(c.dstKind==='tent'&&c.dst===dst.id&&c.domain==='water'));
+      cables.push({src:srcId,dst:dst.id,dstKind:'tent',domain:'water'});
+      saveNet(); redrawCables(); nodes.forEach(renderNode); flashBanner('Connected water to '+tr.name+'.',false); renderVattenLegend(); return;
+    }
+    if(dst.kind!=='node')return; const dn=nodes.find(n=>n.id===dst.id); if(!dn||dn.domain!=='water')return;
+    if(dn.kind==='brunn'){ flashBanner('A brunn is a source, not a target.',true); return; }
+    if(dst.id===srcId) return; if(createsCycle(srcId,dst.id)){ flashBanner('That would create a loop.',true); return; }
+    cables=cables.filter(c=>!(c.dstKind==='node'&&c.dst===dst.id&&c.domain==='water'));
+    cables.push({src:srcId,dst:dst.id,dstKind:'node',domain:'water'});
+    saveNet(); redrawCables(); nodes.forEach(renderNode); flashBanner('Connected water pipe.',false); renderVattenLegend(); return;
+  }
+  let req,label;
+  if(dst.kind==='tent'){
+    const t=placed.find(x=>x.ref.id===dst.id); if(!t)return; const tr=refOf(t);
+    req=tentReq(tr.electricity); if(!req){ flashBanner(tr.name+' needs no electricity ('+elLabel(tr.electricity)+').',true); return; } label=tr.name;
+  }else{
+    const dn=nodes.find(n=>n.id===dst.id); if(!dn)return;
+    if(dn.kind==='source'){ flashBanner('A source has no input.',true); return; }
+    if(dst.id===srcId) return; if(createsCycle(srcId,dst.id)){ flashBanner('That would create a loop.',true); return; }
+    req={phase:3,amp:dn.rating,key:ratingType(dn.rating)}; label=nodeName(dn);
+  }
+  const key=pickOutput(src,req);
+  if(!key){ flashBanner('No free '+req.key+' output on the '+nodeName(src)+'.',true); return; }
+  if(dst.kind==='tent') cables=cables.filter(c=>!(c.dstKind==='tent'&&c.dst===dst.id));
+  else cables=cables.filter(c=>!(c.dstKind==='node'&&c.dst===dst.id));
+  let phase=0;
+  if(dst.kind==='tent'){ const pl=phaseLoads(srcId); phase=(pl[0]<=pl[1]&&pl[0]<=pl[2])?1:(pl[1]<=pl[2]?2:3); }
+  cables.push({src:srcId,dst:dst.id,dstKind:dst.kind,otype:key,phase,domain:'el'});
+  saveNet(); redrawCables(); nodes.forEach(renderNode);
+  const pl=phaseLoads(srcId), peak=Math.max(pl[0],pl[1],pl[2]);
+  if(peak>nodeRatingAmp(src)) flashBanner('Connected '+label+' — '+nodeName(src)+' overloaded (L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A, max '+peak+'/'+src.rating+').',true);
+  else flashBanner('Connected '+label+' via '+key+(phase?(' on L'+phase):'')+'. Load L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A.',false);
+  renderLegend();
+}
+function redrawCables(){
+  cableLines.forEach(l=>map.removeLayer(l)); cableLines=[];
+  const before=cables.length;
+  cables=cables.filter(c=> nodes.some(n=>n.id===c.src) && (c.dstKind==='tent'?placed.some(t=>t.ref.id===c.dst):nodes.some(n=>n.id===c.dst)));
+  if(cables.length!==before) saveNet();
+  const dom=curDomain(); if(!dom) return;
+  cables.filter(c=>c.domain===dom).forEach(c=>{
+    const s=nodes.find(n=>n.id===c.src); if(!s)return; const a=[s.lat,s.lng];
+    let b=null; if(c.dstKind==='tent') b=tentPos(c.dst); else { const dn=nodes.find(n=>n.id===c.dst); if(dn)b=[dn.lat,dn.lng]; }
+    if(!b)return;
+    let color,weight=3,dash=null;
+    if(dom==='water'){ color='#2b8cff'; weight=3.5; }
+    else { const over=overloaded(s); color=over?'#ff5252':CABLE_COLOR; weight=c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5); dash=over?'6,5':null; }
+    const isHl=hl.cables.has(c);
+    if(isHl){ color='#ffd400'; weight=weight+2.5; }
+    const line=L.polyline([a,b],{pane:'cables',color,weight,opacity:isHl?1:0.7,dashArray:dash}).addTo(map);
+    line.on('click',ev=>{L.DomEvent.stopPropagation(ev); if(confirm('Remove this connection?')){ cables=cables.filter(x=>x!==c); saveNet(); redrawCables(); nodes.forEach(renderNode); renderLegend(); renderVattenLegend(); }});
+    cableLines.push(line);
+  });
+}
+function removeNode(id){
+  const m=nodeMarkers[id]; if(m){map.removeLayer(m);delete nodeMarkers[id];}
+  nodes=nodes.filter(n=>n.id!==id); cables=cables.filter(c=>c.src!==id && !(c.dstKind==='node'&&c.dst===id));
+  connectSource=null; banner.style.display='none'; saveNet(); redrawCables(); nodes.forEach(renderNode); renderLegend(); renderVattenLegend();
+}
+function showDomainLayers(){
+  Object.values(nodeMarkers).forEach(m=>map.removeLayer(m));
+  for(const k in nodeMarkers) delete nodeMarkers[k];
+  cableLines.forEach(l=>map.removeLayer(l)); cableLines=[];
+  const dom=curDomain(); if(dom){ nodes.filter(n=>n.domain===dom).forEach(renderNode); redrawCables(); }
+}
+/* items that still need a supply */
+function needsPower(t){ return !!tentReq(refOf(t).electricity); }
+function hasPower(t){ return cables.some(c=>c.domain==='el'&&c.dstKind==='tent'&&String(c.dst)===String(t.ref.id)); }
+function needsWater(t){ return !!refOf(t).water; }
+function hasWater(t){ return cables.some(c=>c.domain==='water'&&c.dstKind==='tent'&&String(c.dst)===String(t.ref.id)); }
+function gotoTent(t){
+  map.panTo([t.lat,t.lng]);
+  clearHl(); hl.tents.add(t.ref.id); refreshHl();
+}
+function unconnectedSection(el,title,items,sub,emptyMsg){
+  const h=document.createElement('div'); h.className='legsub'; h.textContent=title+' ('+items.length+')'; el.appendChild(h);
+  if(!items.length){ const d=document.createElement('div'); d.className='hint'; d.textContent=emptyMsg; el.appendChild(d); return; }
+  items.forEach(t=>{ const tr=refOf(t);
+    const row=document.createElement('div'); row.className='legrow'; row.style.cursor='pointer';
+    row.title='Click to find it on the plan';
+    row.innerHTML='<div class="sw" style="background:'+tr.color+'"></div><div class="lname">'+esc(tr.name)
+      +'<div style="font-size:10px;color:var(--muted);font-weight:400">'+esc(sub(tr))+'</div></div>'
+      +'<div class="lcount" style="color:#ff9d3d">needs</div>';
+    row.onclick=()=>gotoTent(t);
+    el.appendChild(row);
+  });
+}
+function renderVattenLegend(){
+  const el=document.getElementById('vattenLegend'); if(!el)return; el.innerHTML='';
+  const water=nodes.filter(n=>n.domain==='water');
+  const t=document.createElement('div'); t.className='legsub'; t.textContent='Fixtures ('+water.length+')'; el.appendChild(t);
+  if(!water.length){ const d=document.createElement('div'); d.className='hint'; d.textContent='Add a brunn or handfat from the toolbar, then wire them with blue pipes.'; el.appendChild(d); }
+  water.forEach(n=>{
+    const outc=cables.filter(c=>c.src===n.id&&c.domain==='water').length;
+    const fed=cables.some(c=>c.dst===n.id&&c.domain==='water');
+    const row=document.createElement('div'); row.className='legrow';
+    row.innerHTML='<div class="sw" style="background:#0d2436;border:2px solid #2b8cff;'+(n.kind==='brunn'?'border-radius:50%':'')+'"></div>'
+      +'<div class="lname">'+(n.kind==='brunn'?'Brunn':'Handfat')+'<div style="font-size:10px;color:var(--muted);font-weight:400">'+(n.kind==='brunn'?(outc+' pipe(s) out'):(fed?'connected':'not connected'))+'</div></div>';
+    el.appendChild(row);
+  });
+  const noWater=placed.filter(t=>needsWater(t)&&!hasWater(t));
+  unconnectedSection(el,'Without water',noWater,()=>'needs a water connection','Every placed tent that needs water is connected.');
+  const connected=placed.filter(t=>needsWater(t)&&hasWater(t));
+  if(connected.length){
+    const t3=document.createElement('div'); t3.className='legsub'; t3.textContent='Water connected ('+connected.length+')'; el.appendChild(t3);
+    connected.forEach(t=>{ const tr=refOf(t);
+      const row=document.createElement('div'); row.className='legrow'; row.style.cursor='pointer';
+      row.onclick=()=>gotoTent(t);
+      row.innerHTML='<div class="sw" style="background:'+tr.color+';box-shadow:0 0 0 2px #2b8cff inset"></div><div class="lname">'+esc(tr.name)+'</div><div class="lcount" style="color:var(--ok)">ok</div>';
+      el.appendChild(row);
+    });
+  }
+  const waitingW=library.filter(x=>!placedIds.has(x.id)&&!removed.has(String(x.id))&&applyEdits(x).water).length;
+  if(waitingW){ const d=document.createElement('div'); d.className='hint'; d.textContent=waitingW+' more tent(s) needing water are not placed yet.'; el.appendChild(d); }
+}
+document.addEventListener('keydown',e=>{
+  if(curDomain()){
+    if(e.key==='Escape'){ armNode=null; if(wireMode) setWire(false); else setConnectSource(null); }
+    else if((e.key==='Delete'||e.key==='Backspace') && connectSource){ const tag=(e.target.tagName||'').toLowerCase(); if(tag!=='input'&&tag!=='select'){ removeNode(connectSource); e.preventDefault(); } }
+  }
+});
+
+/* ---------- init ---------- */
+loadPlaced();
+updateScaleReadout();
+setLetters(showLetters);
+renderList();
+if(!imgData) flashBanner('Upload a clean overhead image of your area, then Set scale',true);
+[80,300,900].forEach(d=>setTimeout(()=>{map.invalidateSize();positionCtl();},d));
+window.addEventListener('resize',()=>{map.invalidateSize();positionCtl();});
+window.addEventListener('load',()=>{map.invalidateSize();positionCtl();});
+</script>
+</body>
+</html>
