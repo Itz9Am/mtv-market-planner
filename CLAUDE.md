@@ -236,9 +236,14 @@ signing in. State lives in one boolean, `ADMIN` (persisted in `LS.admin`,
 `mtvi_admin_v1`), and one function, `applyMode()`, which toggles `document.body`
 between the `public` and `admin` classes.
 
-- **Public (default, no login):** the sidebar (`#sidebar`) and toolbar (`#topbar`) are
-  hidden by `body.public` CSS; only the map with the tents shows. Auto-sync still runs
-  read-only (startup pull + 15 s poll), so a shared link stays current. `<body>` ships
+- **Public (default, no login):** the sidebar (`#sidebar`) is hidden by `body.public`
+  CSS; the map with the tents fills the window. The `#topbar` **stays** visible so the
+  **Letters** toggle works in public — only its Placering group ever shows there, since
+  the tabs are hidden and public never switches away from Placering (El/Vatten groups
+  keep their inline `display:none`). The topbar is anchored **top-right**
+  (`right:10px`), not top-left, so it clears Leaflet's top-left zoom control. Auto-sync
+  still runs read-only (startup pull + 15 s poll), so a shared link stays current.
+  `<body>` ships
   with `class="public"` and an early inline `if(ADMIN) document.body.className='admin'`
   so a fresh viewer **never flashes the editing tools** (a persisted admin sees a brief
   public flash instead — the safe direction).

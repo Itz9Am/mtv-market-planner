@@ -49,7 +49,7 @@
   .delbtn:hover{border-color:var(--danger);color:var(--danger)}
   #mapWrap{flex:1;position:relative}
   #map{position:absolute;inset:0}
-  #topbar{position:absolute;top:10px;left:10px;z-index:600;display:flex;gap:8px;align-items:center;background:rgba(20,22,30,.92);border:1px solid var(--line);border-radius:10px;padding:6px 8px;flex-wrap:wrap;max-width:calc(100% - 20px)}
+  #topbar{position:absolute;top:10px;right:10px;z-index:600;display:flex;gap:8px;align-items:center;background:rgba(20,22,30,.92);border:1px solid var(--line);border-radius:10px;padding:6px 8px;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100% - 20px)}
   #topbar .lbl{font-size:11px;color:var(--muted)}
   #topbar .seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   #topbar .seg button{border:none;border-radius:0;padding:6px 12px}
@@ -96,7 +96,8 @@
   .legsub{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);padding:12px 10px 3px}
   /* public (no-login) view: map only, no editing UI. admin view: full UI. */
   body.public #sidebar{display:none}
-  body.public #topbar{display:none}
+  /* public view keeps the topbar, but only the Placering group (Letters toggle) is ever
+     shown there — El/Vatten groups stay display:none since tabs are hidden in public */
   #adminBtn{position:absolute;right:12px;bottom:12px;z-index:700;width:30px;height:34px;border-radius:8px;background:rgba(20,22,30,.5);border:1px solid var(--line);color:var(--muted);opacity:.3;display:none;align-items:center;justify-content:center;font-size:16px;line-height:1;padding:0;transition:opacity .15s,color .15s,border-color .15s}
   #adminBtn:hover{opacity:1;color:var(--txt);border-color:var(--accent)}
   body.public #adminBtn{display:flex}
