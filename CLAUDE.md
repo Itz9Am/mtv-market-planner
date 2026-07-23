@@ -368,6 +368,18 @@ placed custom is rebuilt into the library (`customFromRow`) so `refOf()` finds i
 returns to the list on delete. A custom is placed at most once (placing removes it from the
 list), so one row per custom is enough — unplaced custom templates still stay local-only.
 
+The same def cols also carry **edits to a placed library tent** (rename/resize/colour):
+`placementRow` fills them whenever `edits[id]` is set (not just for customs), while an
+**unedited** library tent still leaves them blank so re-importing the Excel library keeps
+updating it live. A library tent is re-resolved from the library every render, so its
+override can't ride on the placed `ref` — it travels through the local `edits` map:
+`reconcileEdits(P)` (called from `applySheetState` before the items are built) rebuilds
+`edits[id]` from the def cols of library-tent placements — **set** when present, **cleared**
+when the author reverted (blank name). Custom placements are skipped there (handled by
+`customFromRow`). Only **placed** library edits sync (edits to unplaced tents stay local, by
+design). **`mSave` calls `queueSheetSave()`** so an edit pushes immediately — without it the
+change only touched `localStorage` and never re-synced until the next placement move.
+
 `meta` is a **single data row** (`A2:G2`), not key/value pairs. That keeps every tab
 the same shape — header row plus data rows — so one `rowsToObjects()` helper parses
 all four, and the whole of `meta` is written atomically as one range in the batch write.
