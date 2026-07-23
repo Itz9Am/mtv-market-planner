@@ -222,7 +222,23 @@
         <div></div>
       </div>
     </div>
+    <div class="row" style="margin-top:12px">
+      <div><label>Middle colour</label><input id="srcColor" type="color" value="#181b22" style="height:38px;padding:2px"/></div>
+      <div><label>&nbsp;</label><button id="srcColorReset" type="button" style="width:100%">Reset to default</button></div>
+    </div>
     <div class="actions"><button id="srcCancel">Cancel</button><button id="srcSave" class="primary">Save</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="cabBg">
+  <div class="modal">
+    <h3>Wire colour</h3>
+    <p>Pick a colour for this wire. By default a wire takes its cabinet's rating colour (32A orange, 16A yellow, 63A/125A red) with a black outline.</p>
+    <div class="row">
+      <div><label>Wire colour</label><input id="cabColor" type="color" value="#ffb35c" style="height:38px;padding:2px"/></div>
+      <div><label>&nbsp;</label><button id="cabColorReset" type="button" style="width:100%">Use default</button></div>
+    </div>
+    <div class="actions"><button id="cabRemove" style="color:var(--danger)">Remove wire</button><button id="cabCancel">Cancel</button><button id="cabSave" class="primary">Save</button></div>
   </div>
 </div>
 
@@ -270,7 +286,6 @@ const nodeMarkers={};               // nodeId -> Leaflet marker
 let cableLines=[];                  // Leaflet polylines (runtime)
 let connectSource=null;             // nodeId selected to connect from
 let armNode=null;                   // {kind,rating} pending placement
-const CABLE_COLOR='#ff2ec4';
 /* chain highlighting (El tab) */
 let hl={nodes:new Set(),tents:new Set(),cables:new Set()};
 function clearHl(){ hl={nodes:new Set(),tents:new Set(),cables:new Set()}; }
@@ -683,12 +698,12 @@ const SHEET_HEADERS={
   // carries its own definition inline (cols E..M). For library tents those cols are
   // blank and the tentId resolves against the baked-in library as before.
   placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape'],
-  nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125'],
-  cables:['src','dst','dstKind','domain','otype','phase'],
+  nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','color'],
+  cables:['src','dst','dstKind','domain','otype','phase','color'],
   meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy']
 };
-const SHEET_RANGES={placements:'placements!A1:M',nodes:'nodes!A1:L',cables:'cables!A1:F',meta:'meta!A1:G'};
-const SHEET_CLEAR=['placements!A2:M','nodes!A2:L','cables!A2:F','meta!A2:G'];
+const SHEET_RANGES={placements:'placements!A1:M',nodes:'nodes!A1:M',cables:'cables!A1:G',meta:'meta!A1:G'};
+const SHEET_CLEAR=['placements!A2:M','nodes!A2:M','cables!A2:G','meta!A2:G'];
 /* Config is hard-coded here — there is no in-app settings UI. */
 const SHEET_DEFAULTS={
   spreadsheetId:'1H47rLODVURUOy91OeuWh-uJiDcj79c-K8Q_HZxNeDDM',
@@ -718,21 +733,23 @@ function nodeFromRow(o){
   const n={id:String(o.id),domain:o.domain,kind:o.kind,rating:gnum(o.rating)||0,lat:gnum(o.y),lng:gnum(o.x)};
   if(o.kind==='source'){ n.unl=gbool(o.unl); n.outs=n.unl?null:outs; }
   else if(outs){ n.outs=outs; }
+  if(!isBlank(o.color)) n.color=String(o.color);   // custom middle-fill; blank => CSS default
   return n;
 }
 function nodeToRow(n){
   const isSrc=n.kind==='source';
   const outs=n.outs;
   const cells=outs?[outs['220V']||0,outs['16A']||0,outs['32A']||0,outs['63A']||0,outs['125A']||0]:['','','','',''];
-  return [n.id,n.domain,n.kind,n.rating,n.lng,n.lat,isSrc?(n.unl!==false):''].concat(cells);
+  return [n.id,n.domain,n.kind,n.rating,n.lng,n.lat,isSrc?(n.unl!==false):''].concat(cells).concat([n.color||'']);
 }
 function cableFromRow(o){
   const c={src:String(o.src),dst:o.dstKind==='node'?String(o.dst):o.dst,dstKind:o.dstKind,domain:o.domain};
   if(!isBlank(o.otype)) c.otype=o.otype;
   const ph=gnum(o.phase); if(ph!=null) c.phase=ph;
+  if(!isBlank(o.color)) c.color=String(o.color);   // custom wire colour; blank => default by rating
   return c;
 }
-function cableToRow(c){ return [c.src,c.dst,c.dstKind,c.domain,isBlank(c.otype)?'':c.otype,c.phase!=null?c.phase:'']; }
+function cableToRow(c){ return [c.src,c.dst,c.dstKind,c.domain,isBlank(c.otype)?'':c.otype,c.phase!=null?c.phase:'',c.color||'']; }
 /* Rebuild a custom-object library entry from its inline placements-row definition. */
 function customFromRow(o){
   const c={id:String(o.tentId),name:String(o.name),placering:isBlank(o.placering)?'':String(o.placering),
@@ -998,6 +1015,10 @@ document.getElementById('exitAdmin').onclick=exitAdminMode;
 function ampOf(s){ const m=/(\d+)\s*A/i.exec(s||''); return m?parseInt(m[1]):0; }
 function tentAmp(id){ const t=placed.find(x=>String(x.ref.id)===String(id)); return t?ampOf(refOf(t).electricity):0; }
 function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
+/* default wire colour = the rating colour of its output: 32A orange, 16A yellow,
+   63A/125A red, 220V light blue. A per-cable c.color overrides it. */
+function otypeColor(ot){ if(ot==='220V')return '#9FC5E8'; return ratingColor(parseInt(ot)||0); }
+function cableColor(c){ if(c.color)return c.color; if(c.domain==='water')return '#2b8cff'; return otypeColor(c.otype); }
 function tentPos(id){ const t=placed.find(x=>x.ref.id===id); return t?[t.lat,t.lng]:null; }
 function saveNet(){ lsSet(LS.nodes,nodes); lsSet(LS.cables,cables); queueSheetSave(); }
 function curDomain(){ return currentTab==='el'?'el':currentTab==='vatten'?'water':null; }
@@ -1106,10 +1127,13 @@ document.querySelectorAll('#elControls .ela').forEach(b=>{
     flashBanner('Click on the plan to place the '+armNode.rating+'A cabinet · Esc to cancel',true); };
 });
 /* source configuration modal */
-let srcEditing=null, srcKind='source';
+let srcEditing=null, srcKind='source', srcColorCustom=false;
 const srcBg=document.getElementById('srcBg');
+function srcDefaultFill(kind){ return kind==='source'?'#0e2033':'#181b22'; }   // matches the CSS .node / .node.source bg
 function srcOutsVis(){ const unl=(srcKind==='source')&&document.getElementById('srcUnl').checked; document.getElementById('srcOuts').style.display=unl?'none':''; }
 document.getElementById('srcUnl').onchange=srcOutsVis;
+document.getElementById('srcColor').oninput=()=>{ srcColorCustom=true; };
+document.getElementById('srcColorReset').onclick=()=>{ srcColorCustom=false; document.getElementById('srcColor').value=srcDefaultFill(srcKind); };
 function openSrcModal(nodeId,kind){
   srcEditing=nodeId;
   const n=nodeId?nodes.find(x=>x.id===nodeId):null;
@@ -1125,6 +1149,8 @@ function openSrcModal(nodeId,kind){
   document.getElementById('o32').value=o['32A']||0;
   document.getElementById('o63').value=o['63A']||0;
   document.getElementById('o125').value=o['125A']||0;
+  srcColorCustom=!!(n&&n.color);
+  document.getElementById('srcColor').value=(n&&n.color)||srcDefaultFill(srcKind);
   srcOutsVis(); srcBg.style.display='flex'; document.getElementById('srcAmp').focus();
 }
 document.getElementById('srcCancel').onclick=()=>{srcBg.style.display='none';srcEditing=null;};
@@ -1137,19 +1163,40 @@ document.getElementById('srcSave').onclick=()=>{
               '32A':parseInt(document.getElementById('o32').value)||0,
               '63A':parseInt(document.getElementById('o63').value)||0,
               '125A':parseInt(document.getElementById('o125').value)||0};
+  const color=srcColorCustom?document.getElementById('srcColor').value:null;   // null => CSS default middle
   const isSrc=srcKind==='source';
   srcBg.style.display='none';
   if(srcEditing){
     const n=nodes.find(x=>x.id===srcEditing);
     if(n){ n.rating=amp; if(n.kind==='source'){ n.unl=unl; n.outs=unl?null:outs; } else { n.outs=outs; }
+           if(color) n.color=color; else delete n.color;
            saveNet(); renderNode(n); redrawCables(); renderLegend(); }
     srcEditing=null; return;
   }
-  armNode=isSrc?{domain:'el',kind:'source',rating:amp,unl,outs:unl?null:outs}
-               :{domain:'el',kind:'elskap',rating:amp,outs};
+  const spec=isSrc?{domain:'el',kind:'source',rating:amp,unl,outs:unl?null:outs}
+                  :{domain:'el',kind:'elskap',rating:amp,outs};
+  if(color) spec.color=color;
+  armNode=spec;
   setConnectSource(null);
   flashBanner('Click on the plan to place the '+amp+'A '+(isSrc?'source':'cabinet')+' · Esc to cancel',true);
 };
+/* wire colour modal */
+let cabEditing=null, cabColorCustom=false;
+const cabBg=document.getElementById('cabBg');
+document.getElementById('cabColor').oninput=()=>{ cabColorCustom=true; };
+document.getElementById('cabColorReset').onclick=()=>{ cabColorCustom=false; if(cabEditing) document.getElementById('cabColor').value=cableColor(Object.assign({},cabEditing,{color:null})); };
+function openCabModal(c){
+  cabEditing=c; cabColorCustom=!!c.color;
+  document.getElementById('cabColor').value=cableColor(c);
+  cabBg.style.display='flex';
+}
+function closeCab(){ cabBg.style.display='none'; cabEditing=null; }
+document.getElementById('cabCancel').onclick=closeCab;
+document.getElementById('cabRemove').onclick=()=>{ const c=cabEditing; closeCab();
+  if(c){ cables=cables.filter(x=>x!==c); saveNet(); redrawCables(); nodes.forEach(renderNode); renderLegend(); renderVattenLegend(); } };
+document.getElementById('cabSave').onclick=()=>{ const c=cabEditing; closeCab();
+  if(c){ if(cabColorCustom) c.color=document.getElementById('cabColor').value; else delete c.color;
+         saveNet(); redrawCables(); } };
 document.querySelectorAll('#vattenControls .wta').forEach(b=>{
   b.onclick=()=>{ armNode={domain:'water',kind:b.dataset.w,rating:0}; setConnectSource(null);
     flashBanner('Click on the plan to place the '+b.dataset.w+' · Esc to cancel',true); };
@@ -1174,6 +1221,7 @@ function addNode(spec,lat,lng){
   const n={id:'node_'+Date.now()+'_'+Math.floor(Math.random()*1000),domain:spec.domain,kind:spec.kind,rating:spec.rating,lat,lng};
   if(spec.kind==='source'){ n.unl=spec.unl!==false; n.outs=spec.outs||null; }
   else if(spec.outs){ n.outs=spec.outs; }
+  if(spec.color) n.color=spec.color;
   nodes.push(n); saveNet(); renderNode(n); setConnectSource(n.id);
 }
 function renderNode(n){
@@ -1192,12 +1240,17 @@ function renderNode(n){
     const socks=(n.kind==='source'&&n.unl!==false)?'unlimited':Object.keys(complementMap(n)).map(k=>freeCount(n,k)+'×'+k).join(' ');
     free='L1 '+pl2[0]+'/'+r+'A  L2 '+pl2[1]+'/'+r+'A  L3 '+pl2[2]+'/'+r+'A  (total '+(r*3)+'A)  ·  free '+socks;
   }
-  const html='<div class="'+cls+' '+(connectSource===n.id?'sel':'')+(hl.nodes.has(n.id)?' hl':'')+'" style="border-color:'+brdr+'">'
+  // The middle fill (n.color) and border live in the icon HTML; selection/highlight are
+  // applied as class toggles on the live element AFTER render so a plain select click never
+  // rebuilds the DOM — rebuilding it mid double-click was eating the dblclick that edits the node.
+  const fill=n.color?(';background:'+n.color):'';
+  const html='<div class="'+cls+'" style="border-color:'+brdr+fill+'">'
     +'<div class="er">'+title+'</div>'+(sub?'<div class="eu" style="color:'+(over?'#ff6b6b':'#cfd3dc')+'">'+sub+'</div>':'')+'</div>';
-  const icon=L.divIcon({className:'node-div',html,iconSize:[58,44],iconAnchor:[29,22]});
   let m=nodeMarkers[n.id];
   if(!m){
+    const icon=L.divIcon({className:'node-div',html,iconSize:[58,44],iconAnchor:[29,22]});
     m=L.marker([n.lat,n.lng],{icon,draggable:true,pane:'nodes',title:free}).addTo(map);
+    m._html=html;
     m.on('click',ev=>{L.DomEvent.stopPropagation(ev); if(armNode||n.domain!==curDomain())return;
       if(wireMode && connectSource && connectSource!==n.id){ connect(connectSource,{kind:'node',id:n.id}); return; }
       const sel=connectSource!==n.id; setConnectSource(sel?n.id:null);
@@ -1206,7 +1259,12 @@ function renderNode(n){
     m.on('drag',()=>{const p=m.getLatLng();n.lat=p.lat;n.lng=p.lng;redrawCables();});
     m.on('dragend',saveNet);
     nodeMarkers[n.id]=m;
-  }else{ m.setIcon(icon); m.setLatLng([n.lat,n.lng]); m.options.title=free; }
+  }else{
+    if(m._html!==html){ m.setIcon(L.divIcon({className:'node-div',html,iconSize:[58,44],iconAnchor:[29,22]})); m._html=html; }
+    m.setLatLng([n.lat,n.lng]); m.options.title=free;
+  }
+  const root=m.getElement()&&m.getElement().querySelector('.node');
+  if(root){ root.classList.toggle('sel',connectSource===n.id); root.classList.toggle('hl',hl.nodes.has(n.id)); }
   if(m.dragging){ wireMode?m.dragging.disable():m.dragging.enable(); }
 }
 function setConnectSource(id){
@@ -1264,14 +1322,18 @@ function redrawCables(){
     const s=nodes.find(n=>n.id===c.src); if(!s)return; const a=[s.lat,s.lng];
     let b=null; if(c.dstKind==='tent') b=tentPos(c.dst); else { const dn=nodes.find(n=>n.id===c.dst); if(dn)b=[dn.lat,dn.lng]; }
     if(!b)return;
-    let color,weight=3,dash=null;
-    if(dom==='water'){ color='#2b8cff'; weight=3.5; }
-    else { const over=overloaded(s); color=over?'#ff5252':CABLE_COLOR; weight=c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5); dash=over?'6,5':null; }
+    let weight=(dom==='water')?3.5:(c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5)), dash=null;
+    let color=cableColor(c);                      // default by rating (32A orange, 16A yellow…), or c.color override
+    const over=(dom!=='water')&&overloaded(s);
+    if(over){ color='#ff5252'; dash='6,5'; }       // overloaded source: red dashed, overrides the wire colour
     const isHl=hl.cables.has(c);
     if(isHl){ color='#ffd400'; weight=weight+2.5; }
-    const line=L.polyline([a,b],{pane:'cables',color,weight,opacity:isHl?1:0.7,dashArray:dash}).addTo(map);
-    line.on('click',ev=>{L.DomEvent.stopPropagation(ev); if(confirm('Remove this connection?')){ cables=cables.filter(x=>x!==c); saveNet(); redrawCables(); nodes.forEach(renderNode); renderLegend(); renderVattenLegend(); }});
-    cableLines.push(line);
+    const openCab=ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN) openCabModal(c);};
+    // black casing underneath gives every wire a clean outline
+    const casing=L.polyline([a,b],{pane:'cables',color:'#000',weight:weight+3,opacity:isHl?1:0.9,dashArray:dash}).addTo(map);
+    casing.on('click',openCab); cableLines.push(casing);
+    const line=L.polyline([a,b],{pane:'cables',color,weight,opacity:1,dashArray:dash}).addTo(map);
+    line.on('click',openCab); cableLines.push(line);
   });
 }
 function removeNode(id){
