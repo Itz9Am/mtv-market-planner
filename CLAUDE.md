@@ -292,6 +292,55 @@ between the `public` and `admin` classes.
 > key whenever no token is present. If public read ever 403s, check the Sheet is still
 > link-Viewer and the key's referrer/API restrictions still match the serving origin.
 
+## Areas (Marknad / Arena)
+
+Two independent plans — **Marknad** (the market) and **Arena** — selected by a `Marknad |
+Arena` segmented toggle in its own box (`#areaBar`, top-right). Each area has its own tents,
+wiring, scale (`ppm`), saved view and base image. `AREAS` holds the `{key,label,img,ppm?}`
+for each; `area` is the active key (persisted in `LS.area`, global). The tools bar
+(`#topbar`: Letters / El / Vatten) sits top-left, offset (`left:52px`) to clear Leaflet's
+zoom control — the area toggle is deliberately a separate control from the Letters toggle.
+
+- **The tent LIST is shared across areas.** `custom` (added objects) and `removed` are
+  **global**, so the sidebar shows the same tents in both areas; each area just tracks its
+  own placement coordinates. **A tent is placed once for the whole event** — `otherPlaced`
+  holds ids placed in the *other* area(s) (read from their namespaced `LS.placed`), and
+  `placedAnywhere(id)` gates the available list / counts / drop, so a vendor dropped on
+  Marknad no longer shows as available on Arena. `refreshOtherPlaced()` runs inside
+  `loadPlaced()`, so it refreshes on every area load/switch. `AREA_SCOPED` (the namespaced keys) is therefore placed, img, ppm, size,
+  view, edits, nodes, cables, dirty — NOT custom/removed. `nsKey()` suffixes those with
+  `::<area>` — **except** for `marknad`, which keeps the ORIGINAL key names, so pre-area data
+  loads unchanged. `letters`, `admin`, `area`, `custom`, `removed` stay global. All
+  `lsGet`/`lsSet` go through `nsKey`; only two direct `localStorage` writes were pointed at
+  `nsKey` by hand (`setImage`, and the `LS.area` write which is intentionally un-namespaced).
+- **Scale.** Marknad's `ppm` comes from its Sheet `meta`. Arena has a **fixed** `ppm` baked
+  into its `AREAS` entry (`ppm:4.39`, tuned against the aerial photo). `ppm = lsGet(LS.ppm,
+  areaDef().ppm)` seeds it, and the Sheet `meta` row overrides on load once Arena has synced.
+  The two-click measure tool was removed once `4.39` was confirmed — to re-tune, change the
+  constant (and clear a stale `mtvi_ppm_v1::arena` if one lingers) or restore the tool from
+  git history.
+- **Switching** (`switchArea`) tears down the current render, cancels any pending autosave
+  (the `dirty` flag persists per-area, so nothing is lost), flips `area`, reloads every
+  per-area global from localStorage (`reloadAreaState`), swaps the base image (which restores
+  that area's saved view), and re-renders, then pulls that area from the Sheet.
+- **Both areas sync to the same Sheet, via a trailing `area` column** on every tab (blank ==
+  `marknad`, so pre-area rows load unchanged — **no manual sheet change**, the columns
+  already exist). `meta` is now **one row per area**. Read: `currentAreaObjs()` keeps only the
+  active area's rows; `setSheetAll()` caches the full raw snapshot of ALL areas (persisted
+  globally as `mtvi_sheetall_v1`). Write: `sheetData()` emits the active area's rows (with
+  `area` appended) **plus `otherAreaRows()`** — the other areas' rows verbatim from the
+  snapshot — so saving one area never wipes the other. `runAutoSave` seeds the snapshot
+  (`loadSnapshot`) before its first write if needed, snapshots the row set *before* the
+  awaits, and only clears `dirty`/updates `lastSavedAt` if `area` didn't flip mid-write.
+  `pollRemote` reads the meta rows: if the **current** area's `savedAt` changed it reloads;
+  if only **another** area changed it refreshes the snapshot (so the next save preserves it).
+  - **Stale-snapshot caveat:** two browsers editing *different* areas concurrently can still
+    clobber each other's area between polls (the writer re-emits the other area from a
+    possibly-stale snapshot). Same "last write wins, silently" spirit as concurrent
+    same-area edits; the 15 s poll narrows the window but doesn't close it.
+- The base images are committed PNGs (`marknad_base_clean.png`, `arena_base.png`) and
+  **both** are copied into `_site/` by `pages.yml`.
+
 ## Persistence
 
 `localStorage`, keys prefixed `mtvi_` (see `const LS` at the top of the script), is the
@@ -367,6 +416,18 @@ those cols are blank and `tentId` resolves against the baked-in library as befor
 placed custom is rebuilt into the library (`customFromRow`) so `refOf()` finds it and it
 returns to the list on delete. A custom is placed at most once (placing removes it from the
 list), so one row per custom is enough — unplaced custom templates still stay local-only.
+
+The same def cols also carry **edits to a placed library tent** (rename/resize/colour):
+`placementRow` fills them whenever `edits[id]` is set (not just for customs), while an
+**unedited** library tent still leaves them blank so re-importing the Excel library keeps
+updating it live. A library tent is re-resolved from the library every render, so its
+override can't ride on the placed `ref` — it travels through the local `edits` map:
+`reconcileEdits(P)` (called from `applySheetState` before the items are built) rebuilds
+`edits[id]` from the def cols of library-tent placements — **set** when present, **cleared**
+when the author reverted (blank name). Custom placements are skipped there (handled by
+`customFromRow`). Only **placed** library edits sync (edits to unplaced tents stay local, by
+design). **`mSave` calls `queueSheetSave()`** so an edit pushes immediately — without it the
+change only touched `localStorage` and never re-synced until the next placement move.
 
 `meta` is a **single data row** (`A2:G2`), not key/value pairs. That keeps every tab
 the same shape — header row plus data rows — so one `rowsToObjects()` helper parses
