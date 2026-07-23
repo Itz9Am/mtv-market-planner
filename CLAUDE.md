@@ -199,9 +199,28 @@ requirement, falling back to a larger one. Sources default to unlimited outlets
 (capacity-limited only) but can be given explicit counts.
 
 Graph: `nodes[] = {id, domain:'el'|'water', kind:'source'|'elskap'|'brunn'|'handfat',
-rating, lat, lng, unl?, outs?}` and `cables[] = {src, dst, dstKind:'tent'|'node',
-domain, otype, phase}`. One input per node, one supply per tent, cycles rejected
+rating, lat, lng, unl?, outs?, color?}` and `cables[] = {src, dst, dstKind:'tent'|'node',
+domain, otype, phase, color?}`. One input per node, one supply per tent, cycles rejected
 (`createsCycle`).
+
+### Colours (both optional, both persisted)
+
+- **Node middle fill** (`n.color`): the source/cabinet modal has a colour picker for the
+  *middle* only — the **border stays the rating colour** (`ratingColor`, drawn as an inline
+  `border-color`). `color` absent means *use the CSS default* (`#181b22` cabinet /
+  `#0e2033` source); "Reset to default" clears it. Like `outs`, absent ≠ a stored value —
+  `nodeFromRow`/`nodeToRow` keep the column blank when unset.
+- **Wire colour** (`c.color`): default is the output's rating colour (`cableColor` →
+  `otypeColor`: 32A orange, 16A yellow, 63A/125A red, 220V light blue; water blue). Every
+  wire is drawn as two polylines — a black **casing** underneath for a clean outline, then
+  the colour on top. Clicking a wire (admin) opens a small modal to recolour or remove it;
+  "Use default" clears the override. Overload still wins visually (red dashed).
+
+Editing a node is **double-click** → `openSrcModal`. `renderNode` must not rebuild the
+marker's DOM on a plain select click — selection/highlight are class toggles applied to the
+live element, and `setIcon` only fires when the cached `m._html` actually changes. Rebuilding
+the element between the two clicks used to swallow the dblclick, so the node became
+un-editable (same failure mode as the tent-drag bug above).
 
 ## Water model (Vatten tab)
 
@@ -337,8 +356,8 @@ flat rows):
 placements  tentId | x | y | rot |
             name | placering | length | width | color | electricity | water | nya | shape
 nodes       id | domain | kind | rating | x | y | unl |
-            out220 | out16 | out32 | out63 | out125
-cables      src | dst | dstKind | domain | otype | phase
+            out220 | out16 | out32 | out63 | out125 | color
+cables      src | dst | dstKind | domain | otype | phase | color
 meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
 ```
 
