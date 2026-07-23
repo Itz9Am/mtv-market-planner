@@ -295,16 +295,24 @@ between the `public` and `admin` classes.
 ## Areas (Marknad / Arena)
 
 Two independent plans — **Marknad** (the market) and **Arena** — selected by a `Marknad |
-Arena` segmented toggle at the left of `#topbar` (visible in public and admin). Each area
-has its own tents, wiring, scale (`ppm`), saved view and base image. `AREAS` holds the
-`{key,label,img}` for each; `area` is the active key (persisted in `LS.area`, global).
+Arena` segmented toggle in its own box (`#areaBar`, top-right). Each area has its own tents,
+wiring, scale (`ppm`), saved view and base image. `AREAS` holds the `{key,label,img,ppm?}`
+for each; `area` is the active key (persisted in `LS.area`, global). The tools bar
+(`#topbar`: Letters / El / Vatten) sits top-left, offset (`left:52px`) to clear Leaflet's
+zoom control — the area toggle is deliberately a separate control from the Letters toggle.
 
-- **Per-area localStorage.** `AREA_SCOPED` lists the plan keys (placed, custom, img, ppm,
-  size, view, edits, removed, nodes, cables, dirty); `nsKey()` suffixes them with `::<area>`
-  — **except** for `marknad`, which keeps the ORIGINAL key names, so pre-area data loads
-  unchanged. `letters`, `admin` and `area` stay global. All `lsGet`/`lsSet` go through
-  `nsKey`, so call sites didn't change; only two direct `localStorage` writes were pointed at
+- **The tent LIST is shared across areas.** `custom` (added objects) and `removed` are
+  **global**, so the sidebar shows the same tents in both areas; each area just tracks its
+  own placements. `AREA_SCOPED` (the namespaced keys) is therefore placed, img, ppm, size,
+  view, edits, nodes, cables, dirty — NOT custom/removed. `nsKey()` suffixes those with
+  `::<area>` — **except** for `marknad`, which keeps the ORIGINAL key names, so pre-area data
+  loads unchanged. `letters`, `admin`, `area`, `custom`, `removed` stay global. All
+  `lsGet`/`lsSet` go through `nsKey`; only two direct `localStorage` writes were pointed at
   `nsKey` by hand (`setImage`, and the `LS.area` write which is intentionally un-namespaced).
+- **Scale.** Marknad's `ppm` comes from its Sheet `meta`. Arena has a **fixed** `ppm` baked
+  into its `AREAS` entry (`ppm:7.15`) — `areaDef().ppm` wins over localStorage for it, so
+  Arena is always to scale with no calibration step (the earlier two-click measure tool was
+  removed once the scale was known).
 - **Switching** (`switchArea`) tears down the current render, cancels any pending Marknad
   autosave (its `dirty` flag persists per-area, so nothing is lost), flips `area`, reloads
   every per-area global from localStorage (`reloadAreaState`), swaps the base image (which
@@ -316,12 +324,8 @@ has its own tents, wiring, scale (`ppm`), saved view and base image. `AREAS` hol
   written into Marknad's rows. Arena is **local per-browser** until per-area Sheet sync is
   added (would need an `area` column on every tab + per-area `meta` rows). The `syncStatus`
   shows `Arena — local only` there.
-- **Measure tool** (`#measureBtn`, admin-only via `body.public` CSS): click it, click two
-  points a known distance apart, enter the real metres, and `ppm = pixelDist / metres` is set
-  and saved for the **current** area (the map is image-pixel `CRS.Simple`, so the click delta
-  is already in pixels). This replaces the removed two-click calibration, per-area. The base
-  images are committed PNGs (`marknad_base_clean.png`, `arena_base.png`) and **both** are
-  copied into `_site/` by `pages.yml`.
+- The base images are committed PNGs (`marknad_base_clean.png`, `arena_base.png`) and
+  **both** are copied into `_site/` by `pages.yml`.
 
 ## Persistence
 
