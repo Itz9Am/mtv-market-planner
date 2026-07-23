@@ -303,7 +303,11 @@ zoom control — the area toggle is deliberately a separate control from the Let
 
 - **The tent LIST is shared across areas.** `custom` (added objects) and `removed` are
   **global**, so the sidebar shows the same tents in both areas; each area just tracks its
-  own placements. `AREA_SCOPED` (the namespaced keys) is therefore placed, img, ppm, size,
+  own placement coordinates. **A tent is placed once for the whole event** — `otherPlaced`
+  holds ids placed in the *other* area(s) (read from their namespaced `LS.placed`), and
+  `placedAnywhere(id)` gates the available list / counts / drop, so a vendor dropped on
+  Marknad no longer shows as available on Arena. `refreshOtherPlaced()` runs inside
+  `loadPlaced()`, so it refreshes on every area load/switch. `AREA_SCOPED` (the namespaced keys) is therefore placed, img, ppm, size,
   view, edits, nodes, cables, dirty — NOT custom/removed. `nsKey()` suffixes those with
   `::<area>` — **except** for `marknad`, which keeps the ORIGINAL key names, so pre-area data
   loads unchanged. `letters`, `admin`, `area`, `custom`, `removed` stay global. All
