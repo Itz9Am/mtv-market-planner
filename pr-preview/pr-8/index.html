@@ -479,7 +479,19 @@ function removeTentMarker(t){
 }
 function refreshAll(){ placed.forEach(renderTentMarker); positionCtl(); }
 function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); queueSheetSave(); }
-function loadPlaced(){ placed=[]; (lsGet(LS.placed,[])||[]).forEach(a=>{placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null});}); placedIds=new Set(placed.map(t=>t.ref.id)); }
+function loadPlaced(){ placed=[]; (lsGet(LS.placed,[])||[]).forEach(a=>{placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null});}); placedIds=new Set(placed.map(t=>t.ref.id)); refreshOtherPlaced(); }
+/* A tent is placed once across the whole event: `otherPlaced` holds ids placed in the
+   OTHER area(s), read straight from their namespaced localStorage, so a vendor dropped on
+   Marknad no longer shows as "available" on Arena (and vice-versa). */
+let otherPlaced=new Set();
+function refreshOtherPlaced(){
+  otherPlaced=new Set();
+  AREAS.forEach(a=>{ if(a.key===area) return;
+    const key=(a.key==='marknad')?LS.placed:(LS.placed+'::'+a.key);
+    try{ const v=localStorage.getItem(key); if(v)(JSON.parse(v)||[]).forEach(p=>{ if(p&&p.ref&&p.ref.id!=null) otherPlaced.add(p.ref.id); }); }catch(e){}
+  });
+}
+function placedAnywhere(id){ return placedIds.has(id)||otherPlaced.has(id); }
 function doPlace(ref,lat,lng){
   const t={uid:uidSeq++,ref:Object.assign({},ref),lat,lng,rot:0,marker:null};
   placed.push(t); placedIds.add(ref.id); renderTentMarker(t); selectTent(t.uid); savePlaced();
@@ -538,7 +550,7 @@ function sortLib(arr){
 }
 function fmtSize(t){ if(t.shape==='circle')return t.length?`${t.length} m dia.`:'no size'; return (t.length&&t.width)?`${t.length}×${t.width} m`:'no size';}
 function updateCounts(){
-  const avail=library.filter(t=>!placedIds.has(t.id)&&!removed.has(String(t.id))).length;
+  const avail=library.filter(t=>!placedAnywhere(t.id)&&!removed.has(String(t.id))).length;
   document.getElementById('counts').textContent=avail+' available · '+placed.length+' placed'+(removed.size?' · '+removed.size+' removed':'');
   const rb=document.getElementById('restoreBtn');
   rb.style.display=removed.size?'':'none'; rb.textContent='Restore removed ('+removed.size+')';
@@ -546,7 +558,7 @@ function updateCounts(){
 function renderList(filter=''){
   const f=(filter||'').trim().toLowerCase();
   const merged=library.map(applyEdits);
-  const items=sortLib(merged.filter(t=>!placedIds.has(t.id) && !removed.has(String(t.id)) && (!f||t.name.toLowerCase().includes(f)||(t.placering||'').toLowerCase().includes(f))));
+  const items=sortLib(merged.filter(t=>!placedAnywhere(t.id) && !removed.has(String(t.id)) && (!f||t.name.toLowerCase().includes(f)||(t.placering||'').toLowerCase().includes(f))));
   listEl.innerHTML='';
   items.forEach(m=>{
     const el=document.createElement('div'); el.className='tent'; el.draggable=true; el.dataset.id=m.id;
@@ -591,7 +603,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){srcBg.style.display
 const mapWrap=document.getElementById('mapWrap');
 mapWrap.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';mapWrap.classList.add('dragover');});
 mapWrap.addEventListener('dragleave',e=>{if(e.target===mapWrap)mapWrap.classList.remove('dragover');});
-mapWrap.addEventListener('drop',e=>{e.preventDefault();mapWrap.classList.remove('dragover');if(currentTab!=='placering')return;const id=e.dataTransfer.getData('text/plain');const t=library.find(x=>String(x.id)===String(id));if(!t||placedIds.has(t.id))return;const ll=map.mouseEventToLatLng(e);doPlace(withSize(applyEdits(t)),ll.lat,ll.lng);});
+mapWrap.addEventListener('drop',e=>{e.preventDefault();mapWrap.classList.remove('dragover');if(currentTab!=='placering')return;const id=e.dataTransfer.getData('text/plain');const t=library.find(x=>String(x.id)===String(id));if(!t||placedAnywhere(t.id))return;const ll=map.mouseEventToLatLng(e);doPlace(withSize(applyEdits(t)),ll.lat,ll.lng);});
 
 document.getElementById('search').addEventListener('input',e=>renderList(e.target.value));
 
@@ -713,7 +725,7 @@ function renderLegend(){
   });
   const noPower=placed.filter(t=>needsPower(t)&&!hasPower(t));
   unconnectedSection(el,'Without power',noPower,tr=>elLabel(tr.electricity),'Every placed tent that needs power is connected.');
-  const waiting=library.filter(x=>!placedIds.has(x.id)&&!removed.has(String(x.id))&&tentReq(applyEdits(x).electricity)).length;
+  const waiting=library.filter(x=>!placedAnywhere(x.id)&&!removed.has(String(x.id))&&tentReq(applyEdits(x).electricity)).length;
   if(waiting){ const d=document.createElement('div'); d.className='hint'; d.textContent=waiting+' more tent(s) needing power are not placed yet.'; el.appendChild(d); }
 }
 
@@ -1508,7 +1520,7 @@ function renderVattenLegend(){
       el.appendChild(row);
     });
   }
-  const waitingW=library.filter(x=>!placedIds.has(x.id)&&!removed.has(String(x.id))&&applyEdits(x).water).length;
+  const waitingW=library.filter(x=>!placedAnywhere(x.id)&&!removed.has(String(x.id))&&applyEdits(x).water).length;
   if(waitingW){ const d=document.createElement('div'); d.className='hint'; d.textContent=waitingW+' more tent(s) needing water are not placed yet.'; el.appendChild(d); }
 }
 document.addEventListener('keydown',e=>{
