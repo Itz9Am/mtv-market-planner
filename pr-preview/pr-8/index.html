@@ -83,9 +83,6 @@
   .calib #map{cursor:crosshair}
   .wirebtn.on{background:var(--accent2);color:#fff;border-color:var(--accent2);font-weight:600}
   .wiring #map{cursor:crosshair}
-  .measuring #map{cursor:crosshair}
-  #measureBtn{margin-left:8px}
-  body.public #measureBtn{display:none}   /* calibration is admin-only */
   path.nya-fill{fill:url(#nyaPat);fill-opacity:.95;pointer-events:none}
   .leaflet-overlay-pane path{cursor:move}
   #topbar .grp{display:flex;gap:6px;align-items:center}
@@ -155,7 +152,6 @@
         <button data-area="marknad" class="on">Marknad</button>
         <button data-area="arena">Arena</button>
       </div>
-      <button id="measureBtn" class="wirebtn" title="Set the scale: click two points a known distance apart">Measure</button>
     </div>
     <div id="topbar">
       <div class="grp" id="placeringControls">
@@ -264,7 +260,7 @@ const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
    `admin` and `area` itself stay global. */
 const AREAS=[{key:'marknad',label:'Marknad',img:'marknad_base_clean.png'},
-             {key:'arena',label:'Arena',img:'arena_base.png',ppm:7.15}];
+             {key:'arena',label:'Arena',img:'arena_base.png',ppm:4.39}];
 /* The tent LIST is shared across areas — `custom` (added objects) and `removed` are
    global, so the sidebar shows the same tents everywhere. Only the per-area PLAN keys
    (placements, wiring, scale, view, image, edits) are namespaced. */
@@ -299,7 +295,7 @@ function refOf(t){
 let library=TENTS.concat(customTents);
 const DEFAULT_IMG='marknad_base_clean.png';   // committed & published next to the HTML
 let imgData=lsGet(LS.img,null), imgBounds=null, imgOverlay=null;
-let ppm=lsGet(LS.ppm, areaDef().ppm!=null?areaDef().ppm:null);   // measured value wins over the area default
+let ppm=lsGet(LS.ppm, areaDef().ppm!=null?areaDef().ppm:null);   // cached scale, else the area's default (Sheet meta overrides on load)
 let currentTab='placering';
 const EL_COLORS={'220v 6A':'#9FC5E8','380v 16A':'#F9CB9C','380v 32A':'#E06666','none':'#C9CDD6','':'#8A90A0'};
 const EL_LIST=['220v 6A','380v 16A','380v 32A','none','']; // legend order
@@ -330,7 +326,6 @@ map.on('zoomend',refreshAll);
 map.on('move zoom',positionCtl);
 map.on('moveend zoomend',()=>{ if(imgBounds){ lsSet(LS.view,{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}); }});
 map.on('click',e=>{
-  if(measuring){ measureClick(e.latlng); return; }
   if(curDomain()){
     if(armNode){ addNode(armNode,e.latlng.lat,e.latlng.lng); armNode=null; banner.style.display='none'; return; }
     if(connectSource){ setConnectSource(null); banner.style.display='none'; clearHl(); refreshHl(); return; }
@@ -1336,7 +1331,7 @@ function reloadAreaState(){
   loadPlaced();
 }
 function teardownRender(){
-  cancelMeasure(); deselect();
+  deselect();
   placed.forEach(removeTentMarker); placed=[]; placedIds=new Set();
   Object.values(nodeMarkers).forEach(m=>map.removeLayer(m)); for(const k in nodeMarkers) delete nodeMarkers[k];
   cableLines.forEach(l=>map.removeLayer(l)); cableLines=[];
@@ -1357,32 +1352,6 @@ function switchArea(a){
   setTimeout(()=>banner.style.display='none',2200);
 }
 document.querySelectorAll('#areaSeg button').forEach(b=>{ b.onclick=()=>switchArea(b.dataset.area); });
-
-/* ---------- measure tool: two clicks + a known distance set ppm for the current area ---------- */
-let measuring=false, measurePts=[], measureLayer=[];
-function cancelMeasure(){ measuring=false; mapWrap.classList.remove('measuring');
-  const b=document.getElementById('measureBtn'); if(b) b.classList.remove('on');
-  measurePts=[]; measureLayer.forEach(l=>map.removeLayer(l)); measureLayer=[]; }
-function startMeasure(){ if(!ADMIN) return; cancelMeasure(); measuring=true;
-  mapWrap.classList.add('measuring'); document.getElementById('measureBtn').classList.add('on');
-  flashBanner('Measure '+areaDef().label+': click two points a known distance apart.',true); }
-function measureClick(ll){
-  measurePts.push([ll.lat,ll.lng]);
-  measureLayer.push(L.circleMarker(ll,{radius:5,color:'#ffd400',weight:2,fillColor:'#ffd400',fillOpacity:.6,pane:'nodes'}).addTo(map));
-  if(measurePts.length<2) return;
-  measureLayer.push(L.polyline(measurePts,{color:'#ffd400',weight:2,dashArray:'5,4',pane:'cables'}).addTo(map));
-  const dy=measurePts[1][0]-measurePts[0][0], dx=measurePts[1][1]-measurePts[0][1];
-  const px=Math.sqrt(dx*dx+dy*dy);
-  const ans=prompt('Real distance between the two points, in METRES\n(image pixels apart: '+Math.round(px)+')','');
-  const m=parseFloat(ans);
-  if(m>0 && px>0){ ppm=px/m; lsSet(LS.ppm,ppm);
-    flashBanner('Scale set for '+areaDef().label+': '+ppm.toFixed(2)+' px/m.',false);
-    setTimeout(()=>banner.style.display='none',2200);
-    refreshAll(); redrawCables(); queueSheetSave(); }
-  else flashBanner('Measurement cancelled.',true);
-  cancelMeasure();
-}
-document.getElementById('measureBtn').onclick=()=>{ measuring?cancelMeasure():startMeasure(); };
 
 function addNode(spec,lat,lng){
   const n={id:'node_'+Date.now()+'_'+Math.floor(Math.random()*1000),domain:spec.domain,kind:spec.kind,rating:spec.rating,lat,lng};
