@@ -321,17 +321,25 @@ zoom control — the area toggle is deliberately a separate control from the Let
   `ppm = pixelDist / metres` for the current area (the map is image-pixel `CRS.Simple`, so
   the click delta is already pixels). `7.15` is a first guess and is expected to be re-tuned
   by measuring against the aerial photo.
-- **Switching** (`switchArea`) tears down the current render, cancels any pending Marknad
-  autosave (its `dirty` flag persists per-area, so nothing is lost), flips `area`, reloads
-  every per-area global from localStorage (`reloadAreaState`), swaps the base image (which
-  restores that area's saved view), and re-renders. Marknad then pulls from the Sheet; Arena
-  does not.
-- **Sync scope is Marknad-only right now.** `queueSheetSave` / `runAutoSave` /
-  `autoLoadStartup` / `pollRemote` early-return unless `area==='marknad'`, and
-  `runAutoSave` also bails if the area flipped mid-flight so Arena globals can never be
-  written into Marknad's rows. Arena is **local per-browser** until per-area Sheet sync is
-  added (would need an `area` column on every tab + per-area `meta` rows). The `syncStatus`
-  shows `Arena — local only` there.
+- **Switching** (`switchArea`) tears down the current render, cancels any pending autosave
+  (the `dirty` flag persists per-area, so nothing is lost), flips `area`, reloads every
+  per-area global from localStorage (`reloadAreaState`), swaps the base image (which restores
+  that area's saved view), and re-renders, then pulls that area from the Sheet.
+- **Both areas sync to the same Sheet, via a trailing `area` column** on every tab (blank ==
+  `marknad`, so pre-area rows load unchanged — **no manual sheet change**, the columns
+  already exist). `meta` is now **one row per area**. Read: `currentAreaObjs()` keeps only the
+  active area's rows; `setSheetAll()` caches the full raw snapshot of ALL areas (persisted
+  globally as `mtvi_sheetall_v1`). Write: `sheetData()` emits the active area's rows (with
+  `area` appended) **plus `otherAreaRows()`** — the other areas' rows verbatim from the
+  snapshot — so saving one area never wipes the other. `runAutoSave` seeds the snapshot
+  (`loadSnapshot`) before its first write if needed, snapshots the row set *before* the
+  awaits, and only clears `dirty`/updates `lastSavedAt` if `area` didn't flip mid-write.
+  `pollRemote` reads the meta rows: if the **current** area's `savedAt` changed it reloads;
+  if only **another** area changed it refreshes the snapshot (so the next save preserves it).
+  - **Stale-snapshot caveat:** two browsers editing *different* areas concurrently can still
+    clobber each other's area between polls (the writer re-emits the other area from a
+    possibly-stale snapshot). Same "last write wins, silently" spirit as concurrent
+    same-area edits; the 15 s poll narrows the window but doesn't close it.
 - The base images are committed PNGs (`marknad_base_clean.png`, `arena_base.png`) and
   **both** are copied into `_site/` by `pages.yml`.
 

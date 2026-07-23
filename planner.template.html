@@ -734,24 +734,54 @@ function renderLegend(){
    metadata. NOT the tent library (that keeps its Excel pipeline). Four flat tabs,
    each a header row plus data rows, so one rowsToObjects() parses them all.
    No cell holds JSON: view is three columns, node outputs are five columns. */
+/* Every tab carries a trailing `area` column so both plans (Marknad + Arena) live in the
+   same tabs. A blank area cell reads back as 'marknad' (so pre-area rows load unchanged).
+   On read we keep only the current area's rows; on write we re-emit the OTHER areas' raw
+   rows verbatim (from the last-read snapshot `sheetAll`) so saving one area never wipes the
+   other. `meta` becomes one row PER area. No manual sheet change is needed — the columns
+   already exist empty and an UNFORMATTED_VALUE read omits trailing blanks. */
 const SHEET_HEADERS={
-  // Custom objects live only in the app (not the Excel library), so a placed custom
-  // carries its own definition inline (cols E..M). For library tents those cols are
-  // blank and the tentId resolves against the baked-in library as before.
-  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape'],
-  nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','color'],
-  cables:['src','dst','dstKind','domain','otype','phase','color'],
-  meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy']
+  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape','area'],
+  nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','color','area'],
+  cables:['src','dst','dstKind','domain','otype','phase','color','area'],
+  meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy','area']
 };
-const SHEET_RANGES={placements:'placements!A1:M',nodes:'nodes!A1:M',cables:'cables!A1:G',meta:'meta!A1:G'};
-const SHEET_CLEAR=['placements!A2:M','nodes!A2:M','cables!A2:G','meta!A2:G'];
+const SHEET_RANGES={placements:'placements!A1:N',nodes:'nodes!A1:N',cables:'cables!A1:H',meta:'meta!A1:H'};
+const SHEET_CLEAR=['placements!A2:N','nodes!A2:N','cables!A2:H','meta!A2:H'];
+/* raw values (incl. header) of ALL areas from the last read — lets a write preserve other
+   areas' rows. Persisted globally so a save before this session's first read still can't
+   clobber the other area. */
+let sheetAll=lsGetGlobal('mtvi_sheetall_v1',{placements:[],nodes:[],cables:[],meta:[]});
+function lsGetGlobal(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
+function setSheetAll(vr){
+  sheetAll={placements:(vr[0]&&vr[0].values)||[],nodes:(vr[1]&&vr[1].values)||[],
+            cables:(vr[2]&&vr[2].values)||[],meta:(vr[3]&&vr[3].values)||[]};
+  try{ localStorage.setItem('mtvi_sheetall_v1',JSON.stringify(sheetAll)); }catch(e){}
+  GS.loadedOnce=true;
+}
+/* rows for areas OTHER than the current one, straight from the snapshot (written back verbatim) */
+function otherAreaRows(tab){
+  const rows=sheetAll[tab]||[], hdr=SHEET_HEADERS[tab], ai=hdr.indexOf('area'), out=[];
+  for(let i=1;i<rows.length;i++){ const r=rows[i]||[]; if(r.every(isBlank)) continue;
+    const ar=(ai>=0 && !isBlank(r[ai]))?String(r[ai]):'marknad';
+    if(ar!==area) out.push(r); }
+  return out;
+}
+/* current-area rows parsed to objects (blank area == 'marknad') */
+function currentAreaObjs(values,headers){
+  const rows=values||[], keep=[headers], ai=headers.indexOf('area');
+  for(let i=1;i<rows.length;i++){ const r=rows[i]||[]; if(r.every(isBlank)) continue;
+    const ar=(ai>=0 && !isBlank(r[ai]))?String(r[ai]):'marknad';
+    if(ar===area) keep.push(r); }
+  return rowsToObjects(keep,headers);
+}
 /* Config is hard-coded here — there is no in-app settings UI. */
 const SHEET_DEFAULTS={
   spreadsheetId:'1H47rLODVURUOy91OeuWh-uJiDcj79c-K8Q_HZxNeDDM',
   clientId:'445187642175-7iqlq60l2rlkmhqg0b3elv97pvjeke1q.apps.googleusercontent.com',
   apiKey:'AIzaSyBLNgUnZN13BVlVw8nkxNcnCXUoXHG38m0', imageUrl:DEFAULT_IMG
 };
-const GS={token:null,tokenExp:0,tokenClient:null,cbResolve:null,cbReject:null,email:null,lastSavedAt:null,busy:false};
+const GS={token:null,tokenExp:0,tokenClient:null,cbResolve:null,cbReject:null,email:null,lastSavedAt:null,busy:false,loadedOnce:false};
 function sheetCfg(){ return SHEET_DEFAULTS; }
 
 /* --- pure type + row helpers (extracted & node-tested; see CLAUDE.md) --- */
@@ -920,11 +950,12 @@ function metaRow(savedAt,savedBy){
   return [ppm||'', sheetCfg().imageUrl||'', view?view.x:'', view?view.y:'', view?view.z:'', savedAt, savedBy];
 }
 function sheetData(savedAt,savedBy){
+  const A=area;   // tag this area's rows; re-emit the other areas' rows verbatim so they survive
   return [
-    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(placementRow))},
-    {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(nodeToRow))},
-    {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(cableToRow))},
-    {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy)]}
+    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>placementRow(t).concat([A]))).concat(otherAreaRows('placements'))},
+    {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(n=>nodeToRow(n).concat([A]))).concat(otherAreaRows('nodes'))},
+    {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(c=>cableToRow(c).concat([A]))).concat(otherAreaRows('cables'))},
+    {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy).concat([A])].concat(otherAreaRows('meta'))}
   ];
 }
 function applySheetState(P,N,C,M,keepView){
@@ -964,30 +995,37 @@ function setSync(s,msg){
   const el=document.getElementById('syncStatus'); if(!el) return;
   const M={saved:['Synced','var(--ok)'],saving:['Saving…','var(--accent)'],pending:['Saving…','var(--accent)'],
     loading:['Loading…','var(--accent)'],signin:['Sign in to sync','var(--accent)'],
-    local:['Arena — local only','var(--muted)'],
     error:['Sync error — retrying','var(--danger)'],idle:['','var(--muted)']};
   const v=M[s]||M.idle; el.textContent=v[0]; el.style.color=v[1]; el.title=msg||v[0];
 }
 /* Called from every mutation (savePlaced / saveNet / calibration). Debounced and
    coalesced so a burst of edits becomes one write. Never pops up auth. */
 function queueSheetSave(){
-  if(area!=='marknad') return;                            // phase 1: only Marknad syncs; Arena is local
   if(SYNC.loading || !sheetCfg().spreadsheetId) return;   // not while loading; not if unconfigured
   lsSet(LS.dirty,1); SYNC.pending=true; SYNC.errs=0; setSync('pending');
   clearTimeout(SYNC.timer); SYNC.timer=setTimeout(runAutoSave,2500);
 }
+/* read all four tabs once (raw) to seed the snapshot, without applying anything — so a
+   save can preserve the other area's rows even before this session's first real load. */
+async function loadSnapshot(){
+  const vr=await sheetBatchGet([SHEET_RANGES.placements,SHEET_RANGES.nodes,SHEET_RANGES.cables,SHEET_RANGES.meta]);
+  setSheetAll(vr);
+}
 async function runAutoSave(){
-  if(area!=='marknad'){ SYNC.pending=false; return; }   // never write Arena's globals into Marknad's rows
   if(SYNC.inflight || !SYNC.pending) return;
   if(!haveToken()){ try{ await getToken(false); }              // silent refresh only — never a popup mid-edit
     catch(e){ setSync('signin'); return; } }                   // stays pending; retries on next change / sign-in
+  if(!GS.loadedOnce){ try{ await loadSnapshot(); }             // never overwrite the other area before we've seen it
+    catch(e){ SYNC.pending=true; setSync('error',e.message); return; } }
   SYNC.inflight=true; SYNC.pending=false; setSync('saving');
+  const savingArea=area;                                        // guard against an area flip mid-write
+  const savedAt=new Date().toISOString(), savedBy=GS.email||'admin';
+  const data=sheetData(savedAt,savedBy);                        // snapshot this area's rows + other areas' rows now
   try{
-    const savedAt=new Date().toISOString(), savedBy=GS.email||'admin';
     await sheetApi('/values:batchClear',{ranges:SHEET_CLEAR});
-    await sheetApi('/values:batchUpdate',{valueInputOption:'RAW',data:sheetData(savedAt,savedBy)});
-    GS.lastSavedAt=savedAt; lsSet(LS.dirty,0); SYNC.errs=0;
-    setSync(SYNC.pending?'pending':'saved');
+    await sheetApi('/values:batchUpdate',{valueInputOption:'RAW',data});
+    if(area===savingArea){ GS.lastSavedAt=savedAt; lsSet(LS.dirty,0); }
+    SYNC.errs=0; setSync(SYNC.pending?'pending':'saved');
   }catch(e){ SYNC.errs++; SYNC.pending=true; setSync('error',e.message); }
   SYNC.inflight=false;
   if(SYNC.pending && SYNC.errs<4){ clearTimeout(SYNC.timer);   // backoff on error, quick follow-up on a fresh edit
@@ -997,17 +1035,17 @@ async function runAutoSave(){
    edits win — we push them instead of overwriting. */
 async function autoLoadStartup(){
   const cfg=sheetCfg();
-  if(area!=='marknad'){ setSync('local'); return; }   // phase 1: Arena is local-only, nothing to pull
   if(!cfg.spreadsheetId) return;
   if(lsGet(LS.dirty,0)){ setSync('pending'); queueSheetSave(); return; }
   if(!haveToken() && !cfg.apiKey){ try{ await getToken(false); }catch(e){ setSync('signin'); return; } }
   setSync('loading');
   try{
     const vr=await sheetBatchGet([SHEET_RANGES.placements,SHEET_RANGES.nodes,SHEET_RANGES.cables,SHEET_RANGES.meta]);
-    const P=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
-    const N=rowsToObjects(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
-    const C=rowsToObjects(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
-    const M=rowsToObjects(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
+    setSheetAll(vr);                                            // remember all areas' raw rows
+    const P=currentAreaObjs(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
+    const N=currentAreaObjs(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
+    const C=currentAreaObjs(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
+    const M=currentAreaObjs(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
     if(P.length||N.length||C.length||(M&&M.ppm!=null)){
       SYNC.loading=true; applySheetState(P,N,C,M); SYNC.loading=false;
     }
@@ -1023,10 +1061,11 @@ async function remoteReload(){
   SYNC.loading=true;
   try{
     const vr=await sheetBatchGet([SHEET_RANGES.placements,SHEET_RANGES.nodes,SHEET_RANGES.cables,SHEET_RANGES.meta]);
-    const P=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
-    const N=rowsToObjects(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
-    const C=rowsToObjects(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
-    const M=rowsToObjects(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
+    setSheetAll(vr);
+    const P=currentAreaObjs(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
+    const N=currentAreaObjs(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
+    const C=currentAreaObjs(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
+    const M=currentAreaObjs(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
     applySheetState(P,N,C,M,true);                 // keepView: don't yank the user's pan/zoom
     GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
     return M;
@@ -1035,16 +1074,18 @@ async function remoteReload(){
 function reloadBlocked(){ return SYNC.loading||SYNC.inflight||SYNC.pending||pointerDown||document.hidden; }
 async function pollRemote(){
   const cfg=sheetCfg();
-  if(area!=='marknad') return;                         // phase 1: Arena is local-only
   if(!cfg.spreadsheetId || reloadBlocked()) return;   // busy, mid-edit, or tab hidden
   if(!haveToken() && !cfg.apiKey) return;              // can't read silently
   try{
     const vr=await sheetBatchGet([SHEET_RANGES.meta]);
-    const M=rowsToObjects(vr[0]&&vr[0].values,SHEET_HEADERS.meta)[0]||{};
-    if(M.savedAt && M.savedAt!==GS.lastSavedAt && !reloadBlocked()){   // re-check after the await
+    const metaVals=(vr[0]&&vr[0].values)||[];
+    const M=currentAreaObjs(metaVals,SHEET_HEADERS.meta)[0]||{};   // this area's meta row
+    if(M.savedAt && M.savedAt!==GS.lastSavedAt && !reloadBlocked()){   // this area changed → pull it in
       const m=await remoteReload();
       flashBanner('Plan updated from the Sheet'+(m&&m.savedBy?(' · '+m.savedBy):'')+'.',false);
       setTimeout(()=>banner.style.display='none',2200);
+    } else if(JSON.stringify(metaVals)!==JSON.stringify(sheetAll.meta) && !reloadBlocked()){
+      await loadSnapshot();   // a DIFFERENT area changed → refresh the snapshot so our next save won't clobber it
     }
   }catch(e){/* transient poll error — try again next tick */}
 }
@@ -1311,8 +1352,8 @@ function switchArea(a){
   setImage(imgData||areaDef().img,true);   // swaps the base image, restores that area's saved view, re-renders
   showDomainLayers();
   if(currentTab==='el') renderLegend(); if(currentTab==='vatten') renderVattenLegend();
-  if(area==='marknad'){ GS.lastSavedAt=null; autoLoadStartup(); } else setSync('local');
-  flashBanner(areaDef().label+(area==='marknad'?'':' — local only (not synced yet)'),area!=='marknad');
+  GS.lastSavedAt=null; autoLoadStartup();   // pull this area's rows from the Sheet (local unsynced edits win)
+  flashBanner('Switched to '+areaDef().label,false);
   setTimeout(()=>banner.style.display='none',2200);
 }
 document.querySelectorAll('#areaSeg button').forEach(b=>{ b.onclick=()=>switchArea(b.dataset.area); });
