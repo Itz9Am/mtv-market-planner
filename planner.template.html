@@ -80,6 +80,8 @@
   .calib #map{cursor:crosshair}
   .wirebtn.on{background:var(--accent2);color:#fff;border-color:var(--accent2);font-weight:600}
   .wiring #map{cursor:crosshair}
+  .measuring #map{cursor:crosshair}
+  body.public #measureBtn{display:none}   /* calibration is admin-only */
   path.nya-fill{fill:url(#nyaPat);fill-opacity:.95;pointer-events:none}
   .leaflet-overlay-pane path{cursor:move}
   #topbar .grp{display:flex;gap:6px;align-items:center}
@@ -145,6 +147,13 @@
   <div id="mapWrap">
     <div id="map"></div>
     <div id="topbar">
+      <div class="grp" id="areaControls">
+        <div class="seg" id="areaSeg">
+          <button data-area="marknad" class="on">Marknad</button>
+          <button data-area="arena">Arena</button>
+        </div>
+        <button id="measureBtn" class="wirebtn" title="Measure a known distance to set the scale (ppm)">Measure</button>
+      </div>
       <div class="grp" id="placeringControls">
         <button id="lettersBtn" class="wirebtn on" title="Show or hide the Placering letters on tents">Letters</button>
       </div>
@@ -245,9 +254,20 @@
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1'};
-function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
-function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1'};
+/* Two independent plans ("areas"), each with its own tents, wiring, scale, view and base
+   image. The plan-state keys below are namespaced per area in localStorage; the default
+   area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
+   `admin` and `area` itself stay global. */
+const AREAS=[{key:'marknad',label:'Marknad',img:'marknad_base_clean.png'},
+             {key:'arena',label:'Arena',img:'arena_base.png'}];
+const AREA_SCOPED=new Set([LS.placed,LS.custom,LS.img,LS.ppm,LS.size,LS.view,LS.edits,LS.removed,LS.nodes,LS.cables,LS.dirty]);
+let area='marknad';
+try{ const v=localStorage.getItem(LS.area); if(v){ const a=JSON.parse(v); if(AREAS.some(x=>x.key===a)) area=a; } }catch(e){}
+function nsKey(k){ return (area!=='marknad' && AREA_SCOPED.has(k)) ? k+'::'+area : k; }
+function lsGet(k,d){try{const v=localStorage.getItem(nsKey(k));return v?JSON.parse(v):d;}catch(e){return d;}}
+function lsSet(k,v){try{localStorage.setItem(nsKey(k),JSON.stringify(v));}catch(e){}}
+function areaDef(){ return AREAS.find(a=>a.key===area)||AREAS[0]; }
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 /* Public (no-login) view shows only the map with the tents and auto-syncs read-only.
    Admin view (unlocked by signing in) is the full editing UI. Body starts .public so a
@@ -298,11 +318,12 @@ map.createPane('cables');     map.getPane('cables').style.zIndex='610';      // 
 map.createPane('tentlabels'); map.getPane('tentlabels').style.zIndex='620';  // above cables
 map.getPane('tentlabels').style.pointerEvents='none';
 map.createPane('nodes');      map.getPane('nodes').style.zIndex='630';       // cabinets on top
-setImage(imgData||DEFAULT_IMG,true);   // fall back to the committed base plan on a fresh browser
+setImage(imgData||areaDef().img,true);   // fall back to the active area's committed base plan
 map.on('zoomend',refreshAll);
 map.on('move zoom',positionCtl);
 map.on('moveend zoomend',()=>{ if(imgBounds){ lsSet(LS.view,{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}); }});
 map.on('click',e=>{
+  if(measuring){ measureClick(e.latlng); return; }
   if(curDomain()){
     if(armNode){ addNode(armNode,e.latlng.lat,e.latlng.lng); armNode=null; banner.style.display='none'; return; }
     if(connectSource){ setConnectSource(null); banner.style.display='none'; clearHl(); refreshHl(); return; }
@@ -322,7 +343,7 @@ function setImage(dataURL,restore){
     imgOverlay=L.imageOverlay(dataURL,imgBounds).addTo(map);
     const v=restore?lsGet(LS.view,null):null;
     if(v){ map.setView(v.c,v.z); } else { map.fitBounds(imgBounds); }
-    try{ localStorage.setItem(LS.img,JSON.stringify(dataURL)); }catch(e){ flashBanner('Image loaded (too large to remember between sessions).',true); }
+    try{ localStorage.setItem(nsKey(LS.img),JSON.stringify(dataURL)); }catch(e){ flashBanner('Image loaded (too large to remember between sessions).',true); }
     map.invalidateSize(); refreshAll();
   };
   img.onerror=()=>{ if(imgData!==dataURL) return;   // superseded by a newer image, ignore
@@ -924,17 +945,20 @@ function setSync(s,msg){
   const el=document.getElementById('syncStatus'); if(!el) return;
   const M={saved:['Synced','var(--ok)'],saving:['Saving…','var(--accent)'],pending:['Saving…','var(--accent)'],
     loading:['Loading…','var(--accent)'],signin:['Sign in to sync','var(--accent)'],
+    local:['Arena — local only','var(--muted)'],
     error:['Sync error — retrying','var(--danger)'],idle:['','var(--muted)']};
   const v=M[s]||M.idle; el.textContent=v[0]; el.style.color=v[1]; el.title=msg||v[0];
 }
 /* Called from every mutation (savePlaced / saveNet / calibration). Debounced and
    coalesced so a burst of edits becomes one write. Never pops up auth. */
 function queueSheetSave(){
+  if(area!=='marknad') return;                            // phase 1: only Marknad syncs; Arena is local
   if(SYNC.loading || !sheetCfg().spreadsheetId) return;   // not while loading; not if unconfigured
   lsSet(LS.dirty,1); SYNC.pending=true; SYNC.errs=0; setSync('pending');
   clearTimeout(SYNC.timer); SYNC.timer=setTimeout(runAutoSave,2500);
 }
 async function runAutoSave(){
+  if(area!=='marknad'){ SYNC.pending=false; return; }   // never write Arena's globals into Marknad's rows
   if(SYNC.inflight || !SYNC.pending) return;
   if(!haveToken()){ try{ await getToken(false); }              // silent refresh only — never a popup mid-edit
     catch(e){ setSync('signin'); return; } }                   // stays pending; retries on next change / sign-in
@@ -954,6 +978,7 @@ async function runAutoSave(){
    edits win — we push them instead of overwriting. */
 async function autoLoadStartup(){
   const cfg=sheetCfg();
+  if(area!=='marknad'){ setSync('local'); return; }   // phase 1: Arena is local-only, nothing to pull
   if(!cfg.spreadsheetId) return;
   if(lsGet(LS.dirty,0)){ setSync('pending'); queueSheetSave(); return; }
   if(!haveToken() && !cfg.apiKey){ try{ await getToken(false); }catch(e){ setSync('signin'); return; } }
@@ -991,6 +1016,7 @@ async function remoteReload(){
 function reloadBlocked(){ return SYNC.loading||SYNC.inflight||SYNC.pending||pointerDown||document.hidden; }
 async function pollRemote(){
   const cfg=sheetCfg();
+  if(area!=='marknad') return;                         // phase 1: Arena is local-only
   if(!cfg.spreadsheetId || reloadBlocked()) return;   // busy, mid-edit, or tab hidden
   if(!haveToken() && !cfg.apiKey) return;              // can't read silently
   try{
@@ -1241,6 +1267,63 @@ document.getElementById('lettersBtn').onclick=()=>setLetters(!showLetters);
 document.getElementById('wireEl').onclick=()=>setWire(!wireMode);
 document.getElementById('wireVa').onclick=()=>setWire(!wireMode);
 
+/* ---------- area switch (Marknad / Arena) ---------- */
+function reloadAreaState(){
+  // re-read every per-area global from the now area-namespaced localStorage
+  customTents=lsGet(LS.custom,[]); edits=lsGet(LS.edits,{}); removed=new Set(lsGet(LS.removed,[]));
+  library=TENTS.concat(customTents);
+  ppm=lsGet(LS.ppm,null); nodes=lsGet(LS.nodes,[]); cables=lsGet(LS.cables,[]); imgData=lsGet(LS.img,null);
+  loadPlaced();
+}
+function teardownRender(){
+  cancelMeasure(); deselect();
+  placed.forEach(removeTentMarker); placed=[]; placedIds=new Set();
+  Object.values(nodeMarkers).forEach(m=>map.removeLayer(m)); for(const k in nodeMarkers) delete nodeMarkers[k];
+  cableLines.forEach(l=>map.removeLayer(l)); cableLines=[];
+}
+function switchArea(a){
+  if(a===area || !AREAS.some(x=>x.key===a)) return;
+  clearTimeout(SYNC.timer); SYNC.pending=false;   // drop any pending Marknad autosave (its dirty flag persists per-area)
+  teardownRender();
+  area=a; try{ localStorage.setItem(LS.area,JSON.stringify(a)); }catch(e){}
+  document.querySelectorAll('#areaSeg button').forEach(b=>b.classList.toggle('on',b.dataset.area===a));
+  reloadAreaState();
+  renderList('');
+  setImage(imgData||areaDef().img,true);   // swaps the base image, restores that area's saved view, re-renders
+  showDomainLayers();
+  if(currentTab==='el') renderLegend(); if(currentTab==='vatten') renderVattenLegend();
+  if(area==='marknad'){ GS.lastSavedAt=null; autoLoadStartup(); } else setSync('local');
+  flashBanner(areaDef().label+(area==='marknad'?'':' — local only (not synced yet)'),area!=='marknad');
+  setTimeout(()=>banner.style.display='none',2200);
+}
+document.querySelectorAll('#areaSeg button').forEach(b=>{ b.onclick=()=>switchArea(b.dataset.area); });
+
+/* ---------- measure tool: two clicks + a known distance set ppm for the current area ---------- */
+let measuring=false, measurePts=[], measureLayer=[];
+function cancelMeasure(){ measuring=false; mapWrap.classList.remove('measuring');
+  document.getElementById('measureBtn').classList.remove('on');
+  measurePts=[]; measureLayer.forEach(l=>map.removeLayer(l)); measureLayer=[]; }
+function startMeasure(){ if(!ADMIN) return; cancelMeasure(); measuring=true;
+  mapWrap.classList.add('measuring'); document.getElementById('measureBtn').classList.add('on');
+  flashBanner('Measure: click two points a known distance apart on the map.',true); }
+function measureClick(ll){
+  measurePts.push([ll.lat,ll.lng]);
+  measureLayer.push(L.circleMarker(ll,{radius:5,color:'#ffd400',weight:2,fillColor:'#ffd400',fillOpacity:.6,pane:'nodes'}).addTo(map));
+  if(measurePts.length<2) return;
+  measureLayer.push(L.polyline(measurePts,{color:'#ffd400',weight:2,dashArray:'5,4',pane:'cables'}).addTo(map));
+  const dy=measurePts[1][0]-measurePts[0][0], dx=measurePts[1][1]-measurePts[0][1];
+  const px=Math.sqrt(dx*dx+dy*dy);
+  const ans=prompt('Real distance between the two points, in METRES\n(image pixels apart: '+Math.round(px)+')','');
+  const m=parseFloat(ans);
+  if(m>0 && px>0){ ppm=px/m; lsSet(LS.ppm,ppm);
+    flashBanner('Scale set for '+areaDef().label+': '+ppm.toFixed(2)+' px/m.',false);
+    setTimeout(()=>banner.style.display='none',2200);
+    refreshAll(); redrawCables(); queueSheetSave(); }
+  else flashBanner('Measurement cancelled.',true);
+  cancelMeasure();
+}
+document.getElementById('measureBtn').onclick=()=>{ measuring?cancelMeasure():startMeasure(); };
+
 function addNode(spec,lat,lng){
   const n={id:'node_'+Date.now()+'_'+Math.floor(Math.random()*1000),domain:spec.domain,kind:spec.kind,rating:spec.rating,lat,lng};
   if(spec.kind==='source'){ n.unl=spec.unl!==false; n.outs=spec.outs||null; }
@@ -1433,6 +1516,7 @@ loadPlaced();
 updateScaleReadout();
 setLetters(showLetters);
 renderList();
+document.querySelectorAll('#areaSeg button').forEach(b=>b.classList.toggle('on',b.dataset.area===area));  // reflect the persisted area
 applyMode();          // public map-only view by default; admin UI if previously unlocked
 if(!imgData) flashBanner('Base image could not be loaded — check the connection and refresh.',true);
 autoLoadStartup();   // pull the shared plan from the Sheet (silent; local unsynced edits win)

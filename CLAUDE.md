@@ -292,6 +292,37 @@ between the `public` and `admin` classes.
 > key whenever no token is present. If public read ever 403s, check the Sheet is still
 > link-Viewer and the key's referrer/API restrictions still match the serving origin.
 
+## Areas (Marknad / Arena)
+
+Two independent plans — **Marknad** (the market) and **Arena** — selected by a `Marknad |
+Arena` segmented toggle at the left of `#topbar` (visible in public and admin). Each area
+has its own tents, wiring, scale (`ppm`), saved view and base image. `AREAS` holds the
+`{key,label,img}` for each; `area` is the active key (persisted in `LS.area`, global).
+
+- **Per-area localStorage.** `AREA_SCOPED` lists the plan keys (placed, custom, img, ppm,
+  size, view, edits, removed, nodes, cables, dirty); `nsKey()` suffixes them with `::<area>`
+  — **except** for `marknad`, which keeps the ORIGINAL key names, so pre-area data loads
+  unchanged. `letters`, `admin` and `area` stay global. All `lsGet`/`lsSet` go through
+  `nsKey`, so call sites didn't change; only two direct `localStorage` writes were pointed at
+  `nsKey` by hand (`setImage`, and the `LS.area` write which is intentionally un-namespaced).
+- **Switching** (`switchArea`) tears down the current render, cancels any pending Marknad
+  autosave (its `dirty` flag persists per-area, so nothing is lost), flips `area`, reloads
+  every per-area global from localStorage (`reloadAreaState`), swaps the base image (which
+  restores that area's saved view), and re-renders. Marknad then pulls from the Sheet; Arena
+  does not.
+- **Sync scope is Marknad-only right now.** `queueSheetSave` / `runAutoSave` /
+  `autoLoadStartup` / `pollRemote` early-return unless `area==='marknad'`, and
+  `runAutoSave` also bails if the area flipped mid-flight so Arena globals can never be
+  written into Marknad's rows. Arena is **local per-browser** until per-area Sheet sync is
+  added (would need an `area` column on every tab + per-area `meta` rows). The `syncStatus`
+  shows `Arena — local only` there.
+- **Measure tool** (`#measureBtn`, admin-only via `body.public` CSS): click it, click two
+  points a known distance apart, enter the real metres, and `ppm = pixelDist / metres` is set
+  and saved for the **current** area (the map is image-pixel `CRS.Simple`, so the click delta
+  is already in pixels). This replaces the removed two-click calibration, per-area. The base
+  images are committed PNGs (`marknad_base_clean.png`, `arena_base.png`) and **both** are
+  copied into `_site/` by `pages.yml`.
+
 ## Persistence
 
 `localStorage`, keys prefixed `mtvi_` (see `const LS` at the top of the script), is the
