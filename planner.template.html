@@ -395,11 +395,19 @@ function tentCorners(t){
     return [t.lat-y, t.lng+x];
   });
 }
+function hasSize(ref){ return ref.shape==='circle' ? !!ref.length : !!(ref.length&&ref.width); }
 function tentStyle(t){
   const ref=refOf(t);
+  const sel=t.uid===selectedUid, hlt=hl.tents.has(t.ref.id), wat=(currentTab==='vatten'&&ref.water);
+  if(!hasSize(ref)){
+    // No size -> name only, no box. Keep an invisible footprint so it can still be
+    // selected/dragged in admin; reveal a faint outline only when active.
+    const show=sel||hlt||wat;
+    return {color: sel?'#ffffff':(hlt?'#ffd400':'#2b8cff'),
+            weight: show?1.5:0, opacity:show?1:0, fillColor:'#000', fillOpacity:0};
+  }
   const isEl=currentTab==='el';
   const fill=isEl?elColor(ref.electricity):ref.color;
-  const sel=t.uid===selectedUid, hlt=hl.tents.has(t.ref.id), wat=(currentTab==='vatten'&&ref.water);
   return {color: sel?'#ffffff':(hlt?'#ffd400':(wat?'#2b8cff':'rgba(0,0,0,.65)')),
           weight: sel?3:((hlt||wat)?3:1.5), fillColor:fill, fillOpacity:.85};
 }
@@ -441,7 +449,7 @@ function renderTentMarker(t){
     const corners=tentCorners(t);
     if(!t.poly){ ensureDefs(); t.poly=L.polygon(corners,tentStyle(t)).addTo(map); attachPolyHandlers(t); }
     else { t.poly.setLatLngs(corners); t.poly.setStyle(tentStyle(t)); }
-    if(ref.nya && currentTab!=='el'){
+    if(ref.nya && currentTab!=='el' && hasSize(ref)){
       if(!t.nyaPoly){ ensureDefs(); t.nyaPoly=L.polygon(corners,{className:'nya-fill',stroke:true,color:'#ff1493',weight:2.5,opacity:1,fillOpacity:1,interactive:false}).addTo(map); }
       else t.nyaPoly.setLatLngs(corners);
     }else if(t.nyaPoly){ map.removeLayer(t.nyaPoly); t.nyaPoly=null; }
@@ -450,6 +458,7 @@ function renderTentMarker(t){
   // fixed-size token mode (or before calibration)
   if(t.poly){ map.removeLayer(t.poly); t.poly=null; }
   if(t.nyaPoly){ map.removeLayer(t.nyaPoly); t.nyaPoly=null; }
+  if(!hasSize(ref)){ if(t.marker){ map.removeLayer(t.marker); t.marker=null; } return; }  // no size -> name only
   const W=ref.width||3, L2=ref.length||3, base=46, m=Math.max(W,L2)||1;
   const w=Math.max(9,(W/m)*base), h=Math.max(9,(L2/m)*base);
   const isEl=currentTab==='el';
