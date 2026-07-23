@@ -313,14 +313,12 @@ zoom control — the area toggle is deliberately a separate control from the Let
   loads unchanged. `letters`, `admin`, `area`, `custom`, `removed` stay global. All
   `lsGet`/`lsSet` go through `nsKey`; only two direct `localStorage` writes were pointed at
   `nsKey` by hand (`setImage`, and the `LS.area` write which is intentionally un-namespaced).
-- **Scale.** Marknad's `ppm` comes from its Sheet `meta`. Arena has a **starting default**
-  `ppm` in its `AREAS` entry (`ppm:7.15`), but a **measured value wins** —
-  `ppm = lsGet(LS.ppm, areaDef().ppm)` — so calibrating overrides the default. The
-  **Measure tool** (`#measureBtn` in `#areaBar`, admin-only via `body.public` CSS) sets it:
-  click it, click two points a known distance apart, enter the real metres, and
-  `ppm = pixelDist / metres` for the current area (the map is image-pixel `CRS.Simple`, so
-  the click delta is already pixels). `7.15` is a first guess and is expected to be re-tuned
-  by measuring against the aerial photo.
+- **Scale.** Marknad's `ppm` comes from its Sheet `meta`. Arena has a **fixed** `ppm` baked
+  into its `AREAS` entry (`ppm:4.39`, tuned against the aerial photo). `ppm = lsGet(LS.ppm,
+  areaDef().ppm)` seeds it, and the Sheet `meta` row overrides on load once Arena has synced.
+  The two-click measure tool was removed once `4.39` was confirmed — to re-tune, change the
+  constant (and clear a stale `mtvi_ppm_v1::arena` if one lingers) or restore the tool from
+  git history.
 - **Switching** (`switchArea`) tears down the current render, cancels any pending autosave
   (the `dirty` flag persists per-area, so nothing is lost), flips `area`, reloads every
   per-area global from localStorage (`reloadAreaState`), swaps the base image (which restores
