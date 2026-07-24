@@ -452,11 +452,9 @@ function ensureDefs(){
    Heart" tool: its parametric heart curve (x=16sin^3 t,
    y=13cos t-5cos 2t-2cos 3t-cos 4t, scaled to 11.5 m wide, y-centred), bales laid
    as chords walking the curve with the tool's 5 cm minimum gap - the tool's
-   exact shape, not an approximation. Unlike the tool's single loop walk (which
-   dumps all leftover slack in one ugly gap at the top-left of the notch), the
-   offline build is symmetric: the notch is flanked by a mirrored bale pair, the
-   right tip bale ends exactly at the point with the left one nested behind it,
-   and each side's slack is spread evenly along its joints.
+   exact shape and the tool's exact single-loop walk (start at the notch, lay
+   chords clockwise, spread the leftover slack evenly) - at 11.5 m the loop
+   closes cleanly with the notch flanked on both sides.
    BALHEART1 = the 12 outline bales + the 3 inner bales (ground course, drawn in
    the object's own colour); BALHEART2 = the 8 second-course bales bridging the
    joints around the lobes (drawn as a separate lighter polygon, t.bh2Poly, so
@@ -468,13 +466,12 @@ function ensureDefs(){
    second course overlaps the first by design, and each polygon is drawn with
    fillRule:'nonzero' because Leaflet's default 'evenodd' would XOR any
    overlapping rings transparent. */
-const BALHEART1=[[1.22,4.37,128.7],[3.81,4.75,68.2],[5.44,2.7,8.5],[4.68,0.07,141.8],
-  [2.64,-2.02,131],[0.66,-4.19,146.5],
-  [-1.22,4.37,51.3],[-3.75,4.77,110.4],[-5.42,2.84,168.3],[-4.86,0.33,35.3],
-  [-3.01,-1.69,48.9],[-1.03,-3.63,41.1],
+const BALHEART1=[[0.65,3.72,147.5],[2.97,4.92,86.9],[5.19,3.5,27.8],[5.14,0.84,151.8],
+  [3.31,-1.41,131.7],[1.19,-3.45,137.1],[-0.7,-3.91,42.2],[-2.81,-1.87,49],
+  [-4.81,0.25,36.1],[-5.4,2.91,166.6],[-3.6,4.82,107.2],[-1.06,4.23,46.7],
   [-2.5,1.66,90],[2.5,1.66,90],[0,-0.1,90]];
-const BALHEART2=[[2.46,4.9,98.3],[4.91,3.94,39.2],[5.34,1.33,160],[3.72,-1.02,133.1],
-  [-2.43,4.89,81],[-4.84,4.02,138.5],[-5.39,1.54,16.1],[-4,-0.74,45.2]];
+const BALHEART2=[[1.65,4.63,117.8],[4.27,4.51,57.3],[5.48,2.18,176.8],[4.33,-0.37,137.5],
+  [-2.25,4.86,76.9],[-4.76,4.1,136.1],[-5.39,1.54,16.2],[-3.88,-0.87,46]];
 function balheartRings(t,tab){
   // multipolygon: one ring per bale, all rotated rigidly around the anchor
   const th=(t.rot||0)*Math.PI/180, C=Math.cos(th), S=Math.sin(th);
