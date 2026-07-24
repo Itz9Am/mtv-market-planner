@@ -624,8 +624,8 @@ function rotate(d){
   });
   positionCtl(); savePlaced(); if(curDomain())redrawCables();
 }
-document.getElementById('rotL').onclick=()=>rotate(-5);   // same step as the arrow keys
-document.getElementById('rotR').onclick=()=>rotate(5);
+document.getElementById('rotL').onclick=()=>rotate(-15);   // same step as the arrow keys (shift+arrow = 5)
+document.getElementById('rotR').onclick=()=>rotate(15);
 document.getElementById('delBtn').onclick=()=>{
   const del=placed.filter(x=>selUids.has(x.uid)); if(!del.length)return;   // deletes the whole multi-selection
   del.forEach(t=>{ removeTentMarker(t); placedIds.delete(t.ref.id);
@@ -637,8 +637,8 @@ document.getElementById('delBtn').onclick=()=>{
 document.addEventListener('keydown',e=>{
   if(!ADMIN||selectedUid==null)return;
   const tag=(e.target.tagName||'').toLowerCase(); if(tag==='input'||tag==='select')return;
-  if(e.key==='ArrowLeft'){rotate(e.shiftKey?-1:-5);e.preventDefault();}
-  else if(e.key==='ArrowRight'){rotate(e.shiftKey?1:5);e.preventDefault();}
+  if(e.key==='ArrowLeft'){rotate(e.shiftKey?-5:-15);e.preventDefault();}
+  else if(e.key==='ArrowRight'){rotate(e.shiftKey?5:15);e.preventDefault();}
   else if(e.key==='Delete'||e.key==='Backspace'){document.getElementById('delBtn').click();e.preventDefault();}
 });
 
