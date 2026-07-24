@@ -994,8 +994,10 @@ function applySheetState(P,N,C,M,keepView){
   savePlaced();
   // Phase assignments loaded from the Sheet can be lopsided (e.g. written before smart
   // balancing, piling everything on L1). Re-spread each cabinet's tents NOW — after `placed`
-  // exists so tentAmp() resolves, and before the nodes render — then persist the fix.
-  if(rebalanceEl()){ saveNet(); SYNC.rebalanced=true; }
+  // exists so tentAmp() resolves, and before the nodes render. This is display-only: it must
+  // NOT trigger a Sheet save (that would fire the token flow on every load/poll). The balanced
+  // phases persist naturally on the next real edit.
+  rebalanceEl();
   // The base plan is a per-area committed image, never a Sheet-driven upload — so it is
   // driven by the active area, not the meta.imageUrl column (which legacy rows filled with
   // the Marknad default even for Arena, loading the wrong image).
@@ -1006,7 +1008,7 @@ function applySheetState(P,N,C,M,keepView){
   renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
 }
 /* --- automatic sync: debounced save on every change, load on startup --- */
-const SYNC={timer:null,pending:false,inflight:false,loading:false,errs:0,rebalanced:false};
+const SYNC={timer:null,pending:false,inflight:false,loading:false,errs:0};
 function setSync(s,msg){
   const el=document.getElementById('syncStatus'); if(!el) return;
   const M={saved:['Synced','var(--ok)'],saving:['Saving…','var(--accent)'],pending:['Saving…','var(--accent)'],
@@ -1021,9 +1023,6 @@ function queueSheetSave(){
   lsSet(LS.dirty,1); SYNC.pending=true; SYNC.errs=0; setSync('pending');
   clearTimeout(SYNC.timer); SYNC.timer=setTimeout(runAutoSave,2500);
 }
-/* If a load re-balanced lopsided phases, push the fix back to the Sheet — but only for an
-   admin (public viewers get the corrected display in-memory without a sign-in nag). */
-function persistRebalance(){ if(SYNC.rebalanced){ SYNC.rebalanced=false; if(ADMIN) queueSheetSave(); } }
 /* read all four tabs once (raw) to seed the snapshot, without applying anything — so a
    save can preserve the other area's rows even before this session's first real load. */
 async function loadSnapshot(){
@@ -1069,7 +1068,6 @@ async function autoLoadStartup(){
       SYNC.loading=true; applySheetState(P,N,C,M); SYNC.loading=false;
     }
     GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
-    persistRebalance();   // if loaded phases were lopsided and got fixed, save the correction
   }catch(e){ SYNC.loading=false; setSync(haveToken()||cfg.apiKey?'error':'signin',e.message); }
 }
 
@@ -1089,7 +1087,7 @@ async function remoteReload(){
     applySheetState(P,N,C,M,true);                 // keepView: don't yank the user's pan/zoom
     GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
     return M;
-  } finally { SYNC.loading=false; persistRebalance(); }
+  } finally { SYNC.loading=false; }
 }
 function reloadBlocked(){ return SYNC.loading||SYNC.inflight||SYNC.pending||pointerDown||document.hidden; }
 async function pollRemote(){
@@ -1493,8 +1491,8 @@ function redrawCables(){
   cableLines.forEach(l=>map.removeLayer(l)); cableLines=[];
   const before=cables.length;
   cables=cables.filter(c=> nodes.some(n=>n.id===c.src) && (c.dstKind==='tent'?placed.some(t=>t.ref.id===c.dst):nodes.some(n=>n.id===c.dst)));
-  const rebalanced=rebalanceEl();                 // keep every cabinet's phases balanced (removals, load, etc.)
-  if(cables.length!==before || rebalanced) saveNet();
+  rebalanceEl();                 // keep cabinet phases balanced for display — never saves on its own
+  if(cables.length!==before) saveNet();
   const dom=curDomain(); if(!dom) return;
   cables.filter(c=>c.domain===dom).forEach(c=>{
     const s=nodes.find(n=>n.id===c.src); if(!s)return; const a=[s.lat,s.lng];
