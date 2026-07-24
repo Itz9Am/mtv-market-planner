@@ -447,13 +447,17 @@ function ensureDefs(){
   p.appendChild(mk(7,1.5,'#7a0040','.9'));   // dark edge for contrast on light fills
   defs.appendChild(p);host.appendChild(defs);document.body.appendChild(host);
 }
-/* The "Bal hjärta" composite footprint: ONE object drawn as the 24-halmbal heart
-   (240 x 80 cm bales). The layout is generated OFFLINE by a faithful port of the
-   user's "Bale Heart" tool: its parametric heart curve (x=16sin^3 t,
+/* The "Bal hjärta" composite footprint: ONE object drawn as the 23-halmbal heart
+   (240 x 80 cm bales). The layout is generated OFFLINE from the user's "Bale
+   Heart" tool: its parametric heart curve (x=16sin^3 t,
    y=13cos t-5cos 2t-2cos 3t-cos 4t, scaled to 12 m wide, y-centred), bales laid
-   as chords walking the curve with a 5 cm minimum gap and the leftover slack
-   spread evenly - so this IS the tool's exact shape, not an approximation.
-   BALHEART1 = the 13 outline bales + the 3 inner bales (ground course, drawn in
+   as chords walking the curve with the tool's 5 cm minimum gap - the tool's
+   exact shape, not an approximation. Unlike the tool's single loop walk (which
+   dumps all leftover slack in one ugly gap at the top-left of the notch), the
+   offline build is symmetric: the notch is flanked by a mirrored bale pair, the
+   right tip bale ends exactly at the point with the left one nested behind it,
+   and each side's slack is spread evenly along its joints.
+   BALHEART1 = the 12 outline bales + the 3 inner bales (ground course, drawn in
    the object's own colour); BALHEART2 = the 8 second-course bales bridging the
    joints around the lobes (drawn as a separate lighter polygon, t.bh2Poly, so
    the two layers keep their colour difference). Offsets are METRES from the
@@ -464,13 +468,13 @@ function ensureDefs(){
    second course overlaps the first by design, and each polygon is drawn with
    fillRule:'nonzero' because Leaflet's default 'evenodd' would XOR any
    overlapping rings transparent. */
-const BALHEART1=[[0.63,3.85,148.6],[2.84,5.16,92.4],[5.17,4.08,38.1],[5.63,1.55,162.8],
-  [4.28,-0.66,135.4],[2.37,-2.46,131.4],[0.66,-4.41,146.9],[-1.03,-3.84,40.7],
-  [-2.88,-1.99,49.1],[-4.73,-0.14,40.4],[-5.74,2.25,3.8],[-4.67,4.58,127.7],
-  [-2.15,5.04,72.5],
+const BALHEART1=[[1.21,4.54,130],[3.94,4.99,69.1],[5.7,2.85,9.1],[4.9,0.07,141.7],
+  [2.74,-2.13,130.9],[0.66,-4.41,147],
+  [-1.21,4.54,50],[-3.82,5.03,108.3],[-5.65,3.1,165.4],[-5.13,0.41,34.5],
+  [-3.14,-1.76,48.9],[-1.03,-3.84,40.7],
   [-2.61,1.74,90],[2.61,1.74,90],[0,-0.11,90]];
-const BALHEART2=[[1.57,4.78,121.1],[4.14,4.91,64.8],[5.7,2.87,9.6],[5.1,0.37,145.1],
-  [-3.85,-1.1,47],[-5.44,0.98,26.6],[-5.49,3.54,155.1],[-3.47,5.12,100.9]];
+const BALHEART2=[[2.52,5.13,99.4],[5.12,4.15,40],[5.59,1.4,160.1],[3.87,-1.08,133.1],
+  [-2.45,5.12,79.2],[-4.99,4.3,136.1],[-5.67,1.72,14.2],[-4.21,-0.74,45.1]];
 function balheartRings(t,tab){
   // multipolygon: one ring per bale, all rotated rigidly around the anchor
   const th=(t.rot||0)*Math.PI/180, C=Math.cos(th), S=Math.sin(th);
