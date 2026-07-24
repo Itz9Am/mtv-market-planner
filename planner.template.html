@@ -1793,8 +1793,46 @@ function seedCampingDefaults(){
   }catch(e){}
 }
 
+/* One-time seed of the Arena bale heart: 25 halmbalar (240 x 80 cm) laid out as the
+   two-layer heart designed in the separate bale-heart tool (heart width 11.5 m).
+   Layer 1 (darker) is the full outline - 7 bales per half, joints at the cleft and at
+   the bottom point - plus the three inner bales; layer 2 (lighter, listed after so it
+   draws on top) bridges the layer-1 joints around the lobes, like the stacked second
+   course in the design. Coordinates are arena_base.png pixels (ppm 4.39), anchored on
+   the open grass; every bale is a normal object, so shift-click multi-select moves or
+   rotates the whole heart. Same mechanics as the Camping seed above: global custom
+   defs + pre-placed in Arena, arena dirty flag set so the next admin save syncs. */
+function seedArenaBales(){
+  if(localStorage.getItem('mtvi_seed_arena_bales_v1')) return;
+  const L1=[[761.3,514.9,155],[770.1,508.1,100],[780.9,511,50],[785.2,521.3,175],
+            [779.9,531.2,135],[771.9,539.6,135],[764,547.9,135],
+            [758.7,514.9,25],[749.9,508.1,80],[739.1,511,130],[734.8,521.3,5],
+            [740.1,531.2,45],[748.1,539.6,45],[756,547.9,45],
+            [749,522.9,90],[771,522.9,90],[760,530.4,90]];
+  const L2=[[764.9,510.5,130],[775.8,508.3,75],[784.3,515.6,25],[783.6,526.8,150],
+            [755.1,510.5,50],[744.2,508.3,105],[735.7,515.6,155],[736.4,526.8,30]];
+  const S=[];
+  L1.forEach((b,i)=>S.push({id:'bale_1_'+(i+1),color:'#DFAE3F',x:b[0],y:b[1],rot:b[2]}));
+  L2.forEach((b,i)=>S.push({id:'bale_2_'+(i+1),color:'#F2D272',x:b[0],y:b[1],rot:b[2]}));
+  const defs=S.map(s=>({id:s.id,name:'Bal',placering:'',electricity:'',water:false,
+                        shape:'rect',length:2.4,width:0.8,color:s.color,nya:0}));
+  try{
+    let cust=JSON.parse(localStorage.getItem(LS.custom)||'[]').filter(c=>c);
+    defs.forEach(d=>{ const i=cust.findIndex(c=>String(c.id)===String(d.id)); if(i>=0)cust[i]=d; else cust.push(d); });
+    localStorage.setItem(LS.custom,JSON.stringify(cust));
+    const key=LS.placed+'::arena';
+    let P=[]; try{ P=JSON.parse(localStorage.getItem(key)||'[]')||[]; }catch(e){}
+    S.forEach((s,i)=>{ if(!P.some(p=>p&&p.ref&&String(p.ref.id)===String(s.id))) P.push({ref:defs[i],lat:s.y,lng:s.x,rot:s.rot||0}); });
+    localStorage.setItem(key,JSON.stringify(P));
+    localStorage.setItem(LS.dirty+'::arena',JSON.stringify(true));
+    localStorage.setItem('mtvi_seed_arena_bales_v1','1');
+    customTents=lsGet(LS.custom,[]); library=TENTS.concat(customTents);
+  }catch(e){}
+}
+
 /* ---------- init ---------- */
 seedCampingDefaults();
+seedArenaBales();
 loadPlaced();
 updateLegend();
 updateScaleReadout();
