@@ -589,15 +589,18 @@ function applySelStyles(){
     const box=el.querySelector('.tent-box'); if(box) box.classList.toggle('sel',on);
     t.marker.setZIndexOffset(t.uid===selectedUid?1000:0); });
 }
-function selectTent(uid){ selectedUid=uid; selUids=new Set([uid]); applySelStyles(); const t=placed.find(x=>x.uid===uid); if(t){ctl.style.display='flex';positionCtl();} }
+/* While anything is selected the arrow keys rotate, so Leaflet's own keyboard
+   panning must be off - otherwise every arrow press also moved the camera. */
+function syncMapKeyboard(){ if(!map.keyboard) return; (selectedUid!=null)?map.keyboard.disable():map.keyboard.enable(); }
+function selectTent(uid){ selectedUid=uid; selUids=new Set([uid]); applySelStyles(); syncMapKeyboard(); const t=placed.find(x=>x.uid===uid); if(t){ctl.style.display='flex';positionCtl();} }
 function toggleSel(uid){
   if(selUids.has(uid)){ selUids.delete(uid);
     if(selectedUid===uid) selectedUid=selUids.size?[...selUids][selUids.size-1]:null; }
   else { selUids.add(uid); selectedUid=uid; }
-  applySelStyles();
+  applySelStyles(); syncMapKeyboard();
   if(selectedUid!=null){ ctl.style.display='flex'; positionCtl(); } else ctl.style.display='none';
 }
-function deselect(){ selectedUid=null; selUids=new Set(); applySelStyles(); ctl.style.display='none'; }
+function deselect(){ selectedUid=null; selUids=new Set(); applySelStyles(); syncMapKeyboard(); ctl.style.display='none'; }
 function positionCtl(){
   if(selectedUid==null){ctl.style.display='none';return;}
   const t=placed.find(x=>x.uid===selectedUid); if(!t){ctl.style.display='none';return;}
@@ -621,8 +624,8 @@ function rotate(d){
   });
   positionCtl(); savePlaced(); if(curDomain())redrawCables();
 }
-document.getElementById('rotL').onclick=()=>rotate(-15);
-document.getElementById('rotR').onclick=()=>rotate(15);
+document.getElementById('rotL').onclick=()=>rotate(-5);   // same step as the arrow keys
+document.getElementById('rotR').onclick=()=>rotate(5);
 document.getElementById('delBtn').onclick=()=>{
   const del=placed.filter(x=>selUids.has(x.uid)); if(!del.length)return;   // deletes the whole multi-selection
   del.forEach(t=>{ removeTentMarker(t); placedIds.delete(t.ref.id);
