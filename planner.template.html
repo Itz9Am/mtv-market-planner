@@ -271,6 +271,11 @@ function nsKey(k){ return (area!=='marknad' && AREA_SCOPED.has(k)) ? k+'::'+area
 function lsGet(k,d){try{const v=localStorage.getItem(nsKey(k));return v?JSON.parse(v):d;}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(nsKey(k),JSON.stringify(v));}catch(e){}}
 function areaDef(){ return AREAS.find(a=>a.key===area)||AREAS[0]; }
+function areaImg(){ return areaDef().img; }   // the active area's committed base plan
+// The base plan to show: the area's committed image, unless a real data-URL upload is
+// cached (legacy). A cached plain filename never wins — that's how the old bug left the
+// Marknad image cached under Arena; preferring areaImg() heals it on next load.
+function baseImg(){ return (imgData&&/^data:/.test(imgData))?imgData:areaImg(); }
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 /* Public (no-login) view shows only the map with the tents and auto-syncs read-only.
    Admin view (unlocked by signing in) is the full editing UI. Body starts .public so a
@@ -321,7 +326,7 @@ map.createPane('cables');     map.getPane('cables').style.zIndex='610';      // 
 map.createPane('tentlabels'); map.getPane('tentlabels').style.zIndex='620';  // above cables
 map.getPane('tentlabels').style.pointerEvents='none';
 map.createPane('nodes');      map.getPane('nodes').style.zIndex='630';       // cabinets on top
-setImage(imgData||areaDef().img,true);   // fall back to the active area's committed base plan
+setImage(baseImg(),true);   // the active area's committed base plan (or a legacy data-URL upload)
 map.on('zoomend',refreshAll);
 map.on('move zoom',positionCtl);
 map.on('moveend zoomend',()=>{ if(imgBounds){ lsSet(LS.view,{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}); }});
@@ -951,7 +956,7 @@ function reconcileEdits(P){
 }
 function metaRow(savedAt,savedBy){
   const c=map.getCenter(), view=imgBounds?{x:c.lng,y:c.lat,z:map.getZoom()}:null;
-  return [ppm||'', sheetCfg().imageUrl||'', view?view.x:'', view?view.y:'', view?view.z:'', savedAt, savedBy];
+  return [ppm||'', areaImg()||'', view?view.x:'', view?view.y:'', view?view.z:'', savedAt, savedBy];
 }
 function sheetData(savedAt,savedBy){
   const A=area;   // tag this area's rows; re-emit the other areas' rows verbatim so they survive
@@ -987,7 +992,10 @@ function applySheetState(P,N,C,M,keepView){
   if(customAdded) lsSet(LS.custom,customTents);
   placedIds=new Set(placed.map(t=>t.ref.id));
   savePlaced();
-  const imgUrl=(M.imageUrl&&String(M.imageUrl).trim())||sheetCfg().imageUrl;
+  // The base plan is a per-area committed image, never a Sheet-driven upload — so it is
+  // driven by the active area, not the meta.imageUrl column (which legacy rows filled with
+  // the Marknad default even for Arena, loading the wrong image).
+  const imgUrl=areaImg()||(M.imageUrl&&String(M.imageUrl).trim())||sheetCfg().imageUrl;
   if(keepView && imgUrl===imgData){ if(useView) map.setView(useView.c,useView.z); refreshAll(); }  // same image: no reflash
   else if(imgUrl){ setImage(imgUrl, !!useView); }
   else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
@@ -1368,7 +1376,7 @@ function switchArea(a){
   document.querySelectorAll('#areaSeg button').forEach(b=>b.classList.toggle('on',b.dataset.area===a));
   reloadAreaState();
   renderList('');
-  setImage(imgData||areaDef().img,true);   // swaps the base image, restores that area's saved view, re-renders
+  setImage(baseImg(),true);   // swaps to this area's committed base image, restores its saved view, re-renders
   showDomainLayers();
   if(currentTab==='el') renderLegend(); if(currentTab==='vatten') renderVattenLegend();
   GS.lastSavedAt=null; autoLoadStartup();   // pull this area's rows from the Sheet (local unsynced edits win)
