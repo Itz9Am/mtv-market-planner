@@ -994,10 +994,10 @@ function applySheetState(P,N,C,M,keepView){
   savePlaced();
   // Phase assignments loaded from the Sheet can be lopsided (e.g. written before smart
   // balancing, piling everything on L1). Re-spread each cabinet's tents NOW — after `placed`
-  // exists so tentAmp() resolves, and before the nodes render. This is display-only: it must
-  // NOT trigger a Sheet save (that would fire the token flow on every load/poll). The balanced
-  // phases persist naturally on the next real edit.
-  rebalanceEl();
+  // exists so tentAmp() resolves, and before the nodes render. This does NOT save here; the
+  // caller decides whether to persist (only startup, only with a live token) so it can never
+  // fire the auth flow on every load/poll.
+  const didRebalance=rebalanceEl();
   // The base plan is a per-area committed image, never a Sheet-driven upload — so it is
   // driven by the active area, not the meta.imageUrl column (which legacy rows filled with
   // the Marknad default even for Arena, loading the wrong image).
@@ -1006,6 +1006,7 @@ function applySheetState(P,N,C,M,keepView){
   else if(imgUrl){ setImage(imgUrl, !!useView); }
   else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
   renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
+  return didRebalance;
 }
 /* --- automatic sync: debounced save on every change, load on startup --- */
 const SYNC={timer:null,pending:false,inflight:false,loading:false,errs:0};
@@ -1064,10 +1065,16 @@ async function autoLoadStartup(){
     const N=currentAreaObjs(vr[1]&&vr[1].values,SHEET_HEADERS.nodes);
     const C=currentAreaObjs(vr[2]&&vr[2].values,SHEET_HEADERS.cables);
     const M=currentAreaObjs(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
+    let didRebalance=false;
     if(P.length||N.length||C.length||(M&&M.ppm!=null)){
-      SYNC.loading=true; applySheetState(P,N,C,M); SYNC.loading=false;
+      SYNC.loading=true; didRebalance=applySheetState(P,N,C,M); SYNC.loading=false;
     }
     GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
+    // If the loaded plan had lopsided phases and we fixed them, persist the correction ONCE —
+    // but only when a token is already in hand, so this never initiates the auth flow. No token
+    // (public viewer, or admin not yet signed in) => display stays balanced, Sheet updates on
+    // the next real edit. Deliberately not done on the 15s poll — only here, at startup.
+    if(didRebalance && haveToken()) queueSheetSave();
   }catch(e){ SYNC.loading=false; setSync(haveToken()||cfg.apiKey?'error':'signin',e.message); }
 }
 
