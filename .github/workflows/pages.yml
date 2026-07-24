@@ -42,6 +42,7 @@ jobs:
           cp marknad_tent_planner.html _site/index.html
           cp marknad_base_clean.png _site/
           cp arena_base.png _site/
+          cp camping_base.png _site/
 
       # Live site: push _site to the root of gh-pages on every push to main.
       # keep_files preserves the pr-preview/ directory that PR builds write.
