@@ -271,6 +271,11 @@ function nsKey(k){ return (area!=='marknad' && AREA_SCOPED.has(k)) ? k+'::'+area
 function lsGet(k,d){try{const v=localStorage.getItem(nsKey(k));return v?JSON.parse(v):d;}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(nsKey(k),JSON.stringify(v));}catch(e){}}
 function areaDef(){ return AREAS.find(a=>a.key===area)||AREAS[0]; }
+function areaImg(){ return areaDef().img; }   // the active area's committed base plan
+// The base plan to show: the area's committed image, unless a real data-URL upload is
+// cached (legacy). A cached plain filename never wins — that's how the old bug left the
+// Marknad image cached under Arena; preferring areaImg() heals it on next load.
+function baseImg(){ return (imgData&&/^data:/.test(imgData))?imgData:areaImg(); }
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 /* Public (no-login) view shows only the map with the tents and auto-syncs read-only.
    Admin view (unlocked by signing in) is the full editing UI. Body starts .public so a
@@ -321,7 +326,7 @@ map.createPane('cables');     map.getPane('cables').style.zIndex='610';      // 
 map.createPane('tentlabels'); map.getPane('tentlabels').style.zIndex='620';  // above cables
 map.getPane('tentlabels').style.pointerEvents='none';
 map.createPane('nodes');      map.getPane('nodes').style.zIndex='630';       // cabinets on top
-setImage(imgData||areaDef().img,true);   // fall back to the active area's committed base plan
+setImage(baseImg(),true);   // the active area's committed base plan (or a legacy data-URL upload)
 map.on('zoomend',refreshAll);
 map.on('move zoom',positionCtl);
 map.on('moveend zoomend',()=>{ if(imgBounds){ lsSet(LS.view,{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}); }});
@@ -395,11 +400,19 @@ function tentCorners(t){
     return [t.lat-y, t.lng+x];
   });
 }
+function hasSize(ref){ return ref.shape==='circle' ? !!ref.length : !!(ref.length&&ref.width); }
 function tentStyle(t){
   const ref=refOf(t);
+  const sel=t.uid===selectedUid, hlt=hl.tents.has(t.ref.id), wat=(currentTab==='vatten'&&ref.water);
+  if(!hasSize(ref)){
+    // No size -> name only, no box. Keep an invisible footprint so it can still be
+    // selected/dragged in admin; reveal a faint outline only when active.
+    const show=sel||hlt||wat;
+    return {color: sel?'#ffffff':(hlt?'#ffd400':'#2b8cff'),
+            weight: show?1.5:0, opacity:show?1:0, fillColor:'#000', fillOpacity:0};
+  }
   const isEl=currentTab==='el';
   const fill=isEl?elColor(ref.electricity):ref.color;
-  const sel=t.uid===selectedUid, hlt=hl.tents.has(t.ref.id), wat=(currentTab==='vatten'&&ref.water);
   return {color: sel?'#ffffff':(hlt?'#ffd400':(wat?'#2b8cff':'rgba(0,0,0,.65)')),
           weight: sel?3:((hlt||wat)?3:1.5), fillColor:fill, fillOpacity:.85};
 }
@@ -441,7 +454,7 @@ function renderTentMarker(t){
     const corners=tentCorners(t);
     if(!t.poly){ ensureDefs(); t.poly=L.polygon(corners,tentStyle(t)).addTo(map); attachPolyHandlers(t); }
     else { t.poly.setLatLngs(corners); t.poly.setStyle(tentStyle(t)); }
-    if(ref.nya && currentTab!=='el'){
+    if(ref.nya && currentTab!=='el' && hasSize(ref)){
       if(!t.nyaPoly){ ensureDefs(); t.nyaPoly=L.polygon(corners,{className:'nya-fill',stroke:true,color:'#ff1493',weight:2.5,opacity:1,fillOpacity:1,interactive:false}).addTo(map); }
       else t.nyaPoly.setLatLngs(corners);
     }else if(t.nyaPoly){ map.removeLayer(t.nyaPoly); t.nyaPoly=null; }
@@ -450,6 +463,7 @@ function renderTentMarker(t){
   // fixed-size token mode (or before calibration)
   if(t.poly){ map.removeLayer(t.poly); t.poly=null; }
   if(t.nyaPoly){ map.removeLayer(t.nyaPoly); t.nyaPoly=null; }
+  if(!hasSize(ref)){ if(t.marker){ map.removeLayer(t.marker); t.marker=null; } return; }  // no size -> name only
   const W=ref.width||3, L2=ref.length||3, base=46, m=Math.max(W,L2)||1;
   const w=Math.max(9,(W/m)*base), h=Math.max(9,(L2/m)*base);
   const isEl=currentTab==='el';
@@ -942,7 +956,7 @@ function reconcileEdits(P){
 }
 function metaRow(savedAt,savedBy){
   const c=map.getCenter(), view=imgBounds?{x:c.lng,y:c.lat,z:map.getZoom()}:null;
-  return [ppm||'', sheetCfg().imageUrl||'', view?view.x:'', view?view.y:'', view?view.z:'', savedAt, savedBy];
+  return [ppm||'', areaImg()||'', view?view.x:'', view?view.y:'', view?view.z:'', savedAt, savedBy];
 }
 function sheetData(savedAt,savedBy){
   const A=area;   // tag this area's rows; re-emit the other areas' rows verbatim so they survive
@@ -978,7 +992,10 @@ function applySheetState(P,N,C,M,keepView){
   if(customAdded) lsSet(LS.custom,customTents);
   placedIds=new Set(placed.map(t=>t.ref.id));
   savePlaced();
-  const imgUrl=(M.imageUrl&&String(M.imageUrl).trim())||sheetCfg().imageUrl;
+  // The base plan is a per-area committed image, never a Sheet-driven upload — so it is
+  // driven by the active area, not the meta.imageUrl column (which legacy rows filled with
+  // the Marknad default even for Arena, loading the wrong image).
+  const imgUrl=areaImg()||(M.imageUrl&&String(M.imageUrl).trim())||sheetCfg().imageUrl;
   if(keepView && imgUrl===imgData){ if(useView) map.setView(useView.c,useView.z); refreshAll(); }  // same image: no reflash
   else if(imgUrl){ setImage(imgUrl, !!useView); }
   else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
@@ -1192,6 +1209,21 @@ function phaseLoads(id,seen){ seen=seen||new Set(); const out=[0,0,0]; if(seen.h
 }
 function peakLoad(id){ const p=phaseLoads(id); return Math.max(p[0],p[1],p[2]); }
 function overloaded(n){ return n.domain==='el' && peakLoad(n.id)>nodeRatingAmp(n); }
+/* Spread a cabinet's directly-fed tents across L1/L2/L3 to keep the peak phase as low as
+   possible (LPT: assign biggest tents first, each to the currently least-loaded phase).
+   Downstream cabinet feeds sit equally on all three phases, so balancing the tents alone
+   is enough. Returns true if any tent's phase changed. */
+function rebalanceCabinet(id){
+  const tc=cables.filter(c=>c.src===id && c.domain==='el' && c.dstKind==='tent');
+  if(!tc.length) return false;
+  const load=[0,0,0]; let changed=false;
+  tc.map(c=>({c,amp:tentAmp(c.dst)})).sort((a,b)=>b.amp-a.amp).forEach(({c,amp})=>{
+    let ph=0; if(load[1]<load[ph])ph=1; if(load[2]<load[ph])ph=2;   // least-loaded phase
+    load[ph]+=amp; const np=ph+1; if(c.phase!==np){ c.phase=np; changed=true; }
+  });
+  return changed;
+}
+function rebalanceEl(){ let ch=false; nodes.forEach(n=>{ if(n.domain==='el') ch=rebalanceCabinet(n.id)||ch; }); return ch; }
 function nodeName(n){ if(n.domain==='water') return n.kind==='brunn'?'brunn':'handfat'; return n.kind==='source'?('source ('+n.rating+'A in)'):(n.rating+'A cabinet'); }
 
 // walk upstream from a node, collecting every feeding cabinet/source and the cables between
@@ -1344,7 +1376,7 @@ function switchArea(a){
   document.querySelectorAll('#areaSeg button').forEach(b=>b.classList.toggle('on',b.dataset.area===a));
   reloadAreaState();
   renderList('');
-  setImage(imgData||areaDef().img,true);   // swaps the base image, restores that area's saved view, re-renders
+  setImage(baseImg(),true);   // swaps to this area's committed base image, restores its saved view, re-renders
   showDomainLayers();
   if(currentTab==='el') renderLegend(); if(currentTab==='vatten') renderVattenLegend();
   GS.lastSavedAt=null; autoLoadStartup();   // pull this area's rows from the Sheet (local unsynced edits win)
@@ -1439,9 +1471,10 @@ function connect(srcId,dst){
   if(!key){ flashBanner('No free '+req.key+' output on the '+nodeName(src)+'.',true); return; }
   if(dst.kind==='tent') cables=cables.filter(c=>!(c.dstKind==='tent'&&c.dst===dst.id));
   else cables=cables.filter(c=>!(c.dstKind==='node'&&c.dst===dst.id));
-  let phase=0;
-  if(dst.kind==='tent'){ const pl=phaseLoads(srcId); phase=(pl[0]<=pl[1]&&pl[0]<=pl[2])?1:(pl[1]<=pl[2]?2:3); }
-  cables.push({src:srcId,dst:dst.id,dstKind:dst.kind,otype:key,phase,domain:'el'});
+  const nc={src:srcId,dst:dst.id,dstKind:dst.kind,otype:key,phase:0,domain:'el'};
+  cables.push(nc);
+  if(dst.kind==='tent') rebalanceCabinet(srcId);   // re-spread all this cabinet's tents across L1/L2/L3
+  const phase=nc.phase;
   saveNet(); redrawCables(); nodes.forEach(renderNode);
   const pl=phaseLoads(srcId), peak=Math.max(pl[0],pl[1],pl[2]);
   if(peak>nodeRatingAmp(src)) flashBanner('Connected '+label+' — '+nodeName(src)+' overloaded (L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A, max '+peak+'/'+src.rating+').',true);
@@ -1452,7 +1485,8 @@ function redrawCables(){
   cableLines.forEach(l=>map.removeLayer(l)); cableLines=[];
   const before=cables.length;
   cables=cables.filter(c=> nodes.some(n=>n.id===c.src) && (c.dstKind==='tent'?placed.some(t=>t.ref.id===c.dst):nodes.some(n=>n.id===c.dst)));
-  if(cables.length!==before) saveNet();
+  const rebalanced=rebalanceEl();                 // keep every cabinet's phases balanced (removals, load, etc.)
+  if(cables.length!==before || rebalanced) saveNet();
   const dom=curDomain(); if(!dom) return;
   cables.filter(c=>c.domain===dom).forEach(c=>{
     const s=nodes.find(n=>n.id===c.src); if(!s)return; const a=[s.lat,s.lng];
