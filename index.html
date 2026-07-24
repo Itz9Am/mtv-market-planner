@@ -377,7 +377,9 @@ function clearHl(){ hl={nodes:new Set(),tents:new Set(),cables:new Set()}; }
 function refreshHl(){ refreshAll(); nodes.forEach(renderNode); redrawCables(); }
 
 /* ---------- map (image plan, CRS.Simple) ---------- */
-const map=L.map('map',{crs:L.CRS.Simple,minZoom:-6,maxZoom:8,zoomSnap:0.25,zoomDelta:0.5,scrollWheelZoom:true,attributionControl:false});
+/* boxZoom must stay off: shift+drag is taken by multi-select, and Leaflet's default
+   shift-drag zoom box made a slightly-moved shift-click zoom all the way in. */
+const map=L.map('map',{crs:L.CRS.Simple,minZoom:-6,maxZoom:8,zoomSnap:0.25,zoomDelta:0.5,scrollWheelZoom:true,attributionControl:false,boxZoom:false});
 map.setView([0,0],0);
 map.createPane('cables');     map.getPane('cables').style.zIndex='610';      // above tent boxes (markerPane 600)
 map.createPane('tentlabels'); map.getPane('tentlabels').style.zIndex='620';  // above cables
@@ -603,7 +605,22 @@ function positionCtl(){
   const h=metersToPx(t.ref.length||3)||46;
   ctl.style.left=pt.x+'px'; ctl.style.top=(pt.y-h/2-12)+'px';
 }
-function rotate(d){ const t=placed.find(x=>x.uid===selectedUid); if(!t)return; t.rot=(t.rot+d)%360; renderTentMarker(t); savePlaced(); }
+/* Rotate the selection. One item spins in place; a multi-selection rotates rigidly
+   around the group centroid (positions orbit, headings follow) - same convention
+   as tentCorners (x=lng offset, y=NEGATIVE lat offset), so the group turns as one. */
+function rotate(d){
+  const grp=placed.filter(x=>selUids.has(x.uid)); if(!grp.length)return;
+  if(grp.length===1){ const t=grp[0]; t.rot=(t.rot+d)%360; renderTentMarker(t); savePlaced(); return; }
+  const cLat=grp.reduce((s,t)=>s+t.lat,0)/grp.length, cLng=grp.reduce((s,t)=>s+t.lng,0)/grp.length;
+  const th=d*Math.PI/180, cos=Math.cos(th), sin=Math.sin(th);
+  grp.forEach(t=>{
+    const x=t.lng-cLng, y=-(t.lat-cLat);
+    t.lng=cLng+(x*cos-y*sin); t.lat=cLat-(x*sin+y*cos);
+    t.rot=(t.rot+d)%360;
+    renderTentMarker(t);
+  });
+  positionCtl(); savePlaced(); if(curDomain())redrawCables();
+}
 document.getElementById('rotL').onclick=()=>rotate(-15);
 document.getElementById('rotR').onclick=()=>rotate(15);
 document.getElementById('delBtn').onclick=()=>{
