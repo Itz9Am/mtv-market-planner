@@ -29,6 +29,18 @@ def main() -> int:
 
     tents = json.loads(DATA.read_text(encoding="utf-8"))
     html = html.replace(PLACEHOLDER, json.dumps(tents, ensure_ascii=False))
+
+    # Cache-bust the base plan images: GitHub Pages serves them with
+    # max-age=600 and Leaflet loads them from JS, so a swapped PNG kept
+    # showing stale for up to 10 min. A content-hash query changes the URL
+    # exactly when the file changes (the filename on disk stays the same).
+    import hashlib
+    for img in ("marknad_base_clean.png", "arena_base.png", "camping_base.png"):
+        p = ROOT / img
+        if p.exists():
+            tag = hashlib.md5(p.read_bytes()).hexdigest()[:8]
+            html = html.replace(f"'{img}'", f"'{img}?v={tag}'")
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(html, encoding="utf-8")
 
