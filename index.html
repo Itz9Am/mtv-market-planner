@@ -315,9 +315,9 @@ const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:
    image. The plan-state keys below are namespaced per area in localStorage; the default
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
    `admin` and `area` itself stay global. */
-const AREAS=[{key:'marknad',label:'Marknad',img:'marknad_base_clean.png'},
-             {key:'arena',label:'Arena',img:'arena_base.png',ppm:4.39},
-             {key:'camping',label:'Camping',img:'camping_base.png',ppm:3.0}];
+const AREAS=[{key:'marknad',label:'Marknad',img:'marknad_base_clean.png?v=68ee3f3b'},
+             {key:'arena',label:'Arena',img:'arena_base.png?v=1a27777e',ppm:4.39},
+             {key:'camping',label:'Camping',img:'camping_base.png?v=7d5a6f6c',ppm:3.0}];
 /* The tent LIST is shared across areas — `custom` (added objects) and `removed` are
    global, so the sidebar shows the same tents everywhere. Only the per-area PLAN keys
    (placements, wiring, scale, view, image, edits) are namespaced. */
@@ -355,7 +355,7 @@ function refOf(t){
   return applyEdits(lib||t.ref);
 }
 let library=TENTS.concat(customTents);
-const DEFAULT_IMG='marknad_base_clean.png';   // committed & published next to the HTML
+const DEFAULT_IMG='marknad_base_clean.png?v=68ee3f3b';   // committed & published next to the HTML
 let imgData=lsGet(LS.img,null), imgBounds=null, imgOverlay=null;
 let ppm=lsGet(LS.ppm, areaDef().ppm!=null?areaDef().ppm:null);   // cached scale, else the area's default (Sheet meta overrides on load)
 let currentTab='placering';
