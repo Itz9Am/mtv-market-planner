@@ -346,6 +346,7 @@ let removed=new Set(lsGet(LS.removed,[]));
 let showLetters=lsGet(LS.letters,true);
 function saveRemoved(){ lsSet(LS.removed,[...removed]); }               // per-id field overrides
 let editingId=null;                         // which tent the modal is editing (null = add new)
+let editingShape=null;                      // the edited item's current shape; keeps the internal 'balheart' shape across a modal save (the select only offers rect/circle)
 function applyEdits(t){ const e=edits[t.id]; return e?Object.assign({},t,e):t; }
 /* Placed items link LIVE to the library: they resolve by id each render, so re-importing
    or editing the source data updates them in place. Falls back to the stored snapshot
@@ -446,9 +447,36 @@ function ensureDefs(){
   p.appendChild(mk(7,1.5,'#7a0040','.9'));   // dark edge for contrast on light fills
   defs.appendChild(p);host.appendChild(defs);document.body.appendChild(host);
 }
+/* The "Bal hjärta" composite footprint: ONE object drawn as the 25-halmbal heart
+   (240 x 80 cm bales, two layers, heart guide 12 m wide) from the separate
+   bale-heart design tool. Offsets are METRES from the object's anchor (x right,
+   y up), each entry [dx, dy, deg] with the same rotation convention as placement
+   rot; the whole group follows the object's own position and rotation, so it
+   moves/rotates as a single structure. shape:'balheart' is internal - it is NOT
+   offered in the add/edit modal (only the seeded object uses it). */
+const BALHEART=[[0.31,3.57,155],[2.41,5.19,100],[4.97,4.51,50],[5.99,2.07,175],
+  [4.73,-0.28,135],[2.84,-2.27,135],[0.95,-4.26,135],
+  [-0.31,3.57,25],[-2.41,5.19,80],[-4.97,4.51,130],[-5.99,2.07,5],
+  [-4.73,-0.28,45],[-2.84,-2.27,45],[-0.95,-4.26,45],
+  [-2.61,1.68,90],[2.61,1.68,90],[0,-0.11,90],
+  [1.17,4.63,130],[3.77,5.15,75],[5.77,3.41,25],[5.61,0.77,150],
+  [-1.17,4.63,50],[-3.77,5.15,105],[-5.77,3.41,155],[-5.61,0.77,30]];
 function tentCorners(t){
   const ref=refOf(t);
   const hw=((ref.width||3)*ppm)/2, hh=((ref.length||3)*ppm)/2;
+  if(ref.shape==='balheart'){
+    // multipolygon: one ring per bale, all rotated rigidly around the anchor
+    const th=(t.rot||0)*Math.PI/180, C=Math.cos(th), S=Math.sin(th);
+    const bw=0.4*ppm, bh=1.2*ppm;   // half of 0.8 x 2.4 m
+    return BALHEART.map(b=>{
+      const cx=(b[0]*C-b[1]*S)*ppm, cy=(b[0]*S+b[1]*C)*ppm;
+      const bt=th+b[2]*Math.PI/180, c=Math.cos(bt), s=Math.sin(bt);
+      return [[[-bw,-bh],[bw,-bh],[bw,bh],[-bw,bh]].map(([u,v])=>{
+        const x=u*c-v*s, y=u*s+v*c;
+        return [t.lat-(cy+y), t.lng+(cx+x)];
+      })];
+    });
+  }
   if(ref.shape==='circle'){
     const r=Math.max(hw,hh), pts=[];
     for(let i=0;i<36;i++){ const a=i/36*2*Math.PI; pts.push([t.lat+r*Math.sin(a), t.lng+r*Math.cos(a)]); }
@@ -725,7 +753,7 @@ function updateShapeUI(){
 }
 mShape.onchange=updateShapeUI;
 function openAdd(){
-  editingId=null;
+  editingId=null; editingShape=null;
   document.getElementById('modalTitle').textContent='Add custom object';
   document.getElementById('mName').value='';
   document.getElementById('mLetters').value='';
@@ -739,7 +767,7 @@ function openAdd(){
   modalBg.style.display='flex'; document.getElementById('mName').focus();
 }
 function openEdit(m){
-  editingId=m.id;
+  editingId=m.id; editingShape=m.shape||'rect';
   document.getElementById('modalTitle').textContent='Edit object';
   document.getElementById('mName').value=m.name||'';
   document.getElementById('mLetters').value=m.placering||'';
@@ -767,6 +795,10 @@ document.getElementById('mSave').onclick=()=>{
     length:len, width:wid,
     color:document.getElementById('mColor').value,
     nya:parseInt(document.getElementById('mNya').value)||0};
+  if(editingShape==='balheart'){   // internal composite shape: survives a rename/recolour
+    data.shape='balheart';
+    if(data.length==null)data.length=10.5; if(data.width==null)data.width=12;
+  }
   if(editingId==null){
     const t=Object.assign({id:'custom_'+Date.now()},data);
     if(t.length==null)t.length=3; if(t.width==null)t.width=3;
@@ -894,6 +926,8 @@ function sheetCfg(){ return SHEET_DEFAULTS; }
 
 /* --- pure type + row helpers (extracted & node-tested; see CLAUDE.md) --- */
 function gnum(v){ if(v===''||v==null)return null; const n=Number(v); return Number.isFinite(n)?n:null; }
+/* shape column: 'circle' and the internal 'balheart' pass through, anything else is a rect */
+function gshape(v){ return (v==='circle'||v==='balheart')?v:'rect'; }
 function gbool(v){ return v===true||v==='TRUE'||v==='true'||v===1||v==='1'; }
 function isBlank(v){ return v===''||v==null||v===undefined; }
 function rowsToObjects(values,headers){
@@ -935,7 +969,7 @@ function customFromRow(o){
     length:gnum(o.length),width:gnum(o.width),
     color:(!isBlank(o.color)&&/^#[0-9a-fA-F]{6}$/.test(String(o.color)))?String(o.color):'#B6D7A8',
     electricity:isBlank(o.electricity)?'':String(o.electricity),
-    water:gbool(o.water),nya:gnum(o.nya)||0,shape:o.shape==='circle'?'circle':'rect'};
+    water:gbool(o.water),nya:gnum(o.nya)||0,shape:gshape(o.shape)};
   if(c.length==null)c.length=3; if(c.width==null)c.width=3;
   return c;
 }
@@ -1031,7 +1065,7 @@ function placementRow(t){
   if(!isCustomId(id) && !edits[id]) return base.concat(['','','','','','','','','']);
   const r=refOf(t);
   return base.concat([r.name||'',r.placering||'',r.length!=null?r.length:'',r.width!=null?r.width:'',
-    r.color||'',r.electricity||'',r.water?1:'',r.nya||0,r.shape==='circle'?'circle':'rect']);
+    r.color||'',r.electricity||'',r.water?1:'',r.nya||0,gshape(r.shape)]);
 }
 /* An edited LIBRARY tent is re-resolved from the library every render, so its override
    can't ride on the placed ref — it travels through the local `edits` map. Rebuild those
@@ -1041,7 +1075,7 @@ function placementRow(t){
 function editDefFromRow(o){
   return {name:String(o.name),placering:isBlank(o.placering)?'':String(o.placering),
     electricity:isBlank(o.electricity)?'':String(o.electricity),water:gbool(o.water),
-    shape:o.shape==='circle'?'circle':'rect',length:gnum(o.length),width:gnum(o.width),
+    shape:gshape(o.shape),length:gnum(o.length),width:gnum(o.width),
     color:isBlank(o.color)?'':String(o.color),nya:gnum(o.nya)||0};
 }
 function reconcileEdits(P){
@@ -1793,24 +1827,23 @@ function seedCampingDefaults(){
   }catch(e){}
 }
 
-/* One-time seed of the Arena bale heart ("Bal hjärta"): ONE ordinary rect object,
-   12 x 10.5 m - the footprint of the 25-halmbal heart (240 x 80 cm bales, two layers)
-   designed in the separate bale-heart tool. The user asked for a single structure
-   with one name rather than 25 individual bales, and no new shape type, so the
-   bale-level drawing lives only in that tool; the planner reserves the area.
-   Anchored ~10 m SW of the "ljus bod" (621,844 behind the laktare) and rot 40 to
-   line up with the arena's other objects (arena_base.png pixels, ppm 4.3923). Same
-   mechanics as the Camping seed above: global custom def (a custom_ id, so the full
-   definition rides in the placements row) + pre-placed in Arena, arena dirty flag
-   set so the next admin save syncs.
-   Seed versions REPLACE existing bale placements outright, they do not merge - a
-   moved heart snaps back to the seed anchor once when a new version first runs
-   (v2: 12 m wide; v3: next to the ljus bod + rot 40; v4: one object, drops the
-   25 bale_* objects). */
+/* One-time seed of the Arena bale heart ("Bal hjärta"): ONE object whose footprint
+   is drawn as the 25-halmbal heart (240 x 80 cm bales, two layers, guide 12 m wide)
+   via the internal shape:'balheart' + the BALHEART offsets next to tentCorners.
+   One name, one list entry, moved/rotated as a single structure; the shape is not
+   offered in the add/edit modal. Anchored ~10 m SW of the "ljus bod" (621,844
+   behind the laktare) and rot 40 to line up with the arena's other objects
+   (arena_base.png pixels, ppm 4.3923). Same mechanics as the Camping seed above:
+   global custom def (a custom_ id, so the full definition rides in the placements
+   row) + pre-placed in Arena, arena dirty flag set so the next admin save syncs.
+   Version history: v2 12 m wide; v3 next to the ljus bod + rot 40; v4 one plain
+   rect object, drops the 25 bale_* objects; v5 the object draws the bales again
+   (shape 'balheart'). v5 KEEPS a moved heart's position and only swaps the def;
+   it also clears a stale modal-edit override that could pin shape:'rect'. */
 function seedArenaBales(){
-  if(localStorage.getItem('mtvi_seed_arena_bales_v4')) return;
+  if(localStorage.getItem('mtvi_seed_arena_bales_v5')) return;
   const def={id:'custom_balheart',name:'Bal hjärta',placering:'',electricity:'',water:false,
-             shape:'rect',length:10.5,width:12,color:'#E8BE4F',nya:0};
+             shape:'balheart',length:10.5,width:12,color:'#E8BE4F',nya:0};
   try{
     let cust=JSON.parse(localStorage.getItem(LS.custom)||'[]')
                .filter(c=>c&&!/^bale_/.test(String(c.id))&&String(c.id)!==def.id);
@@ -1818,11 +1851,16 @@ function seedArenaBales(){
     localStorage.setItem(LS.custom,JSON.stringify(cust));
     const key=LS.placed+'::arena';
     let P=[]; try{ P=JSON.parse(localStorage.getItem(key)||'[]')||[]; }catch(e){}
-    P=P.filter(p=>!(p&&p.ref&&(/^bale_/.test(String(p.ref.id))||String(p.ref.id)===def.id)));
-    P.push({ref:def,lat:861.5,lng:577.4,rot:40});
+    P=P.filter(p=>p&&p.ref&&!/^bale_/.test(String(p.ref.id)));
+    const ex=P.find(p=>String(p.ref.id)===def.id);
+    if(ex) ex.ref=def;                                // keep a moved heart where it is
+    else P.push({ref:def,lat:861.5,lng:577.4,rot:40});
     localStorage.setItem(key,JSON.stringify(P));
+    const ek=LS.edits+'::arena';                      // drop an old shape:'rect' override
+    try{ const E=JSON.parse(localStorage.getItem(ek)||'{}')||{};
+         if(E[def.id]){ delete E[def.id]; localStorage.setItem(ek,JSON.stringify(E)); } }catch(e){}
     localStorage.setItem(LS.dirty+'::arena',JSON.stringify(true));
-    localStorage.setItem('mtvi_seed_arena_bales_v4','1');
+    localStorage.setItem('mtvi_seed_arena_bales_v5','1');
     customTents=lsGet(LS.custom,[]); library=TENTS.concat(customTents);
   }catch(e){}
 }
