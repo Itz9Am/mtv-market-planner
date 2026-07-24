@@ -151,6 +151,7 @@
       <div class="seg" id="areaSeg">
         <button data-area="marknad" class="on">Marknad</button>
         <button data-area="arena">Arena</button>
+        <button data-area="camping">Camping</button>
       </div>
     </div>
     <div id="topbar">
@@ -260,7 +261,8 @@ const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
    `admin` and `area` itself stay global. */
 const AREAS=[{key:'marknad',label:'Marknad',img:'marknad_base_clean.png'},
-             {key:'arena',label:'Arena',img:'arena_base.png',ppm:4.39}];
+             {key:'arena',label:'Arena',img:'arena_base.png',ppm:4.39},
+             {key:'camping',label:'Camping',img:'camping_base.png',ppm:3.0}];
 /* The tent LIST is shared across areas — `custom` (added objects) and `removed` are
    global, so the sidebar shows the same tents everywhere. Only the per-area PLAN keys
    (placements, wiring, scale, view, image, edits) are namespaced. */
@@ -1611,7 +1613,39 @@ document.addEventListener('keydown',e=>{
   }
 });
 
+/* One-time seed of the Camping area's fixed service structures (Reception, Kök, WC …).
+   They are added to the global custom list AND pre-placed in the Camping area, so they
+   never show in any "available" list (placedAnywhere gates them). Deleting one returns
+   it to the list, as with any object. Guarded by a global flag so it runs once; the
+   Camping `dirty` flag is set so an admin's next save pushes them to the shared Sheet.
+   The camper vans / RV rows from the plan are intentionally not included. */
+function seedCampingDefaults(){
+  if(localStorage.getItem('mtvi_seed_camping_v1')) return;
+  // {id,name,placering,color, w,l metres, x,y in image pixels (lng,lat)}
+  const S=[
+    {id:'camp_foodtruck',name:'Foodtruck och grillplats',placering:'MAT',color:'#A64D9A',w:4,l:8,x:820,y:600},
+    {id:'camp_reception', name:'Reception',               placering:'REC',color:'#E69138',w:4,l:4,x:700,y:690},
+    {id:'camp_kok',       name:'Kök',                      placering:'KÖK',color:'#6AA84F',w:3,l:5,x:762,y:690},
+    {id:'camp_barrack',   name:'Barrack',                  placering:'BAR',color:'#B7B7B7',w:3,l:6,x:640,y:690},
+    {id:'camp_avfall',    name:'Avfall',                   placering:'AVF',color:'#3D85C6',w:3,l:3,x:700,y:742},
+    {id:'camp_wc',        name:'Toaletter / WC',           placering:'WC', color:'#3D85C6',w:3,l:4,x:700,y:792}
+  ];
+  const defs=S.map(s=>({id:s.id,name:s.name,placering:s.placering,electricity:'',water:s.id==='camp_wc'||s.id==='camp_kok',
+                        shape:'rect',length:s.l,width:s.w,color:s.color,nya:0}));
+  try{
+    const cust=JSON.parse(localStorage.getItem(LS.custom)||'[]');
+    defs.forEach(d=>{ if(!cust.some(c=>String(c.id)===String(d.id))) cust.push(d); });
+    localStorage.setItem(LS.custom,JSON.stringify(cust));
+    const place=S.map((s,i)=>({ref:defs[i],lat:s.y,lng:s.x,rot:0}));
+    localStorage.setItem(LS.placed+'::camping',JSON.stringify(place));
+    localStorage.setItem(LS.dirty+'::camping',JSON.stringify(true));
+    localStorage.setItem('mtvi_seed_camping_v1','1');
+    customTents=lsGet(LS.custom,[]); library=TENTS.concat(customTents);
+  }catch(e){}
+}
+
 /* ---------- init ---------- */
+seedCampingDefaults();
 loadPlaced();
 updateScaleReadout();
 setLetters(showLetters);
