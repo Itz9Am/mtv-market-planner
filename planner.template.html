@@ -1222,21 +1222,43 @@ function phaseLoads(id,seen){ seen=seen||new Set(); const out=[0,0,0]; if(seen.h
 }
 function peakLoad(id){ const p=phaseLoads(id); return Math.max(p[0],p[1],p[2]); }
 function overloaded(n){ return n.domain==='el' && peakLoad(n.id)>nodeRatingAmp(n); }
-/* Spread a cabinet's directly-fed tents across L1/L2/L3 to keep the peak phase as low as
-   possible (LPT: assign biggest tents first, each to the currently least-loaded phase).
-   Downstream cabinet feeds sit equally on all three phases, so balancing the tents alone
-   is enough. Returns true if any tent's phase changed. */
-function rebalanceCabinet(id){
-  const tc=cables.filter(c=>c.src===id && c.domain==='el' && c.dstKind==='tent');
-  if(!tc.length) return false;
-  const load=[0,0,0]; let changed=false;
-  tc.map(c=>({c,amp:tentAmp(c.dst)})).sort((a,b)=>b.amp-a.amp).forEach(({c,amp})=>{
-    let ph=0; if(load[1]<load[ph])ph=1; if(load[2]<load[ph])ph=2;   // least-loaded phase
-    load[ph]+=amp; const np=ph+1; if(c.phase!==np){ c.phase=np; changed=true; }
-  });
+/* Assign every tent to a phase (L1/L2/L3) so the load is balanced at EVERY node on its feed
+   path, not just its own cabinet. Phases stay aligned up a feed chain (a tent on L1 draws L1
+   at its cabinet AND every cabinet/source above it), so balancing each cabinet in isolation
+   fails on chains: e.g. a source feeding many cabinets that each hold a single tent — every
+   lone tent defaults to L1 and they all pile onto the source's L1. Here we walk tents biggest
+   first (LPT) and put each on the phase that keeps the worst UTILISATION (load/rating) along
+   its whole path to the source lowest — sparing a near-limit cabinet even when a big source
+   could absorb more. Utilisation is quantised so near-ties fall back to the lowest absolute
+   peak, which also evens out a high-capacity source. Returns true if any tent's phase changed. */
+function rebalanceEl(){
+  const load={};                         // load[nodeId] = [L1,L2,L3] accumulated so far
+  const paths={};                        // cache: nodeId -> [self, parent, …, root]
+  const ratingAmp={}; nodes.forEach(n=>{ ratingAmp[n.id]=n.rating||0; });
+  function pathOf(id){
+    if(paths[id]) return paths[id];
+    const p=[]; let cur=id, g=0;
+    while(cur && g++<300){ if(!load[cur]) load[cur]=[0,0,0]; p.push(cur); cur=inputOf(cur); }
+    return (paths[id]=p);
+  }
+  let changed=false;
+  cables.filter(c=>c.domain==='el' && c.dstKind==='tent')
+    .map(c=>({c,amp:tentAmp(c.dst)})).sort((a,b)=>b.amp-a.amp)
+    .forEach(({c,amp})=>{
+      const path=pathOf(c.src);
+      let best=0, bestU=Infinity, bestA=Infinity;   // min worst-utilisation, tie-break on abs peak
+      for(let ph=0; ph<3; ph++){
+        let u=0, a=0;
+        for(const nid of path){ const r=ratingAmp[nid]||1, nu=(load[nid][ph]+amp)/r, na=load[nid][ph]+amp;
+          if(nu>u) u=nu; if(na>a) a=na; }
+        u=Math.round(u*1000)/1000;
+        if(u<bestU || (u===bestU && a<bestA)){ bestU=u; bestA=a; best=ph; }
+      }
+      for(const nid of path) load[nid][best]+=amp;
+      const np=best+1; if(c.phase!==np){ c.phase=np; changed=true; }
+    });
   return changed;
 }
-function rebalanceEl(){ let ch=false; nodes.forEach(n=>{ if(n.domain==='el') ch=rebalanceCabinet(n.id)||ch; }); return ch; }
 function nodeName(n){ if(n.domain==='water') return n.kind==='brunn'?'brunn':'handfat'; return n.kind==='source'?('source ('+n.rating+'A in)'):(n.rating+'A cabinet'); }
 
 // walk upstream from a node, collecting every feeding cabinet/source and the cables between
@@ -1486,7 +1508,7 @@ function connect(srcId,dst){
   else cables=cables.filter(c=>!(c.dstKind==='node'&&c.dst===dst.id));
   const nc={src:srcId,dst:dst.id,dstKind:dst.kind,otype:key,phase:0,domain:'el'};
   cables.push(nc);
-  if(dst.kind==='tent') rebalanceCabinet(srcId);   // re-spread all this cabinet's tents across L1/L2/L3
+  if(dst.kind==='tent') rebalanceEl();   // re-spread tents across L1/L2/L3, balanced along each feed chain
   const phase=nc.phase;
   saveNet(); redrawCables(); nodes.forEach(renderNode);
   const pl=phaseLoads(srcId), peak=Math.max(pl[0],pl[1],pl[2]);
