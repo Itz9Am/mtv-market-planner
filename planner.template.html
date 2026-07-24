@@ -453,14 +453,18 @@ function ensureDefs(){
    y up), each entry [dx, dy, deg] with the same rotation convention as placement
    rot; the whole group follows the object's own position and rotation, so it
    moves/rotates as a single structure. shape:'balheart' is internal - it is NOT
-   offered in the add/edit modal (only the seeded object uses it). */
-const BALHEART=[[0.31,3.57,155],[2.41,5.19,100],[4.97,4.51,50],[5.99,2.07,175],
-  [4.73,-0.28,135],[2.84,-2.27,135],[0.95,-4.26,135],
-  [-0.31,3.57,25],[-2.41,5.19,80],[-4.97,4.51,130],[-5.99,2.07,5],
-  [-4.73,-0.28,45],[-2.84,-2.27,45],[-0.95,-4.26,45],
+   offered in the add/edit modal (only the seeded object uses it).
+   Bales WITHIN a layer never overlap (SAT-verified offline with a 1.5 cm buffer);
+   the top layer deliberately overlaps the bottom one (stacked courses), which is
+   why tentStyle uses fillRule:'nonzero' for this shape - Leaflet's default
+   'evenodd' would XOR the overlap regions transparent. */
+const BALHEART=[[0.65,3.5,170],[2.41,5.19,100],[4.97,4.51,50],[5.99,2.07,175],
+  [4.73,-0.28,135],[2.84,-2.27,135],[1.16,-4.05,135],
+  [-0.65,3.5,10],[-2.41,5.19,80],[-4.97,4.51,130],[-5.99,2.07,5],
+  [-4.73,-0.28,45],[-2.84,-2.27,45],[-1.16,-4.05,45],
   [-2.61,1.68,90],[2.61,1.68,90],[0,-0.11,90],
-  [1.17,4.63,130],[3.77,5.15,75],[5.77,3.41,25],[5.61,0.77,150],
-  [-1.17,4.63,50],[-3.77,5.15,105],[-5.77,3.41,155],[-5.61,0.77,30]];
+  [1.2,4.66,130],[3.77,5.15,75],[5.77,3.41,25],[5.61,0.77,150],
+  [-1.2,4.66,50],[-3.77,5.15,105],[-5.77,3.41,155],[-5.61,0.77,30]];
 function tentCorners(t){
   const ref=refOf(t);
   const hw=((ref.width||3)*ppm)/2, hh=((ref.length||3)*ppm)/2;
@@ -501,8 +505,10 @@ function tentStyle(t){
   }
   const isEl=currentTab==='el';
   const fill=isEl?elColor(ref.electricity):ref.color;
-  return {color: sel?'#ffffff':(hlt?'#ffd400':(wat?'#2b8cff':'rgba(0,0,0,.65)')),
-          weight: sel?3:((hlt||wat)?3:1.5), fillColor:fill, fillOpacity:.85};
+  const st={color: sel?'#ffffff':(hlt?'#ffd400':(wat?'#2b8cff':'rgba(0,0,0,.65)')),
+            weight: sel?3:((hlt||wat)?3:1.5), fillColor:fill, fillOpacity:.85};
+  if(ref.shape==='balheart') st.fillRule='nonzero';   // stacked bale layers overlap; evenodd would render the overlaps transparent
+  return st;
 }
 function capHtmlFor(t){
   const ref=refOf(t);
