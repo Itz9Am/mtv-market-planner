@@ -1201,6 +1201,21 @@ function phaseLoads(id,seen){ seen=seen||new Set(); const out=[0,0,0]; if(seen.h
 }
 function peakLoad(id){ const p=phaseLoads(id); return Math.max(p[0],p[1],p[2]); }
 function overloaded(n){ return n.domain==='el' && peakLoad(n.id)>nodeRatingAmp(n); }
+/* Spread a cabinet's directly-fed tents across L1/L2/L3 to keep the peak phase as low as
+   possible (LPT: assign biggest tents first, each to the currently least-loaded phase).
+   Downstream cabinet feeds sit equally on all three phases, so balancing the tents alone
+   is enough. Returns true if any tent's phase changed. */
+function rebalanceCabinet(id){
+  const tc=cables.filter(c=>c.src===id && c.domain==='el' && c.dstKind==='tent');
+  if(!tc.length) return false;
+  const load=[0,0,0]; let changed=false;
+  tc.map(c=>({c,amp:tentAmp(c.dst)})).sort((a,b)=>b.amp-a.amp).forEach(({c,amp})=>{
+    let ph=0; if(load[1]<load[ph])ph=1; if(load[2]<load[ph])ph=2;   // least-loaded phase
+    load[ph]+=amp; const np=ph+1; if(c.phase!==np){ c.phase=np; changed=true; }
+  });
+  return changed;
+}
+function rebalanceEl(){ let ch=false; nodes.forEach(n=>{ if(n.domain==='el') ch=rebalanceCabinet(n.id)||ch; }); return ch; }
 function nodeName(n){ if(n.domain==='water') return n.kind==='brunn'?'brunn':'handfat'; return n.kind==='source'?('source ('+n.rating+'A in)'):(n.rating+'A cabinet'); }
 
 // walk upstream from a node, collecting every feeding cabinet/source and the cables between
@@ -1448,9 +1463,10 @@ function connect(srcId,dst){
   if(!key){ flashBanner('No free '+req.key+' output on the '+nodeName(src)+'.',true); return; }
   if(dst.kind==='tent') cables=cables.filter(c=>!(c.dstKind==='tent'&&c.dst===dst.id));
   else cables=cables.filter(c=>!(c.dstKind==='node'&&c.dst===dst.id));
-  let phase=0;
-  if(dst.kind==='tent'){ const pl=phaseLoads(srcId); phase=(pl[0]<=pl[1]&&pl[0]<=pl[2])?1:(pl[1]<=pl[2]?2:3); }
-  cables.push({src:srcId,dst:dst.id,dstKind:dst.kind,otype:key,phase,domain:'el'});
+  const nc={src:srcId,dst:dst.id,dstKind:dst.kind,otype:key,phase:0,domain:'el'};
+  cables.push(nc);
+  if(dst.kind==='tent') rebalanceCabinet(srcId);   // re-spread all this cabinet's tents across L1/L2/L3
+  const phase=nc.phase;
   saveNet(); redrawCables(); nodes.forEach(renderNode);
   const pl=phaseLoads(srcId), peak=Math.max(pl[0],pl[1],pl[2]);
   if(peak>nodeRatingAmp(src)) flashBanner('Connected '+label+' — '+nodeName(src)+' overloaded (L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A, max '+peak+'/'+src.rating+').',true);
@@ -1461,7 +1477,8 @@ function redrawCables(){
   cableLines.forEach(l=>map.removeLayer(l)); cableLines=[];
   const before=cables.length;
   cables=cables.filter(c=> nodes.some(n=>n.id===c.src) && (c.dstKind==='tent'?placed.some(t=>t.ref.id===c.dst):nodes.some(n=>n.id===c.dst)));
-  if(cables.length!==before) saveNet();
+  const rebalanced=rebalanceEl();                 // keep every cabinet's phases balanced (removals, load, etc.)
+  if(cables.length!==before || rebalanced) saveNet();
   const dom=curDomain(); if(!dom) return;
   cables.filter(c=>c.domain===dom).forEach(c=>{
     const s=nodes.find(n=>n.id===c.src); if(!s)return; const a=[s.lat,s.lng];
