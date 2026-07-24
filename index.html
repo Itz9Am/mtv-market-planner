@@ -1793,8 +1793,52 @@ function seedCampingDefaults(){
   }catch(e){}
 }
 
+/* One-time seed of the Arena bale heart: 25 halmbalar (240 x 80 cm) laid out as the
+   two-layer heart designed in the separate bale-heart tool, heart width 12 m.
+   Layer 1 (darker) is the full outline - 7 bales per half, joints at the cleft and at
+   the bottom point - plus the three inner bales; layer 2 (lighter, listed after so it
+   draws on top) bridges the layer-1 joints around the lobes, like the stacked second
+   course in the design. Coordinates are arena_base.png pixels (ppm 4.3923), the whole
+   layout turned 40 deg to line up with the arena's rot-40 objects and anchored ~10 m
+   SW of the "ljus bod" (which sits at 621,844 behind the laktare); every bale is a
+   normal object, so shift-click multi-select moves or rotates the whole heart. Same
+   mechanics as the Camping seed above: global custom defs + pre-placed in Arena,
+   arena dirty flag set so the next admin save syncs.
+   Seed versions REPLACE existing bale placements outright, they do not merge - a
+   moved heart snaps back to the seed anchor once when a new version first runs
+   (v2: 12 m wide; v3: moved next to the ljus bod + rot 40). */
+function seedArenaBales(){
+  if(localStorage.getItem('mtvi_seed_arena_bales_v3')) return;
+  const L1=[[568.4,848.6,15],[570.9,837.2,140],[581.4,832.3,90],[591.7,837.6,35],
+            [594.1,849.1,175],[593.4,861.1,175],[592.6,873.2,175],
+            [566.3,850.4,65],[554.6,850.8,120],[547.9,860.4,170],[551.4,871.4,45],
+            [562.3,875.8,85],[574.3,877.2,85],[586.2,878.5,85],
+            [563.9,863.2,130],[581.4,848.5,130],[577.7,861.9,130]];
+  const L2=[[568.3,842.6,170],[575.5,833.5,115],[587.2,833.7,65],[594.1,843.1,10],
+            [560.4,849.2,90],[550.2,854.8,145],[548.4,866.3,15],[556.4,874.7,70]];
+  const S=[];
+  L1.forEach((b,i)=>S.push({id:'bale_1_'+(i+1),color:'#DFAE3F',x:b[0],y:b[1],rot:b[2]}));
+  L2.forEach((b,i)=>S.push({id:'bale_2_'+(i+1),color:'#F2D272',x:b[0],y:b[1],rot:b[2]}));
+  const defs=S.map(s=>({id:s.id,name:'Bal',placering:'',electricity:'',water:false,
+                        shape:'rect',length:2.4,width:0.8,color:s.color,nya:0}));
+  try{
+    let cust=JSON.parse(localStorage.getItem(LS.custom)||'[]').filter(c=>c);
+    defs.forEach(d=>{ const i=cust.findIndex(c=>String(c.id)===String(d.id)); if(i>=0)cust[i]=d; else cust.push(d); });
+    localStorage.setItem(LS.custom,JSON.stringify(cust));
+    const key=LS.placed+'::arena';
+    let P=[]; try{ P=JSON.parse(localStorage.getItem(key)||'[]')||[]; }catch(e){}
+    P=P.filter(p=>!(p&&p.ref&&/^bale_/.test(String(p.ref.id))));   // drop the previous layout
+    S.forEach((s,i)=>P.push({ref:defs[i],lat:s.y,lng:s.x,rot:s.rot||0}));
+    localStorage.setItem(key,JSON.stringify(P));
+    localStorage.setItem(LS.dirty+'::arena',JSON.stringify(true));
+    localStorage.setItem('mtvi_seed_arena_bales_v3','1');
+    customTents=lsGet(LS.custom,[]); library=TENTS.concat(customTents);
+  }catch(e){}
+}
+
 /* ---------- init ---------- */
 seedCampingDefaults();
+seedArenaBales();
 loadPlaced();
 updateLegend();
 updateScaleReadout();
