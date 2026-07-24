@@ -450,7 +450,7 @@ function ensureDefs(){
 /* The "Bal hjärta" composite footprint: ONE object drawn as the 23-halmbal heart
    (240 x 80 cm bales). The layout is generated OFFLINE from the user's "Bale
    Heart" tool: its parametric heart curve (x=16sin^3 t,
-   y=13cos t-5cos 2t-2cos 3t-cos 4t, scaled to 12 m wide, y-centred), bales laid
+   y=13cos t-5cos 2t-2cos 3t-cos 4t, scaled to 11.5 m wide, y-centred), bales laid
    as chords walking the curve with the tool's 5 cm minimum gap - the tool's
    exact shape, not an approximation. Unlike the tool's single loop walk (which
    dumps all leftover slack in one ugly gap at the top-left of the notch), the
@@ -468,13 +468,13 @@ function ensureDefs(){
    second course overlaps the first by design, and each polygon is drawn with
    fillRule:'nonzero' because Leaflet's default 'evenodd' would XOR any
    overlapping rings transparent. */
-const BALHEART1=[[1.21,4.54,130],[3.94,4.99,69.1],[5.7,2.85,9.1],[4.9,0.07,141.7],
-  [2.74,-2.13,130.9],[0.66,-4.41,147],
-  [-1.21,4.54,50],[-3.82,5.03,108.3],[-5.65,3.1,165.4],[-5.13,0.41,34.5],
-  [-3.14,-1.76,48.9],[-1.03,-3.84,40.7],
-  [-2.61,1.74,90],[2.61,1.74,90],[0,-0.11,90]];
-const BALHEART2=[[2.52,5.13,99.4],[5.12,4.15,40],[5.59,1.4,160.1],[3.87,-1.08,133.1],
-  [-2.45,5.12,79.2],[-4.99,4.3,136.1],[-5.67,1.72,14.2],[-4.21,-0.74,45.1]];
+const BALHEART1=[[1.22,4.37,128.7],[3.81,4.75,68.2],[5.44,2.7,8.5],[4.68,0.07,141.8],
+  [2.64,-2.02,131],[0.66,-4.19,146.5],
+  [-1.22,4.37,51.3],[-3.75,4.77,110.4],[-5.42,2.84,168.3],[-4.86,0.33,35.3],
+  [-3.01,-1.69,48.9],[-1.03,-3.63,41.1],
+  [-2.5,1.66,90],[2.5,1.66,90],[0,-0.1,90]];
+const BALHEART2=[[2.46,4.9,98.3],[4.91,3.94,39.2],[5.34,1.33,160],[3.72,-1.02,133.1],
+  [-2.43,4.89,81],[-4.84,4.02,138.5],[-5.39,1.54,16.1],[-4,-0.74,45.2]];
 function balheartRings(t,tab){
   // multipolygon: one ring per bale, all rotated rigidly around the anchor
   const th=(t.rot||0)*Math.PI/180, C=Math.cos(th), S=Math.sin(th);
@@ -489,12 +489,12 @@ function balheartRings(t,tab){
   });
 }
 function lighten(hex,f){   // second-course tint derived from the object's colour
-  const m=/^#([0-9a-fA-F]{6})$/.exec(hex||''); if(!m) return '#F2D272';
+  const m=/^#([0-9a-fA-F]{6})$/.exec(hex||''); if(!m) return '#EECE7B';
   const n=parseInt(m[1],16), mix=c=>Math.round(c+(255-c)*f);
   return '#'+((1<<24)+(mix(n>>16&255)<<16)+(mix(n>>8&255)<<8)+mix(n&255)).toString(16).slice(1);
 }
 function bh2Style(ref){
-  return {color:'rgba(0,0,0,.5)',weight:1.5,fillColor:lighten(ref.color,.45),
+  return {color:'rgba(0,0,0,.5)',weight:1.5,fillColor:lighten(ref.color,.25),
           fillOpacity:.9,fillRule:'nonzero',interactive:false};
 }
 function tentCorners(t){
@@ -644,7 +644,7 @@ const ctl=document.getElementById('tentCtl');
 function applySelStyles(){
   placed.forEach(t=>{
     const on=selUids.has(t.uid);
-    if(t.poly){ t.poly.setStyle(tentStyle(t)); if(t.uid===selectedUid&&t.poly.bringToFront)t.poly.bringToFront(); return; }
+    if(t.poly){ t.poly.setStyle(tentStyle(t)); if(t.uid===selectedUid&&t.poly.bringToFront){ t.poly.bringToFront(); if(t.bh2Poly)t.bh2Poly.bringToFront(); } return; }
     if(!t.marker)return; const el=t.marker.getElement(); if(!el)return;
     const box=el.querySelector('.tent-box'); if(box) box.classList.toggle('sel',on);
     t.marker.setZIndexOffset(t.uid===selectedUid?1000:0); });
@@ -829,7 +829,7 @@ document.getElementById('mSave').onclick=()=>{
     nya:parseInt(document.getElementById('mNya').value)||0};
   if(editingShape==='balheart'){   // internal composite shape: survives a rename/recolour
     data.shape='balheart';
-    if(data.length==null)data.length=10.5; if(data.width==null)data.width=12;
+    if(data.length==null)data.length=10.4; if(data.width==null)data.width=11.5;
   }
   if(editingId==null){
     const t=Object.assign({id:'custom_'+Date.now()},data);
@@ -1870,12 +1870,13 @@ function seedCampingDefaults(){
    row) + pre-placed in Arena, arena dirty flag set so the next admin save syncs.
    Version history: v2 12 m wide; v3 next to the ljus bod + rot 40; v4 one plain
    rect object, drops the 25 bale_* objects; v5 the object draws the bales again
-   (shape 'balheart'). v5 KEEPS a moved heart's position and only swaps the def;
-   it also clears a stale modal-edit override that could pin shape:'rect'. */
+   (shape 'balheart'); v6 heart guide 11.5 m wide (footprint 11.5 x 10.4).
+   v5+ KEEP a moved heart's position and only swap the def; they also clear a
+   stale modal-edit override that could pin an old shape/size. */
 function seedArenaBales(){
-  if(localStorage.getItem('mtvi_seed_arena_bales_v5')) return;
+  if(localStorage.getItem('mtvi_seed_arena_bales_v6')) return;
   const def={id:'custom_balheart',name:'Bal hjärta',placering:'',electricity:'',water:false,
-             shape:'balheart',length:10.5,width:12,color:'#E8BE4F',nya:0};
+             shape:'balheart',length:10.4,width:11.5,color:'#E8BE4F',nya:0};
   try{
     let cust=JSON.parse(localStorage.getItem(LS.custom)||'[]')
                .filter(c=>c&&!/^bale_/.test(String(c.id))&&String(c.id)!==def.id);
@@ -1892,7 +1893,7 @@ function seedArenaBales(){
     try{ const E=JSON.parse(localStorage.getItem(ek)||'{}')||{};
          if(E[def.id]){ delete E[def.id]; localStorage.setItem(ek,JSON.stringify(E)); } }catch(e){}
     localStorage.setItem(LS.dirty+'::arena',JSON.stringify(true));
-    localStorage.setItem('mtvi_seed_arena_bales_v5','1');
+    localStorage.setItem('mtvi_seed_arena_bales_v6','1');
     customTents=lsGet(LS.custom,[]); library=TENTS.concat(customTents);
   }catch(e){}
 }
