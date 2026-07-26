@@ -27,6 +27,20 @@
   .tabs .tab:hover{color:var(--txt)}
   .tabs .tab.on{color:var(--txt);border-bottom-color:var(--accent);font-weight:600}
   #elLegend{padding:6px 4px}
+  /* El tab sub-views: Overview (legend) | Cabinets (distribution tree) */
+  #elViewSeg{margin:8px 14px 0}
+  #elViewSeg button{flex:1}
+  #elTree{padding:6px 10px 16px}
+  #elTree .etkids{margin:0 0 0 13px;border-left:1px dashed var(--line);padding-left:9px}
+  #elTree .etnode{display:flex;align-items:center;gap:8px;padding:7px 9px;margin:5px 0;background:var(--panel2);border:1px solid var(--line);border-radius:9px;cursor:pointer}
+  #elTree .etnode .etname{font-size:11px;font-weight:800;color:#ffd76a;background:rgba(10,12,18,.7);border:1px solid var(--line);border-radius:5px;padding:1px 6px;white-space:nowrap}
+  #elTree .etnode .etinfo{flex:1;font-size:12px;font-weight:600}
+  #elTree .etnode .etinfo .etsub{font-size:10px;color:var(--muted);font-weight:400}
+  #elTree .etnode .etload{font-size:11px;text-align:right}
+  #elTree .ettent{display:flex;align-items:center;gap:7px;padding:3px 9px;margin:2px 0;font-size:11.5px;color:var(--txt);cursor:pointer;border-radius:7px}
+  #elTree .ettent:hover{background:var(--panel2)}
+  #elTree .ettent .tsw{width:11px;height:11px;border-radius:3px;flex:none;border:1px solid rgba(255,255,255,.25)}
+  #elTree .ettent .tot{margin-left:auto;font-size:10px;color:var(--muted);white-space:nowrap}
   .legrow{display:flex;align-items:center;gap:10px;padding:9px 10px;margin:5px 6px;background:var(--panel2);border:1px solid var(--line);border-radius:9px}
   .legrow .lname{flex:1;font-size:12.5px;font-weight:600}
   .legrow .lcount{font-size:12px;color:var(--muted)}
@@ -86,7 +100,9 @@
   path.nya-fill{fill:url(#nyaPat);fill-opacity:.95;pointer-events:none}
   .leaflet-overlay-pane path{cursor:move}
   #topbar .grp{display:flex;gap:6px;align-items:center}
-  .node{width:58px;height:44px;background:#181b22;border:2px solid #888;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+  .node{position:relative;width:58px;height:44px;background:#181b22;border:2px solid #888;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+  /* cabinet designation (A1, A1N1 …) above the box; toggled by the Names button */
+  .node .nname{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;color:#ffd76a;background:rgba(10,12,18,.88);border:1px solid var(--line);border-radius:5px;padding:0 5px;line-height:15px;white-space:nowrap;pointer-events:none}
   .node.source{background:#0e2033;border-radius:50%}
   .node .er{font-size:12px;font-weight:800;color:#fff;line-height:1}
   .node .eu{font-size:9px;font-weight:600;margin-top:1px}
@@ -158,7 +174,12 @@
     <div id="tentList"></div>
     <div id="elUI" style="display:none">
       <div class="hint">Electrical view. Add a <b>Source</b> (a popup sets its amps and outputs) and cabinets from the toolbar. To wire, turn on the <b>Wire</b> tool, click a source/cabinet, then click what it feeds. With Wire off, clicking just selects and highlights the supply chain. Cabinets are three-phase: single-phase 220V loads are balanced across L1/L2/L3, three-phase loads sit on all phases, and any phase over the rating is flagged red. Click a cable to remove it; select a node and press Delete.</div>
+      <div class="seg" id="elViewSeg">
+        <button data-v="overview" class="on">Overview</button>
+        <button data-v="cabinets">Cabinets</button>
+      </div>
       <div id="elLegend"></div>
+      <div id="elTree" style="display:none"></div>
     </div>
     <div id="vattenUI" style="display:none">
       <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. Click a pipe to remove it; select a fixture and press Delete.</div>
@@ -221,6 +242,7 @@
         <button class="ela" data-r="32">32A</button>
         <button class="ela" data-r="16">16A</button>
         <button class="ela" data-custom="1">Custom</button>
+        <button id="cabNamesBtn" class="wirebtn on" title="Show or hide the cabinet designations (A1, A1N1 &hellip;) on the map">Names</button>
         <button id="wireEl" class="wirebtn">Wire</button>
       </div>
       <div class="grp" id="vattenControls" style="display:none">
@@ -310,7 +332,7 @@
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1'};
 /* Two independent plans ("areas"), each with its own tents, wiring, scale, view and base
    image. The plan-state keys below are namespaced per area in localStorage; the default
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
@@ -344,6 +366,7 @@ let customTents=lsGet(LS.custom,[]);
 let edits=lsGet(LS.edits,{});
 let removed=new Set(lsGet(LS.removed,[]));
 let showLetters=lsGet(LS.letters,true);
+let showCabNames=lsGet(LS.cabnames,true);   // cabinet designations (A1, A1N1 …) on the map; global like `letters`
 function saveRemoved(){ lsSet(LS.removed,[...removed]); }               // per-id field overrides
 let editingId=null;                         // which tent the modal is editing (null = add new)
 let editingShape=null;                      // the edited item's current shape; keeps the internal 'balheart' shape across a modal save (the select only offers rect/circle)
@@ -929,20 +952,21 @@ function renderLegend(){
     row.innerHTML=`<div class="sw" style="background:${elColor(v)}"></div><div class="lname">${esc(elLabel(v))}</div><div class="lcount">${cnt[v]||0} placed</div>`;
     el.appendChild(row);
   });
-  const elnodes=nodes.filter(n=>n.domain==='el');
+  const elnodes=nodes.filter(n=>n.domain==='el'), EN=elNames();
   const t2=document.createElement('div'); t2.className='legsub'; t2.textContent=`Power (${elnodes.length} source/cabinets)`; el.appendChild(t2);
   if(!elnodes.length){ const d=document.createElement('div'); d.className='hint'; d.textContent='Add a source or cabinet from the toolbar, click it, then click tents (or another cabinet) to run cables.'; el.appendChild(d); }
   elnodes.forEach(n=>{
     const p=phaseLoads(n.id), peak=Math.max(p[0],p[1],p[2]), over=peak>nodeRatingAmp(n);
     const free=(n.kind==='source'&&n.unl!==false)?'unlimited':Object.keys(complementMap(n)).map(k=>`${freeCount(n,k)}×${k}`).join(' ');
     const row=document.createElement('div'); row.className='legrow';
-    row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${over?'#ff6b6b':'var(--muted)'}">${peak}/${nodeRatingAmp(n)} A</div>`;
+    row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${over?'#ff6b6b':'var(--muted)'}">${peak}/${nodeRatingAmp(n)} A</div>`;
     el.appendChild(row);
   });
   const noPower=placed.filter(t=>needsPower(t)&&!hasPower(t));
   unconnectedSection(el,'Without power',noPower,tr=>elLabel(tr.electricity),'Every placed tent that needs power is connected.');
   const waiting=library.filter(x=>!placedAnywhere(x.id)&&!removed.has(String(x.id))&&tentReq(applyEdits(x).electricity)).length;
   if(waiting){ const d=document.createElement('div'); d.className='hint'; d.textContent=waiting+' more tent(s) needing power are not placed yet.'; el.appendChild(d); }
+  renderElTree();   // keep the Cabinets sub-view in sync with every change that redraws the legend
 }
 
 /* ---------- Google Sheets sync (shared project state) ----------
@@ -957,19 +981,35 @@ function renderLegend(){
    other. `meta` becomes one row PER area. No manual sheet change is needed — the columns
    already exist empty and an UNFORMATTED_VALUE read omits trailing blanks. */
 const SHEET_HEADERS={
-  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape','area'],
+  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','elskap','water','nya','shape','area'],
   nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','color','area'],
   cables:['src','dst','dstKind','domain','otype','phase','color','area'],
   meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy','area']
 };
-const SHEET_RANGES={placements:'placements!A1:N',nodes:'nodes!A1:N',cables:'cables!A1:H',meta:'meta!A1:H'};
-const SHEET_CLEAR=['placements!A2:N','nodes!A2:N','cables!A2:H','meta!A2:H'];
+const SHEET_RANGES={placements:'placements!A1:O',nodes:'nodes!A1:N',cables:'cables!A1:H',meta:'meta!A1:H'};
+const SHEET_CLEAR=['placements!A2:O','nodes!A2:N','cables!A2:H','meta!A2:H'];
 /* raw values (incl. header) of ALL areas from the last read — lets a write preserve other
    areas' rows. Persisted globally so a save before this session's first read still can't
    clobber the other area. */
 let sheetAll=lsGetGlobal('mtvi_sheetall_v1',{placements:[],nodes:[],cables:[],meta:[]});
 function lsGetGlobal(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
+/* One-way layout migration: sheets written before the `elskap` column lack it (it sits at
+   index 10, right after `electricity`). Rows are parsed POSITIONALLY against the code's
+   header list and other areas' rows are re-emitted verbatim on save, so an old-layout row
+   must get a blank cell spliced in — otherwise water/nya/shape/area all shift one column.
+   Detects the layout from the sheet's own header row; mutates `values` in place. */
+function migratePlacementValues(values){
+  if(!values||!values.length) return values;
+  const hdr=values[0]||[];
+  if(hdr.indexOf('elskap')>=0) return values;
+  if(hdr.indexOf('electricity')!==9) return values;   // unknown layout — leave untouched
+  hdr.splice(10,0,'elskap');
+  for(let i=1;i<values.length;i++){ const r=values[i]; if(r&&r.length>10) r.splice(10,0,''); }
+  return values;
+}
+migratePlacementValues(sheetAll.placements);   // the persisted snapshot may predate the column
 function setSheetAll(vr){
+  migratePlacementValues(vr[0]&&vr[0].values);   // in place, so callers parse the same arrays
   sheetAll={placements:(vr[0]&&vr[0].values)||[],nodes:(vr[1]&&vr[1].values)||[],
             cables:(vr[2]&&vr[2].values)||[],meta:(vr[3]&&vr[3].values)||[]};
   try{ localStorage.setItem('mtvi_sheetall_v1',JSON.stringify(sheetAll)); }catch(e){}
@@ -1136,12 +1176,13 @@ function isCustomId(id){ return String(id).indexOf('custom_')===0; }
    definition OR a library tent's edit override, so both survive a load on a browser
    that never had them in localStorage. An UNEDITED library tent leaves the def cols
    blank and resolves live by id (re-importing the Excel library keeps updating it). */
-function placementRow(t){
+function placementRow(t,elnm){
   const id=t.ref.id, base=[id,t.lng,t.lat,t.rot||0];
-  if(!isCustomId(id) && !edits[id]) return base.concat(['','','','','','','','','']);
+  const cab=feedCabName(id,elnm);   // designation of the feeding cabinet, next to `electricity`
+  if(!isCustomId(id) && !edits[id]) return base.concat(['','','','','','',cab,'','','']);
   const r=refOf(t);
   return base.concat([r.name||'',r.placering||'',r.length!=null?r.length:'',r.width!=null?r.width:'',
-    r.color||'',r.electricity||'',r.water?1:'',r.nya||0,gshape(r.shape)]);
+    r.color||'',r.electricity||'',cab,r.water?1:'',r.nya||0,gshape(r.shape)]);
 }
 /* An edited LIBRARY tent is re-resolved from the library every render, so its override
    can't ride on the placed ref — it travels through the local `edits` map. Rebuild those
@@ -1169,8 +1210,9 @@ function metaRow(savedAt,savedBy){
 }
 function sheetData(savedAt,savedBy){
   const A=area;   // tag this area's rows; re-emit the other areas' rows verbatim so they survive
+  const EN=elNames();   // one designations map for all the placement rows
   return [
-    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>placementRow(t).concat([A]))).concat(otherAreaRows('placements'))},
+    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>placementRow(t,EN).concat([A]))).concat(otherAreaRows('placements'))},
     {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(n=>nodeToRow(n).concat([A]))).concat(otherAreaRows('nodes'))},
     {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(c=>cableToRow(c).concat([A]))).concat(otherAreaRows('cables'))},
     {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy).concat([A])].concat(otherAreaRows('meta'))}
@@ -1419,6 +1461,25 @@ function pickOutput(n,req){
   return null;
 }
 function inputOf(id){ const c=cables.find(x=>x.dstKind==='node'&&x.dst===id); return c?c.src:null; }
+/* Reference designations per IEC 81346 / SEK Handbok 419, derived from the wiring and
+   never stored: each source (serviscentral) is A1, A2 … in creation order; every cabinet
+   fed from a unit is N1, N2 … in wiring order within its parent; the full designation
+   concatenates the feed path (A1N1, A1N1N2 …). A cabinet with no path to a source has no
+   designation (shown as "?"). Renaming happens implicitly on rewire — that is the point. */
+function elNames(){
+  const names={}, kids={};
+  cables.forEach(c=>{ if(c.domain==='el'&&c.dstKind==='node') (kids[c.src]=kids[c.src]||[]).push(c.dst); });
+  const walk=id=>{ let i=0; (kids[id]||[]).forEach(cid=>{ if(names[cid])return; names[cid]=names[id]+'N'+(++i); walk(cid); }); };
+  let a=0;
+  nodes.forEach(n=>{ if(n.domain==='el'&&n.kind==='source'){ names[n.id]='A'+(++a); walk(n.id); } });
+  return names;
+}
+/* the designation of the cabinet/source feeding a tent — the `elskap` sheet column */
+function feedCabName(tentId,names){
+  const c=cables.find(x=>x.domain==='el'&&x.dstKind==='tent'&&String(x.dst)===String(tentId));
+  if(!c) return '';
+  return (names||elNames())[c.src]||'?';
+}
 function createsCycle(srcId,dstId){ let cur=srcId,g=0; while(cur&&g++<300){ if(cur===dstId)return true; cur=inputOf(cur);} return false; }
 function nodeRatingAmp(n){ return n.rating||0; }
 // per-phase load [L1,L2,L3] for an el node (recurses through fed cabinets)
@@ -1468,7 +1529,10 @@ function rebalanceEl(){
     });
   return changed;
 }
-function nodeName(n){ if(n.domain==='water') return n.kind==='brunn'?'brunn':'handfat'; return n.kind==='source'?('source ('+n.rating+'A in)'):(n.rating+'A cabinet'); }
+function nodeName(n){ if(n.domain==='water') return n.kind==='brunn'?'brunn':'handfat';
+  const base=n.kind==='source'?('source ('+n.rating+'A in)'):(n.rating+'A cabinet');
+  const nm=elNames()[n.id];
+  return nm?(nm+' '+base):base; }
 
 // walk upstream from a node, collecting every feeding cabinet/source and the cables between
 function addUpstream(nodeId){
@@ -1595,6 +1659,67 @@ function setWire(on){
 function setLetters(on){ showLetters=on; lsSet(LS.letters,on);
   document.getElementById('lettersBtn').classList.toggle('on',on); refreshAll(); }
 document.getElementById('lettersBtn').onclick=()=>setLetters(!showLetters);
+/* cabinet designations on the map — same pattern as the Letters toggle */
+function setCabNames(on){ showCabNames=on; lsSet(LS.cabnames,on);
+  document.getElementById('cabNamesBtn').classList.toggle('on',on);
+  nodes.forEach(renderNode); }
+document.getElementById('cabNamesBtn').onclick=()=>setCabNames(!showCabNames);
+/* El sidebar sub-views: Overview (legend) | Cabinets (distribution tree) */
+let elView='overview';
+function setElView(v){ elView=v;
+  document.querySelectorAll('#elViewSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  document.getElementById('elLegend').style.display=v==='overview'?'':'none';
+  document.getElementById('elTree').style.display=v==='cabinets'?'':'none';
+  if(v==='cabinets') renderElTree(); }
+document.querySelectorAll('#elViewSeg button').forEach(b=>{ b.onclick=()=>setElView(b.dataset.v); });
+/* The Cabinets view: the whole distribution tree, one card per source/cabinet with its
+   designation, per-phase load and free sockets, and the tents it feeds indented under it.
+   Clicking pans the map to the unit/tent (and highlights its chain, like map clicks). */
+function renderElTree(){
+  const el=document.getElementById('elTree'); if(!el) return; el.innerHTML='';
+  const EN=elNames();
+  const elNodes=nodes.filter(n=>n.domain==='el');
+  if(!elNodes.length){ const d=document.createElement('div'); d.className='hint';
+    d.textContent='No sources or cabinets yet. Add them from the toolbar, wire them, and the distribution tree appears here.'; el.appendChild(d); return; }
+  const kids={};
+  cables.forEach(c=>{ if(c.domain==='el'&&c.dstKind==='node') (kids[c.src]=kids[c.src]||[]).push(c.dst); });
+  const seen=new Set();
+  function nodeRow(n){
+    const pl=phaseLoads(n.id), r=nodeRatingAmp(n), peak=Math.max(pl[0],pl[1],pl[2]), over=peak>r;
+    const free=(n.kind==='source'&&n.unl!==false)?'unlimited outputs':Object.keys(complementMap(n)).map(k=>freeCount(n,k)+'×'+k).join(' ')+' free';
+    const row=document.createElement('div'); row.className='etnode'; row.title='Click to find it on the plan';
+    if(over) row.style.borderColor='#ff6b6b';
+    row.innerHTML='<span class="etname">'+esc(EN[n.id]||'?')+'</span>'
+      +'<div class="etinfo">'+(n.kind==='source'?(n.rating+'A source'):(n.rating+'A cabinet'))
+      +'<div class="etsub">'+esc(free)+'</div></div>'
+      +'<div class="etload" style="color:'+(over?'#ff6b6b':'var(--muted)')+'">L1 '+pl[0]+' · L2 '+pl[1]+' · L3 '+pl[2]+'<br>max '+peak+'/'+r+'A</div>';
+    row.onclick=()=>{ map.panTo([n.lat,n.lng]); if(currentTab==='el') highlightFromNode(n.id); };
+    return row;
+  }
+  function tentRow(c){
+    const t=placed.find(x=>String(x.ref.id)===String(c.dst)); if(!t) return null;
+    const tr=refOf(t);
+    const row=document.createElement('div'); row.className='ettent'; row.title='Click to find it on the plan';
+    row.innerHTML='<span class="tsw" style="background:'+tr.color+'"></span>'+esc(tr.name)
+      +'<span class="tot">'+esc(c.otype||'')+(c.phase?(' · L'+c.phase):'')+'</span>';
+    row.onclick=()=>gotoTent(t);
+    return row;
+  }
+  function renderSub(n,box){
+    if(seen.has(n.id)) return; seen.add(n.id);
+    box.appendChild(nodeRow(n));
+    const wrap=document.createElement('div'); wrap.className='etkids'; let any=false;
+    cables.forEach(c=>{ if(c.domain==='el'&&c.src===n.id&&c.dstKind==='tent'){ const r=tentRow(c); if(r){wrap.appendChild(r); any=true;} } });
+    (kids[n.id]||[]).forEach(cid=>{ const cn=elNodes.find(x=>x.id===cid); if(cn){ renderSub(cn,wrap); any=true; } });
+    if(any) box.appendChild(wrap);
+  }
+  elNodes.filter(n=>n.kind==='source').forEach(n=>renderSub(n,el));
+  const orphans=elNodes.filter(n=>n.kind!=='source'&&!EN[n.id]&&inputOf(n.id)==null);
+  if(orphans.length){
+    const h=document.createElement('div'); h.className='legsub'; h.textContent='Not connected to a source'; el.appendChild(h);
+    orphans.forEach(n=>renderSub(n,el));
+  }
+}
 
 /* ---------- TEMPORARY measure tool (remove with the next change) ----------
    Two clicks a known real distance apart -> sets the active area's ppm and syncs it.
@@ -1697,7 +1822,9 @@ function renderNode(n){
   // applied as class toggles on the live element AFTER render so a plain select click never
   // rebuilds the DOM — rebuilding it mid double-click was eating the dblclick that edits the node.
   const fill=n.color?(';background:'+n.color):'';
+  const nm=(n.domain==='el'&&showCabNames)?(elNames()[n.id]||'?'):null;
   const html='<div class="'+cls+'" style="border-color:'+brdr+fill+'">'
+    +(nm?'<div class="nname">'+esc(nm)+'</div>':'')
     +'<div class="er">'+title+'</div>'+(sub?'<div class="eu" style="color:'+(over?'#ff6b6b':'#cfd3dc')+'">'+sub+'</div>':'')+'</div>';
   let m=nodeMarkers[n.id];
   if(!m){
@@ -1949,6 +2076,7 @@ loadPlaced();
 updateLegend();
 updateScaleReadout();
 setLetters(showLetters);
+setCabNames(showCabNames);
 renderList();
 document.querySelectorAll('#areaSeg button').forEach(b=>b.classList.toggle('on',b.dataset.area===area));  // reflect the persisted area
 applyMode();          // public map-only view by default; admin UI if previously unlocked

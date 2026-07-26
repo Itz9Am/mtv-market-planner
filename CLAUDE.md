@@ -203,6 +203,19 @@ rating, lat, lng, unl?, outs?, color?}` and `cables[] = {src, dst, dstKind:'tent
 domain, otype, phase, color?}`. One input per node, one supply per tent, cycles rejected
 (`createsCycle`).
 
+### Cabinet designations (A1, A1N1 …)
+
+Sources and cabinets carry **reference designations** in the Swedish central-marking
+style (IEC 81346 / SEK Handbok 419): each source is `A1, A2 …` (creation order), each
+cabinet is `N1, N2 …` within its parent (wiring order), and the full designation
+concatenates the feed path — `A1N1N2` is cabinet 2 fed from cabinet 1 fed from source 1.
+They are **derived from the wiring by `elNames()`, never stored** — rewiring renames.
+A cabinet with no path to a source shows `?`. Surfaced in four places: a name badge on
+the map node (the **Names** toggle in the El toolbar, `LS.cabnames`, global like
+`letters`); the El legend rows; the **Cabinets** sub-view of the El sidebar
+(`Overview | Cabinets` seg → `renderElTree()`, a clickable distribution tree); and the
+`elskap` placements column (below).
+
 ### Colours (both optional, both persisted)
 
 - **Node middle fill** (`n.color`): the source/cabinet modal has a colour picker for the
@@ -403,12 +416,22 @@ flat rows):
 
 ```
 placements  tentId | x | y | rot |
-            name | placering | length | width | color | electricity | water | nya | shape
+            name | placering | length | width | color | electricity | elskap | water | nya | shape
 nodes       id | domain | kind | rating | x | y | unl |
             out220 | out16 | out32 | out63 | out125 | color
 cables      src | dst | dstKind | domain | otype | phase | color
 meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
 ```
+
+`elskap` is **write-only, informational**: the designation of the cabinet feeding that
+tent (`A1N1`, blank = not connected, `?` = fed from a cabinet with no source), refreshed
+on every save so the electricians can read hook-ups straight off the sheet. It is never
+read back — the cables tab stays the source of truth. Sheets written before the column
+existed are handled by `migratePlacementValues()`, which detects the old header row and
+splices a blank cell into every raw row at read time (this keeps positional parsing AND
+the verbatim other-area re-emit aligned); the next save rewrites the header row and
+migrates the sheet for real. Old cached clients misparse a new-layout sheet, so hard-
+refresh other browsers after deploying this.
 
 Custom objects (user-added items, not from the Excel library) live only in the app, so a
 placed custom carries its full definition inline in cols `name…shape`; for library tents
