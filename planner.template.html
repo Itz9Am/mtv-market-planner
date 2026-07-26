@@ -456,10 +456,10 @@ function ensureDefs(){
    chords clockwise, spread the leftover slack evenly) - at 11.5 m the loop
    closes cleanly with the notch flanked on both sides.
    BALHEART1 = the 12 outline bales + the 3 inner bales (ground course, drawn in
-   the object's own colour); BALHEART2 = the 7 second-course bales - one
-   standing in the notch along the seam where the arches meet (rot 16, the
-   joint direction between the two ground-course flank bales), covering the
-   gap between them, and three per side bridging the ground-course joints
+   the object's own colour); BALHEART2 = the 7 second-course bales - one laid
+   diagonally into the notch (rot 45, parallel with the left arch), half-lapped
+   on the left flank bale with its toe on the right flank, covering the seam
+   where the arches meet, and three per side bridging the ground-course joints
    around the lobes; the joints nearest the heart's point stay uncovered
    (drawn as a
    separate lighter polygon, t.bh2Poly, so the two layers keep their colour
@@ -475,7 +475,7 @@ const BALHEART1=[[0.65,3.72,147.5],[2.97,4.92,86.9],[5.19,3.5,27.8],[5.14,0.84,1
   [3.31,-1.41,131.7],[1.19,-3.45,137.1],[-0.7,-3.91,42.2],[-2.81,-1.87,49],
   [-4.81,0.25,36.1],[-5.4,2.91,166.6],[-3.6,4.82,107.2],[-1.06,4.23,46.7],
   [-2.5,1.66,90],[2.5,1.66,90],[0,-0.1,90]];
-const BALHEART2=[[-0.1,3.05,16],[1.65,4.63,117.8],[4.27,4.51,57.3],[5.48,2.18,176.8],
+const BALHEART2=[[-0.15,3.3,45],[1.65,4.63,117.8],[4.27,4.51,57.3],[5.48,2.18,176.8],
   [-2.25,4.86,76.9],[-4.76,4.1,136.1],[-5.39,1.54,16.2]];
 function balheartRings(t,tab){
   // multipolygon: one ring per bale, all rotated rigidly around the anchor
