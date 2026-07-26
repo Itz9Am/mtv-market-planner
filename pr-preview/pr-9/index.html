@@ -981,7 +981,7 @@ function renderLegend(){
    other. `meta` becomes one row PER area. No manual sheet change is needed — the columns
    already exist empty and an UNFORMATTED_VALUE read omits trailing blanks. */
 const SHEET_HEADERS={
-  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','elskap','water','nya','shape','area'],
+  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape','area','elskap'],
   nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','color','area'],
   cables:['src','dst','dstKind','domain','otype','phase','color','area'],
   meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy','area']
@@ -993,23 +993,13 @@ const SHEET_CLEAR=['placements!A2:O','nodes!A2:N','cables!A2:H','meta!A2:H'];
    clobber the other area. */
 let sheetAll=lsGetGlobal('mtvi_sheetall_v1',{placements:[],nodes:[],cables:[],meta:[]});
 function lsGetGlobal(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
-/* One-way layout migration: sheets written before the `elskap` column lack it (it sits at
-   index 10, right after `electricity`). Rows are parsed POSITIONALLY against the code's
-   header list and other areas' rows are re-emitted verbatim on save, so an old-layout row
-   must get a blank cell spliced in — otherwise water/nya/shape/area all shift one column.
-   Detects the layout from the sheet's own header row; mutates `values` in place. */
-function migratePlacementValues(values){
-  if(!values||!values.length) return values;
-  const hdr=values[0]||[];
-  if(hdr.indexOf('elskap')>=0) return values;
-  if(hdr.indexOf('electricity')!==9) return values;   // unknown layout — leave untouched
-  hdr.splice(10,0,'elskap');
-  for(let i=1;i<values.length;i++){ const r=values[i]; if(r&&r.length>10) r.splice(10,0,''); }
-  return values;
-}
-migratePlacementValues(sheetAll.placements);   // the persisted snapshot may predate the column
+/* `elskap` is deliberately the LAST placements column, after `area`: rows are parsed
+   POSITIONALLY and other areas' rows are re-emitted verbatim on save, so inserting a
+   column mid-row would shift water/nya/shape/area under any still-open tab running the
+   previous version — the exact mechanism that once leaked Arena rows into Marknad. As a
+   trailing column, old clients simply ignore it (their A2:N clear leaves stale O cells
+   behind, which is fine — the column is write-only) and no migration is needed. */
 function setSheetAll(vr){
-  migratePlacementValues(vr[0]&&vr[0].values);   // in place, so callers parse the same arrays
   sheetAll={placements:(vr[0]&&vr[0].values)||[],nodes:(vr[1]&&vr[1].values)||[],
             cables:(vr[2]&&vr[2].values)||[],meta:(vr[3]&&vr[3].values)||[]};
   try{ localStorage.setItem('mtvi_sheetall_v1',JSON.stringify(sheetAll)); }catch(e){}
@@ -1176,13 +1166,12 @@ function isCustomId(id){ return String(id).indexOf('custom_')===0; }
    definition OR a library tent's edit override, so both survive a load on a browser
    that never had them in localStorage. An UNEDITED library tent leaves the def cols
    blank and resolves live by id (re-importing the Excel library keeps updating it). */
-function placementRow(t,elnm){
+function placementRow(t){
   const id=t.ref.id, base=[id,t.lng,t.lat,t.rot||0];
-  const cab=feedCabName(id,elnm);   // designation of the feeding cabinet, next to `electricity`
-  if(!isCustomId(id) && !edits[id]) return base.concat(['','','','','','',cab,'','','']);
+  if(!isCustomId(id) && !edits[id]) return base.concat(['','','','','','','','','']);
   const r=refOf(t);
   return base.concat([r.name||'',r.placering||'',r.length!=null?r.length:'',r.width!=null?r.width:'',
-    r.color||'',r.electricity||'',cab,r.water?1:'',r.nya||0,gshape(r.shape)]);
+    r.color||'',r.electricity||'',r.water?1:'',r.nya||0,gshape(r.shape)]);
 }
 /* An edited LIBRARY tent is re-resolved from the library every render, so its override
    can't ride on the placed ref — it travels through the local `edits` map. Rebuild those
@@ -1212,7 +1201,7 @@ function sheetData(savedAt,savedBy){
   const A=area;   // tag this area's rows; re-emit the other areas' rows verbatim so they survive
   const EN=elNames();   // one designations map for all the placement rows
   return [
-    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>placementRow(t,EN).concat([A]))).concat(otherAreaRows('placements'))},
+    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>placementRow(t).concat([A,feedCabName(t.ref.id,EN)]))).concat(otherAreaRows('placements'))},
     {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(n=>nodeToRow(n).concat([A]))).concat(otherAreaRows('nodes'))},
     {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(c=>cableToRow(c).concat([A]))).concat(otherAreaRows('cables'))},
     {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy).concat([A])].concat(otherAreaRows('meta'))}
