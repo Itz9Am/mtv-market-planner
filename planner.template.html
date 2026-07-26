@@ -1455,11 +1455,34 @@ function inputOf(id){ const c=cables.find(x=>x.dstKind==='node'&&x.dst===id); re
    fed from a unit is N1, N2 … in wiring order within its parent; the full designation
    concatenates the feed path (A1N1, A1N1N2 …). A cabinet with no path to a source has no
    designation (shown as "?"). Renaming happens implicitly on rewire — that is the point. */
+/* Sources are numbered GLOBALLY across the areas (in AREAS order) so no two areas ever
+   share a designation: with one source per area they read A1 (Marknad), A2 (Arena),
+   A3 (Camping). The active area's base = the el-source count of every area before it,
+   taken from that area's local cache when it has unsaved edits (it is ahead of the
+   Sheet), otherwise from the sheetAll snapshot. */
+function areaSrcCount(key){
+  const suff=(key==='marknad')?'':'::'+key;   // same namespacing as nsKey/refreshOtherPlaced
+  try{ if(JSON.parse(localStorage.getItem(LS.dirty+suff)||'0')){
+    const loc=JSON.parse(localStorage.getItem(LS.nodes+suff)||'[]')||[];
+    return loc.filter(n=>n&&n.domain==='el'&&n.kind==='source').length; } }catch(e){}
+  const hdr=SHEET_HEADERS.nodes, rows=(sheetAll&&sheetAll.nodes)||[],
+        ai=hdr.indexOf('area'), di=hdr.indexOf('domain'), ki=hdr.indexOf('kind');
+  let c=0;
+  for(let i=1;i<rows.length;i++){ const r=rows[i]||[]; if(r.every(isBlank)) continue;
+    const ar=isBlank(r[ai])?'marknad':String(r[ai]);
+    if(ar===key && r[di]==='el' && r[ki]==='source') c++; }
+  return c;
+}
+function srcNumBase(){
+  let base=0;
+  for(const a of AREAS){ if(a.key===area) break; base+=areaSrcCount(a.key); }
+  return base;
+}
 function elNames(){
   const names={}, kids={};
   cables.forEach(c=>{ if(c.domain==='el'&&c.dstKind==='node') (kids[c.src]=kids[c.src]||[]).push(c.dst); });
   const walk=id=>{ let i=0; (kids[id]||[]).forEach(cid=>{ if(names[cid])return; names[cid]=names[id]+'N'+(++i); walk(cid); }); };
-  let a=0;
+  let a=srcNumBase();
   nodes.forEach(n=>{ if(n.domain==='el'&&n.kind==='source'){ names[n.id]='A'+(++a); walk(n.id); } });
   return names;
 }

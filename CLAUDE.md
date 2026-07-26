@@ -209,6 +209,11 @@ Sources and cabinets carry **reference designations** in the Swedish central-mar
 style (IEC 81346 / SEK Handbok 419): each source is `A1, A2 …` (creation order), each
 cabinet is `N1, N2 …` within its parent (wiring order), and the full designation
 concatenates the feed path — `A1N1N2` is cabinet 2 fed from cabinet 1 fed from source 1.
+Source numbers are **global across the areas** (in `AREAS` order — `srcNumBase()`), so
+designations are unique event-wide: with one source per area they read A1 (Marknad),
+A2 (Arena), A3 (Camping). Other areas' source counts come from their local cache when
+that area has unsaved edits, else the `sheetAll` snapshot (`areaSrcCount`) — so adding
+a source to an earlier area shifts the later areas' numbers (derived names, by design).
 They are **derived from the wiring by `elNames()`, never stored** — rewiring renames.
 A cabinet with no path to a source shows `?`. Surfaced in four places: a name badge on
 the map node (the **Names** toggle in the El toolbar, `LS.cabnames`, global like
