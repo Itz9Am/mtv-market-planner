@@ -194,9 +194,12 @@ The user corrected this twice. Get it right.
 
 Sockets are counted separately from capacity. `outputs(n)` gives the physical
 complement; default for a cabinet is 6× 220V (9 at ≥125 A) plus **three** outlets of
-each three-phase rating ≤ its own. A tent takes the smallest free outlet ≥ its
-requirement, falling back to a larger one. Sources default to unlimited outlets
-(capacity-limited only) but can be given explicit counts.
+each three-phase rating ≤ its own. A cable only fits an outlet of its **exact** socket
+type (CEE plugs are rating-specific) — when that type is exhausted the connection is
+refused, **never** moved to a larger free outlet (the earlier fallback let a cabinet
+with one 16 A outlet accept two 16 A cables via its 32 A outlet; the user rejected
+that). Sources default to unlimited outlets (capacity-limited only) but can be given
+explicit counts.
 
 Graph: `nodes[] = {id, domain:'el'|'water', kind:'source'|'elskap'|'brunn'|'handfat',
 rating, lat, lng, unl?, outs?, color?}` and `cables[] = {src, dst, dstKind:'tent'|'node',
