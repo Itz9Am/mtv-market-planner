@@ -245,8 +245,9 @@ the map node (the **Names** toggle in the El toolbar, `LS.cabnames`, global like
 - **Wire colour** (`c.color`): default is the output's rating colour (`cableColor` →
   `otypeColor`: 32A orange, 16A yellow, 63A/125A red, 220V light blue; water blue). Every
   wire is drawn as two polylines — a black **casing** underneath for a clean outline, then
-  the colour on top. Clicking a wire (admin) opens a small modal to recolour or remove it;
-  "Use default" clears the override. Overload still wins visually (red dashed).
+  the colour on top. Right-clicking a wire **with the Wire tool on** (admin) opens a small
+  modal to recolour or remove it; "Use default" clears the override. Overload still wins
+  visually (red dashed).
 
 Editing a node is **double-click** → `openSrcModal`. `renderNode` must not rebuild the
 marker's DOM on a plain select click — selection/highlight are class toggles applied to the
@@ -254,10 +255,44 @@ live element, and `setIcon` only fires when the cached `m._html` actually change
 the element between the two clicks used to swallow the dblclick, so the node became
 un-editable (same failure mode as the tent-drag bug above).
 
+### Cable routing dots, curves and lengths
+
+**All wire editing lives in wire mode** — with the Wire tool off, wire clicks are inert
+(no surprise popups while browsing/highlighting). With the **Wire tool on**: clicking a
+wire inserts a draggable **dot** at that spot (`c.pts`, ordered waypoints between source
+and destination) — deferred ~280 ms so a **double-click on the wire** opens the
+recolour/remove modal (`openCabModal`) instead of spawning dots (right-click does too).
+On a dot: **double-click toggles sharp ↔ curve** (the fast path the user asked to keep)
+and **right-click opens the dot modal** (`openDotModal` — Sharp bend / Curve / Koppling
+(water) / Remove). A dot is **square = sharp bend** or **round = curve**. Curve runs are drawn as a Catmull-Rom
+spline sampled between hard anchors (`pathFromAnchors`), so sharp corners and smooth
+curves coexist on one wire. Dots are only rendered in wire mode (admin); the bent/curved
+path always is. **Dragging a dot must never rebuild layers** — `liveUpdate` only
+`setLatLngs`s the two polylines and moves the length label; the full redraw happens on
+`dragend` (same rule as tent drag).
+
+Every wire shows its **length in metres** at its midpoint (needs `ppm`; follows the
+drawn path, curves included), toggleable via the **Lengths** buttons in the El and
+Vatten toolbars (`LS.lengths`, one shared global state like `letters`). The El legend
+totals cable metres **per socket type**; the Vatten legend totals pipe metres. Pure
+helpers: `cableAnchors pathFromAnchors catmullRom pathPixLen pathMidpoint distToSeg
+cableLenM ptsToStr ptsFromStr` — covered by the node harness pattern below.
+
 ## Water model (Vatten tab)
 
 Deliberately simpler: brunn (source) → handfat or any item with `water:true`, drawn as
 blue pipes. No capacity maths. Water-capable items show a blue ring.
+
+Water pipes get the same blue bend/curve dots, plus a third kind: the gray **koppling**
+— a junction dot (drawn a bit larger than the pipe, kind `'koppling'` in `nodes`) that
+other pipes can branch FROM. Create one by Alt-clicking a pipe in wire mode, or via the
+dot modal (click a blue dot → Koppling). The koppling is a real water
+node referenced from the host cable's `pts` as `{k:'n',nid}` — its position lives on
+the node, so dragging it bends the host pipe. It has no input cable: `inputOf()` falls
+through to the host cable's `src` (cycle detection works through it). Wiring **into** a
+koppling is refused; double-click converts it back to a bend dot (only when nothing
+branches from it); deleting a pipe cascades through its kopplingar and their branches
+(`removeCableCascade`).
 
 ---
 
@@ -271,6 +306,14 @@ blue pipes. No capacity maths. Water-capable items show a blue ring.
 - Each tent is placed **once** and leaves the list; deleting returns it.
 - El and Vatten sidebars list **"Without power"** / **"Without water"** — placed items
   still needing a supply. Rows are clickable and pan to the item.
+- **Undo/redo**: Ctrl+Z / Ctrl+Shift+Z (also Ctrl+Y; Cmd on Mac), admin only, all tabs.
+  Snapshot-based (`HIST`): `histMark()` fires from `savePlaced`/`saveNet`/`saveRemoved`/
+  the list edits, coalesced on a 0 ms timer so one user action (which may save placements
+  AND cables) is ONE entry; `histApply` restores through the same full-rebuild path a
+  Sheet load uses and queues a normal sheet save. History is capped (60), never fires
+  mid-drag (`pointerDown`), and **resets** on `applySheetState` and on area switch —
+  undoing across a remote save or another area would silently clobber it. Stack
+  semantics are covered by the same node-harness pattern as the row helpers.
 
 ### Product requirements the user has stated explicitly
 
@@ -446,8 +489,17 @@ placements  tentId | x | y | rot |
 nodes       id | domain | kind | rating | x | y | unl |
             out220 | out16 | out32 | out63 | out125 | color
 cables      src | dst | dstKind | domain | otype | phase | color
+            (+ trailing area | pts)
 meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
 ```
+
+`pts` (cable waypoints) is a trailing column AFTER `area`, for the same positional-
+parsing reason as `elskap`. It is not JSON: a `;`-separated list of `x y b` (bend),
+`x y c` (curve) or `n <nodeId>` (koppling junction — position lives on the node row).
+Blank reads back as no waypoints (`ptsFromStr`). An old client's `A2:H` clear can leave
+stale `I` cells behind; unlike `elskap` this column IS read back, so a save from a
+still-open old tab can misalign waypoints onto the wrong cables — cosmetic only, fixed
+by re-dragging, and gone once every tab runs the current build.
 
 `elskap` is **write-only, informational**: the designation of the cabinet feeding that
 tent (`A1N1`, blank = not connected, `?` = fed from a cabinet with no source), refreshed
