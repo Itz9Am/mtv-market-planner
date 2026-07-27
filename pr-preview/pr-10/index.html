@@ -932,10 +932,10 @@ function renderLegend(){
   const t2=document.createElement('div'); t2.className='legsub'; t2.textContent=`Power (${elnodes.length} source/cabinets)`; el.appendChild(t2);
   if(!elnodes.length){ const d=document.createElement('div'); d.className='hint'; d.textContent='Add a source or cabinet from the toolbar, click it, then click tents (or another cabinet) to run cables.'; el.appendChild(d); }
   elnodes.forEach(n=>{
-    const p=phaseLoads(n.id), peak=Math.max(p[0],p[1],p[2]), over=isOver(peak,nodeRatingAmp(n));
+    const p=phaseLoads(n.id), peak=Math.max(p[0],p[1],p[2]), lv=loadLevel(peak,nodeRatingAmp(n));
     const free=(n.kind==='source'&&n.unl!==false)?'unlimited':Object.keys(complementMap(n)).map(k=>`${freeCount(n,k)}×${k}`).join(' ');
     const row=document.createElement('div'); row.className='legrow';
-    row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${over?'#ff6b6b':'var(--muted)'}">${peak}/${nodeRatingAmp(n)} A</div>`;
+    row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${loadColor(lv,'var(--muted)')}">${peak}/${nodeRatingAmp(n)} A</div>`;
     el.appendChild(row);
   });
   const noPower=placed.filter(t=>needsPower(t)&&!hasPower(t));
@@ -1489,12 +1489,17 @@ function phaseLoads(id,seen){ seen=seen||new Set(); const out=[0,0,0]; if(seen.h
   return out;
 }
 function peakLoad(id){ const p=phaseLoads(id); return Math.max(p[0],p[1],p[2]); }
-/* A phase may run up to 3 A over the rating before it is flagged (user rule: e.g.
-   2x32A on a 63A cabinet = 64A per phase, 1A over, is fine — breakers don't trip
-   on that and the plugs are never all at full draw at once). */
-const OVERLOAD_TOL=3;
-function isOver(peak,rating){ return peak>rating+OVERLOAD_TOL; }
-function overloaded(n){ return n.domain==='el' && isOver(peakLoad(n.id),nodeRatingAmp(n)); }
+/* Load bands per phase, vs the per-phase rating (nameplate sums, not measured amps):
+     green  <=100%   always safe
+     amber  100-130% fine in practice — an MCB holds 113% of In indefinitely
+                     (IEC 60898), a gG fuse 125% (IEC 60269), and coincident real
+                     draw at a market is well under nameplate (demand ~75% at rush)
+     red    >130%    a busy hour can realistically trip the cabinet's main breaker
+   130% (not the theoretical ~150%) keeps margin for a cabinet of pure fryer
+   vendors. Replaces the earlier flat +3A tolerance. */
+const OVER_RED=1.3, AMBER='#ffb020', REDC='#ff6b6b';
+function loadLevel(peak,rating){ return peak>rating*OVER_RED?2:peak>rating?1:0; }
+function loadColor(lv,def){ return lv===2?REDC:lv===1?AMBER:def; }
 /* Phase assignment. A 3-phase tent (any CEE otype) draws on ALL THREE phases — its
    cable keeps phase 0 ("all") and there is nothing to balance. Only the 220V tents
    are single-phase; they are balanced on top of the 3-phase base load so the load is
@@ -1702,14 +1707,14 @@ function renderElTree(){
   cables.forEach(c=>{ if(c.domain==='el'&&c.dstKind==='node') (kids[c.src]=kids[c.src]||[]).push(c.dst); });
   const seen=new Set();
   function nodeRow(n){
-    const pl=phaseLoads(n.id), r=nodeRatingAmp(n), peak=Math.max(pl[0],pl[1],pl[2]), over=isOver(peak,r);
+    const pl=phaseLoads(n.id), r=nodeRatingAmp(n), peak=Math.max(pl[0],pl[1],pl[2]), lv=loadLevel(peak,r);
     const free=(n.kind==='source'&&n.unl!==false)?'unlimited outputs':Object.keys(complementMap(n)).map(k=>freeCount(n,k)+'×'+k).join(' ')+' free';
     const row=document.createElement('div'); row.className='etnode'; row.title='Click to find it on the plan';
-    if(over) row.style.borderColor='#ff6b6b';
+    if(lv) row.style.borderColor=loadColor(lv);
     row.innerHTML='<span class="etname">'+esc(EN[n.id]||'?')+'</span>'
       +'<div class="etinfo">'+(n.kind==='source'?(n.rating+'A source'):(n.rating+'A cabinet'))
       +'<div class="etsub">'+esc(free)+'</div></div>'
-      +'<div class="etload" style="color:'+(over?'#ff6b6b':'var(--muted)')+'">L1 '+pl[0]+' · L2 '+pl[1]+' · L3 '+pl[2]+'<br>max '+peak+'/'+r+'A</div>';
+      +'<div class="etload" style="color:'+loadColor(lv,'var(--muted)')+'">L1 '+pl[0]+' · L2 '+pl[1]+' · L3 '+pl[2]+'<br>max '+peak+'/'+r+'A</div>';
     row.onclick=()=>{ map.panTo([n.lat,n.lng]); if(currentTab==='el') highlightFromNode(n.id); };
     return row;
   }
@@ -1821,9 +1826,9 @@ function addNode(spec,lat,lng){
 }
 function renderNode(n){
   if(n.domain!==curDomain()) return;
-  let title,sub,cls,brdr,over=false;
+  let title,sub,cls,brdr,lv=0;
   if(n.domain==='el'){
-    const pl=phaseLoads(n.id), load=Math.max(pl[0],pl[1],pl[2]); over=isOver(load,nodeRatingAmp(n));
+    const pl=phaseLoads(n.id), load=Math.max(pl[0],pl[1],pl[2]); lv=loadLevel(load,nodeRatingAmp(n));
     title=n.kind==='source'?(n.rating+'A IN'):(n.rating+'A'); sub=pl[0]+'/'+pl[1]+'/'+pl[2];
     cls='node'+(n.kind==='source'?' source':''); brdr=ratingColor(nodeRatingAmp(n));
   }else{
@@ -1842,7 +1847,7 @@ function renderNode(n){
   const nm=(n.domain==='el'&&showCabNames)?(elNames()[n.id]||'?'):null;
   const html='<div class="'+cls+'" style="border-color:'+brdr+fill+'">'
     +(nm?'<div class="nname">'+esc(nm)+'</div>':'')
-    +'<div class="er">'+title+'</div>'+(sub?'<div class="eu" style="color:'+(over?'#ff6b6b':'#cfd3dc')+'">'+sub+'</div>':'')+'</div>';
+    +'<div class="er">'+title+'</div>'+(sub?'<div class="eu" style="color:'+loadColor(lv,'#cfd3dc')+'">'+sub+'</div>':'')+'</div>';
   let m=nodeMarkers[n.id];
   if(!m){
     const icon=L.divIcon({className:'node-div',html,iconSize:[58,44],iconAnchor:[29,22]});
@@ -1905,8 +1910,9 @@ function connect(srcId,dst){
   if(dst.kind==='tent') rebalanceEl();   // re-spread tents across L1/L2/L3, balanced along each feed chain
   const phase=nc.phase;
   saveNet(); redrawCables(); nodes.forEach(renderNode);
-  const pl=phaseLoads(srcId), peak=Math.max(pl[0],pl[1],pl[2]);
-  if(isOver(peak,nodeRatingAmp(src))) flashBanner('Connected '+label+' — '+nodeName(src)+' overloaded (L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A, max '+peak+'/'+src.rating+').',true);
+  const pl=phaseLoads(srcId), peak=Math.max(pl[0],pl[1],pl[2]), lv=loadLevel(peak,nodeRatingAmp(src));
+  if(lv===2) flashBanner('Connected '+label+' — '+nodeName(src)+' overloaded (L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A, max '+peak+'/'+src.rating+' is over 130%).',true);
+  else if(lv===1) flashBanner('Connected '+label+' via '+key+(phase?(' on L'+phase):' on L1+L2+L3')+' — '+nodeName(src)+' over rating but within the 130% margin (max '+peak+'/'+src.rating+' A).',false);
   else flashBanner('Connected '+label+' via '+key+(phase?(' on L'+phase):' on L1+L2+L3')+'. Load L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A.',false);
   renderLegend();
 }
@@ -1923,8 +1929,9 @@ function redrawCables(){
     if(!b)return;
     let weight=(dom==='water')?3.5:(c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5)), dash=null;
     let color=cableColor(c);                      // default by rating (32A orange, 16A yellow…), or c.color override
-    const over=(dom!=='water')&&overloaded(s);
-    if(over){ color='#ff5252'; dash='6,5'; }       // overloaded source: red dashed, overrides the wire colour
+    const lv=(dom!=='water')?loadLevel(peakLoad(s.id),nodeRatingAmp(s)):0;
+    if(lv===2){ color='#ff5252'; dash='6,5'; }     // red band: red dashed, overrides the wire colour
+    else if(lv===1){ dash='10,6'; }                // amber band: keep the wire colour, dashed = worth a glance
     const isHl=hl.cables.has(c);
     if(isHl){ color='#ffd400'; weight=weight+2.5; }
     const openCab=ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN) openCabModal(c);};
