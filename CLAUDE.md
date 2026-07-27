@@ -103,7 +103,8 @@ structures and custom objects). 150 entries currently.
   "color": "#F9CB9C",      // from the column-A cell FILL = category
   "electricity": "380v 16A",
   "water": true,
-  "stand": 0               // 1 = organiser-rented marknadsstånd -> darker brown border
+  "stand": 0               // COUNT of organiser-rented marknadsstånd (the workbook's
+                           // `stall_rental` column); >0 -> darker brown border
 }
 ```
 

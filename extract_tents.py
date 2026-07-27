@@ -21,11 +21,17 @@ row by name at runtime, so an inserted column shifts nothing:
     10 Width                     metres (first structure only)
     11 electricity               '', 'none', '220v 6A', '380v 16A', '380v 32A'
     12 water                     'water' when the stand needs a supply
-    ?? marknadsstand             truthy = organiser-rented market stall -> darker
-                                 brown border in the app (found by header, any
-                                 header containing "marknadsst")
+    ?? stall_rental              COUNT of organiser-rented marknadsstand (0/1/2);
+                                 >0 -> darker brown border in the app. Found by
+                                 header ("stall" or "marknadsst"), position varies.
     13+ food_and_drink_vendor, special_requests, public_description,
         arrival_date/time, underlayments, ...   (sensitive - never export)
+
+Newer exports differ from the layout above: the header may sit on ROW 1 and some
+columns (Placering, Length, Width, water) may be blank or missing entirely. The
+header row is auto-detected and every column resolved by its header text; a column
+with no header is treated as ABSENT (empty/false in the output), never guessed by
+position — the old fixed positions apply only when no header row is found at all.
 
 Two things that are easy to get wrong:
 
@@ -47,11 +53,10 @@ from collections import Counter
 from openpyxl import load_workbook
 
 SHEET = "Utplaceringsdokument"
-HEADER_ROW = 2
-FIRST_DATA_ROW = 3
+FIRST_DATA_ROW = 3            # only used when no header row can be found
 COL = dict(id=1, nya=3, placering=4, name=6, tents=8, length=9, width=10,
            electricity=11, water=12)
-# header text (lowercased) per COL key; id stays column 1 (its FILL is the colour)
+# header text (lowercased) per COL key; id keeps column 1 (its FILL is the colour)
 HEADERS = dict(nya="nya", placering="placering", name="applicationname",
                tents="tents", length="length", width="width",
                electricity="electricity", water="water")
@@ -69,27 +74,56 @@ def pick_sheet(wb):
 
 
 def resolve_cols(ws):
-    """Re-anchor COL on the actual header row; fall back to the 2026-2 positions."""
+    """Find the header row (1 or 2 depending on the export) and map every column
+    by its header text. A column whose header is missing counts as ABSENT (None):
+    guessing by position is how stall_rental would get read as water."""
+    hr = None
+    for r in range(1, 6):
+        vals = {str(ws.cell(row=r, column=c).value or "").strip().lower()
+                for c in range(1, ws.max_column + 1)}
+        if "applicationname" in vals or "tents" in vals:
+            hr = r
+            break
+    if hr is None:
+        print("WARNING: no header row found - using the fixed 2026-2 column map",
+              file=sys.stderr)
+        col = dict(COL)
+        col["stand"] = None
+        return col, FIRST_DATA_ROW
     hdr = {}
     for c in range(1, ws.max_column + 1):
-        v = ws.cell(row=HEADER_ROW, column=c).value
+        v = ws.cell(row=hr, column=c).value
         if v not in (None, ""):
             hdr.setdefault(str(v).strip().lower(), c)
-    col = dict(COL)
-    for key, name in HEADERS.items():
-        if name in hdr:
-            col[key] = hdr[name]
-    col["stand"] = next((c for h, c in hdr.items() if "marknadsst" in h), None)
+    col = {k: hdr.get(name) for k, name in HEADERS.items()}
+    col["id"] = hdr.get("id", 1)
+    col["name"] = col["name"] or COL["name"]
+    col["stand"] = next((c for h, c in hdr.items()
+                         if "marknadsst" in h or "stall" in h), None)
+    for k in ("nya", "placering", "water"):
+        if col[k] is None:
+            print(f"WARNING: no '{k}' column in this export - "
+                  f"{k} will be empty/false for every row", file=sys.stderr)
     if col["stand"] is None:
-        print("WARNING: no 'marknadsstand' column found - stand=0 for every row",
+        print("WARNING: no stall_rental/marknadsstand column - stand=0 for every row",
               file=sys.stderr)
-    return col
+    return col, hr + 1
 
 
 def truthy(v):
     if v in (None, "", 0, False):
         return False
     return str(v).strip().lower() not in ("0", "no", "none", "nej", "false")
+
+
+def stand_count(v):
+    """stall_rental holds the NUMBER of rented marknadsstand (0/1/2)."""
+    if v in (None, ""):
+        return 0
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return 1 if truthy(v) else 0
 
 
 def fill_hex(cell):
@@ -134,10 +168,10 @@ def slug(s):
 
 def extract(path):
     ws = pick_sheet(load_workbook(path))
-    col = resolve_cols(ws)
+    col, first_row = resolve_cols(ws)
     seen, out, expanded, noid = Counter(), [], 0, 0
 
-    for r in range(FIRST_DATA_ROW, ws.max_row + 1):
+    for r in range(first_row, ws.max_row + 1):
         idv = ws.cell(row=r, column=col["id"]).value
         name = ws.cell(row=r, column=col["name"]).value
         if not name or not str(name).strip():
@@ -153,8 +187,11 @@ def extract(path):
         else:
             rid = int(idv) if isinstance(idv, (int, float)) else idv
 
+        def raw(key):
+            return ws.cell(row=r, column=col[key]).value if col[key] else None
+
         def cell(key):
-            v = ws.cell(row=r, column=col[key]).value
+            v = raw(key)
             return str(v).strip() if v not in (None, "") else ""
 
         water = cell("water")
@@ -162,17 +199,16 @@ def extract(path):
             "id": rid,
             "name": nm,
             "placering": cell("placering"),
-            "nya": 1 if ws.cell(row=r, column=col["nya"]).value in (1, 1.0, "1") else 0,
+            "nya": 1 if raw("nya") in (1, 1.0, "1") else 0,
             "color": fill_hex(ws.cell(row=r, column=col["id"])) or DEFAULT_COLOUR,
             "electricity": cell("electricity"),
             "water": bool(water) and water.lower() not in ("no", "none", "0"),
-            "stand": 1 if col["stand"] and truthy(
-                ws.cell(row=r, column=col["stand"]).value) else 0,
+            "stand": stand_count(raw("stand")),
         }
 
-        L = ws.cell(row=r, column=col["length"]).value
-        W = ws.cell(row=r, column=col["width"]).value
-        arr = parse_arr(ws.cell(row=r, column=col["tents"]).value)
+        L = raw("length")
+        W = raw("width")
+        arr = parse_arr(raw("tents"))
 
         if len(arr) > 1:                      # vendor with several structures
             expanded += 1
