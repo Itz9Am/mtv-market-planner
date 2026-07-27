@@ -115,8 +115,13 @@
   .legsub{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);padding:12px 10px 3px}
   /* public (no-login) view: map only, no editing UI. admin view: full UI. */
   body.public #sidebar{display:none}
-  /* public view keeps the topbar, but only the Placering group (Letters toggle) is ever
-     shown there — El/Vatten groups stay display:none since tabs are hidden in public */
+  /* public view keeps the topbar and can switch tabs via #pubTabs (admin uses the
+     sidebar tabs instead). El/Vatten are read-only there: the editing buttons in the
+     El group are hidden (only the Names toggle stays, like Letters), and the Vatten
+     group (all editing) is hidden entirely. */
+  body.admin #pubTabs{display:none}
+  body.public #elControls .ela,body.public #elControls .lbl,body.public #elControls #wireEl{display:none!important}
+  body.public #vattenControls{display:none!important}
   #adminBtn{position:absolute;right:12px;bottom:12px;z-index:700;width:30px;height:34px;border-radius:8px;background:rgba(20,22,30,.5);border:1px solid var(--line);color:var(--muted);opacity:.3;display:none;align-items:center;justify-content:center;font-size:16px;line-height:1;padding:0;transition:opacity .15s,color .15s,border-color .15s}
   #adminBtn:hover{opacity:1;color:var(--txt);border-color:var(--accent)}
   body.public #adminBtn{display:flex}
@@ -230,6 +235,11 @@
       </div>
     </div>
     <div id="topbar">
+      <div class="seg" id="pubTabs">
+        <button data-tab="placering" class="on">Placering</button>
+        <button data-tab="el">El</button>
+        <button data-tab="vatten">Vatten</button>
+      </div>
       <div class="grp" id="placeringControls">
         <button id="lettersBtn" class="wirebtn on" title="Show or hide the Placering letters on tents">Letters</button>
         <button id="measureBtn" class="wirebtn" title="Calibrate the scale: click two points a known distance apart, then type the metres">Measure</button>
@@ -298,14 +308,14 @@
     <div id="srcOuts" style="display:none">
       <div class="row">
         <div><label>220V outputs</label><input id="o220" type="number" min="0" step="1" value="4"/></div>
-        <div><label>16A outputs</label><input id="o16" type="number" min="0" step="1" value="1"/></div>
+        <div id="o16Row"><label>16A outputs</label><input id="o16" type="number" min="0" step="1" value="1"/></div>
       </div>
       <div class="row">
-        <div><label>32A outputs</label><input id="o32" type="number" min="0" step="1" value="1"/></div>
-        <div><label>63A outputs</label><input id="o63" type="number" min="0" step="1" value="1"/></div>
+        <div id="o32Row"><label>32A outputs</label><input id="o32" type="number" min="0" step="1" value="1"/></div>
+        <div id="o63Row"><label>63A outputs</label><input id="o63" type="number" min="0" step="1" value="1"/></div>
       </div>
       <div class="row">
-        <div><label>125A outputs</label><input id="o125" type="number" min="0" step="1" value="0"/></div>
+        <div id="o125Row"><label>125A outputs</label><input id="o125" type="number" min="0" step="1" value="0"/></div>
         <div></div>
       </div>
     </div>
@@ -470,41 +480,32 @@ function ensureDefs(){
   p.appendChild(mk(7,1.5,'#7a0040','.9'));   // dark edge for contrast on light fills
   defs.appendChild(p);host.appendChild(defs);document.body.appendChild(host);
 }
-/* The "Bal hjärta" composite footprint: ONE object drawn as the 22-halmbal heart
-   (240 x 80 cm bales). The layout is generated OFFLINE from the user's "Bale
+/* The "Bal hjärta" composite footprint: ONE object drawn as the 15-halmbal heart
+   (240 x 80 cm bales, a SINGLE course - the second course was dropped when the
+   real build changed). The layout is generated OFFLINE from the user's "Bale
    Heart" tool: its parametric heart curve (x=16sin^3 t,
    y=13cos t-5cos 2t-2cos 3t-cos 4t, scaled to 11.5 m wide, y-centred), bales laid
    as chords walking the curve with the tool's 5 cm minimum gap - the tool's
    exact shape and the tool's exact single-loop walk (start at the notch, lay
    chords clockwise, spread the leftover slack evenly) - at 11.5 m the loop
    closes cleanly with the notch flanked on both sides.
-   BALHEART1 = the 12 outline bales + the 3 inner bales (ground course, drawn in
-   the object's own colour); BALHEART2 = the 7 second-course bales - one laid
-   diagonally into the notch (rot 45, parallel with the left arch), half-lapped
-   on the left flank bale with its toe on the right flank, covering the seam
-   where the arches meet, and three per side bridging the ground-course joints
-   around the lobes; the joints nearest the heart's point stay uncovered
-   (drawn as a
-   separate lighter polygon, t.bh2Poly, so the two layers keep their colour
-   difference). Offsets are METRES from the
+   BALHEART = the 12 outline bales + the 3 inner bales, all drawn in the
+   object's own colour. Offsets are METRES from the
    anchor (x right, y up), [dx, dy, deg], same rotation convention as placement
-   rot; both layers follow the object's position and rotation rigidly.
+   rot; the bales follow the object's position and rotation rigidly.
    shape:'balheart' is internal - NOT offered in the add/edit modal.
-   Bales WITHIN a layer never overlap (SAT-verified offline, 1.5 cm buffer); the
-   second course overlaps the first by design, and each polygon is drawn with
-   fillRule:'nonzero' because Leaflet's default 'evenodd' would XOR any
-   overlapping rings transparent. */
-const BALHEART1=[[0.65,3.72,147.5],[2.97,4.92,86.9],[5.19,3.5,27.8],[5.14,0.84,151.8],
+   Bales never overlap (SAT-verified offline, 1.5 cm buffer); each polygon is
+   still drawn with fillRule:'nonzero' so a near-touching pair can never XOR
+   transparent under Leaflet's default 'evenodd'. */
+const BALHEART=[[0.65,3.72,147.5],[2.97,4.92,86.9],[5.19,3.5,27.8],[5.14,0.84,151.8],
   [3.31,-1.41,131.7],[1.19,-3.45,137.1],[-0.7,-3.91,42.2],[-2.81,-1.87,49],
   [-4.81,0.25,36.1],[-5.4,2.91,166.6],[-3.6,4.82,107.2],[-1.06,4.23,46.7],
   [-2.5,1.66,90],[2.5,1.66,90],[0,-0.1,90]];
-const BALHEART2=[[-0.15,3.3,45],[1.65,4.63,117.8],[4.27,4.51,57.3],[5.48,2.18,176.8],
-  [-2.25,4.86,76.9],[-4.76,4.1,136.1],[-5.39,1.54,16.2]];
-function balheartRings(t,tab){
+function balheartRings(t){
   // multipolygon: one ring per bale, all rotated rigidly around the anchor
   const th=(t.rot||0)*Math.PI/180, C=Math.cos(th), S=Math.sin(th);
   const bw=0.4*ppm, bh=1.2*ppm;   // half of 0.8 x 2.4 m
-  return tab.map(b=>{
+  return BALHEART.map(b=>{
     const cx=(b[0]*C-b[1]*S)*ppm, cy=(b[0]*S+b[1]*C)*ppm;
     const bt=th+b[2]*Math.PI/180, c=Math.cos(bt), s=Math.sin(bt);
     return [[[-bw,-bh],[bw,-bh],[bw,bh],[-bw,bh]].map(([u,v])=>{
@@ -513,19 +514,10 @@ function balheartRings(t,tab){
     })];
   });
 }
-function lighten(hex,f){   // second-course tint derived from the object's colour
-  const m=/^#([0-9a-fA-F]{6})$/.exec(hex||''); if(!m) return '#EECE7B';
-  const n=parseInt(m[1],16), mix=c=>Math.round(c+(255-c)*f);
-  return '#'+((1<<24)+(mix(n>>16&255)<<16)+(mix(n>>8&255)<<8)+mix(n&255)).toString(16).slice(1);
-}
-function bh2Style(ref){
-  return {color:'rgba(0,0,0,.5)',weight:1.5,fillColor:lighten(ref.color,.25),
-          fillOpacity:.9,fillRule:'nonzero',interactive:false};
-}
 function tentCorners(t){
   const ref=refOf(t);
   const hw=((ref.width||3)*ppm)/2, hh=((ref.length||3)*ppm)/2;
-  if(ref.shape==='balheart') return balheartRings(t,BALHEART1);
+  if(ref.shape==='balheart') return balheartRings(t);
   if(ref.shape==='circle'){
     const r=Math.max(hw,hh), pts=[];
     for(let i=0;i<36;i++){ const a=i/36*2*Math.PI; pts.push([t.lat+r*Math.sin(a), t.lng+r*Math.cos(a)]); }
@@ -552,7 +544,7 @@ function tentStyle(t){
   const fill=isEl?elColor(ref.electricity):ref.color;
   const st={color: sel?'#ffffff':(hlt?'#ffd400':(wat?'#2b8cff':'rgba(0,0,0,.65)')),
             weight: sel?3:((hlt||wat)?3:1.5), fillColor:fill, fillOpacity:.85};
-  if(ref.shape==='balheart') st.fillRule='nonzero';   // stacked bale layers overlap; evenodd would render the overlaps transparent
+  if(ref.shape==='balheart') st.fillRule='nonzero';   // a near-touching bale pair must never XOR transparent under evenodd
   return st;
 }
 function capHtmlFor(t){
@@ -563,9 +555,10 @@ function capHtmlFor(t){
 }
 function tentClick(t,e){
   L.DomEvent.stopPropagation(e);
-  if(!ADMIN) return;   // public view: tents are look-only
+  // El/Vatten clicks may highlight in public too (wireMode is admin-only, so no writes)
   if(currentTab==='el'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); else highlightFromTent(t.ref.id); return; }
   if(currentTab==='vatten'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); return; }
+  if(!ADMIN) return;   // public view: Placering tents are look-only
   if(e.originalEvent&&e.originalEvent.shiftKey) toggleSel(t.uid);   // shift-click: add/remove from the multi-selection
   else selectTent(t.uid);
 }
@@ -584,7 +577,7 @@ function attachPolyHandlers(t){
     const os=grp.map(x=>({t:x,lat:x.lat,lng:x.lng}));
     const move=ev=>{ const dLat=ev.latlng.lat-s.lat, dLng=ev.latlng.lng-s.lng;
       os.forEach(o=>{ const x=o.t; x.lat=o.lat+dLat; x.lng=o.lng+dLng;
-        if(x.poly){ x.poly.setLatLngs(tentCorners(x)); if(x.nyaPoly)x.nyaPoly.setLatLngs(tentCorners(x)); if(x.bh2Poly)x.bh2Poly.setLatLngs(balheartRings(x,BALHEART2)); }
+        if(x.poly){ x.poly.setLatLngs(tentCorners(x)); if(x.nyaPoly)x.nyaPoly.setLatLngs(tentCorners(x)); }
         x.label.setLatLng([x.lat,x.lng]); });
       positionCtl(); };
     const up=()=>{ map.off('mousemove',move); map.off('mouseup',up); map.dragging.enable(); savePlaced(); if(curDomain())redrawCables(); };
@@ -606,17 +599,11 @@ function renderTentMarker(t){
       if(!t.nyaPoly){ ensureDefs(); t.nyaPoly=L.polygon(corners,{className:'nya-fill',stroke:true,color:'#ff1493',weight:2.5,opacity:1,fillOpacity:1,interactive:false}).addTo(map); }
       else t.nyaPoly.setLatLngs(corners);
     }else if(t.nyaPoly){ map.removeLayer(t.nyaPoly); t.nyaPoly=null; }
-    if(ref.shape==='balheart'){   // second bale course, lighter, drawn over the first
-      const r2=balheartRings(t,BALHEART2);
-      if(!t.bh2Poly) t.bh2Poly=L.polygon(r2,bh2Style(ref)).addTo(map);
-      else { t.bh2Poly.setLatLngs(r2); t.bh2Poly.setStyle(bh2Style(ref)); }
-    }else if(t.bh2Poly){ map.removeLayer(t.bh2Poly); t.bh2Poly=null; }
     return;
   }
   // fixed-size token mode (or before calibration)
   if(t.poly){ map.removeLayer(t.poly); t.poly=null; }
   if(t.nyaPoly){ map.removeLayer(t.nyaPoly); t.nyaPoly=null; }
-  if(t.bh2Poly){ map.removeLayer(t.bh2Poly); t.bh2Poly=null; }
   if(!hasSize(ref)){ if(t.marker){ map.removeLayer(t.marker); t.marker=null; } return; }  // no size -> name only
   const W=ref.width||3, L2=ref.length||3, base=46, m=Math.max(W,L2)||1;
   const w=Math.max(9,(W/m)*base), h=Math.max(9,(L2/m)*base);
@@ -638,7 +625,7 @@ function renderTentMarker(t){
   if(t.marker.dragging){ (!ADMIN||curDomain())?t.marker.dragging.disable():t.marker.dragging.enable(); }
 }
 function removeTentMarker(t){
-  ['marker','label','poly','nyaPoly','bh2Poly'].forEach(k=>{ if(t[k])map.removeLayer(t[k]); t[k]=null; });
+  ['marker','label','poly','nyaPoly'].forEach(k=>{ if(t[k])map.removeLayer(t[k]); t[k]=null; });
 }
 function refreshAll(){ placed.forEach(renderTentMarker); positionCtl(); }
 function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); queueSheetSave(); }
@@ -669,7 +656,7 @@ const ctl=document.getElementById('tentCtl');
 function applySelStyles(){
   placed.forEach(t=>{
     const on=selUids.has(t.uid);
-    if(t.poly){ t.poly.setStyle(tentStyle(t)); if(t.uid===selectedUid&&t.poly.bringToFront){ t.poly.bringToFront(); if(t.bh2Poly)t.bh2Poly.bringToFront(); } return; }
+    if(t.poly){ t.poly.setStyle(tentStyle(t)); if(t.uid===selectedUid&&t.poly.bringToFront) t.poly.bringToFront(); return; }
     if(!t.marker)return; const el=t.marker.getElement(); if(!el)return;
     const box=el.querySelector('.tent-box'); if(box) box.classList.toggle('sel',on);
     t.marker.setZIndexOffset(t.uid===selectedUid?1000:0); });
@@ -923,6 +910,7 @@ function setTab(tab){
   document.getElementById('tabPlacering').classList.toggle('on',tab==='placering');
   document.getElementById('tabEl').classList.toggle('on',tab==='el');
   document.getElementById('tabVatten').classList.toggle('on',tab==='vatten');
+  document.querySelectorAll('#pubTabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   const pl=tab==='placering';
   document.getElementById('placementUI').style.display=pl?'':'none';
   document.getElementById('tentList').style.display=pl?'':'none';
@@ -943,6 +931,7 @@ function setTab(tab){
 document.getElementById('tabPlacering').onclick=()=>setTab('placering');
 document.getElementById('tabEl').onclick=()=>setTab('el');
 document.getElementById('tabVatten').onclick=()=>setTab('vatten');
+document.querySelectorAll('#pubTabs button').forEach(b=>{ b.onclick=()=>setTab(b.dataset.tab); });
 function renderLegend(){
   const el=document.getElementById('elLegend'); if(!el)return; el.innerHTML='';
   const cnt={}; placed.forEach(t=>{const e=(refOf(t).electricity||'').trim(); cnt[e]=(cnt[e]||0)+1;});
@@ -956,10 +945,10 @@ function renderLegend(){
   const t2=document.createElement('div'); t2.className='legsub'; t2.textContent=`Power (${elnodes.length} source/cabinets)`; el.appendChild(t2);
   if(!elnodes.length){ const d=document.createElement('div'); d.className='hint'; d.textContent='Add a source or cabinet from the toolbar, click it, then click tents (or another cabinet) to run cables.'; el.appendChild(d); }
   elnodes.forEach(n=>{
-    const p=phaseLoads(n.id), peak=Math.max(p[0],p[1],p[2]), over=peak>nodeRatingAmp(n);
+    const p=phaseLoads(n.id), peak=Math.max(p[0],p[1],p[2]), lv=loadLevel(peak,nodeRatingAmp(n));
     const free=(n.kind==='source'&&n.unl!==false)?'unlimited':Object.keys(complementMap(n)).map(k=>`${freeCount(n,k)}×${k}`).join(' ');
     const row=document.createElement('div'); row.className='legrow';
-    row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${over?'#ff6b6b':'var(--muted)'}">${peak}/${nodeRatingAmp(n)} A</div>`;
+    row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${loadColor(lv,'var(--muted)')}">${peak}/${nodeRatingAmp(n)} A</div>`;
     el.appendChild(row);
   });
   const noPower=placed.filter(t=>needsPower(t)&&!hasPower(t));
@@ -1371,7 +1360,7 @@ document.getElementById('syncStatus').onclick=async()=>{
 function applyMode(){
   document.body.classList.toggle('admin',ADMIN);
   document.body.classList.toggle('public',!ADMIN);
-  if(!ADMIN && currentTab!=='placering') setTab('placering');   // public only ever shows the tents
+  setTab(currentTab);   // keep the tab (public may view all three); re-runs the wire/arm/selection resets
   deselect();
   setTimeout(()=>{ map.invalidateSize(); refreshAll(); positionCtl(); },0);
 }
@@ -1388,7 +1377,8 @@ document.getElementById('exitAdmin').onclick=exitAdminMode;
 
 /* ---------- Networks: El (source+cabinets, 3-phase) and Vatten (brunn/handfat) ---------- */
 function ampOf(s){ const m=/(\d+)\s*A/i.exec(s||''); return m?parseInt(m[1]):0; }
-function tentAmp(id){ const t=placed.find(x=>String(x.ref.id)===String(id)); return t?ampOf(refOf(t).electricity):0; }
+function tentAmp(id){ const t=placed.find(x=>String(x.ref.id)===String(id)); if(!t)return 0;
+  const r=tentReq(refOf(t).electricity); return r?r.amp:0; }   // through tentReq so the 220V=16A rule applies to the load maths
 function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
 /* default wire colour = the rating colour of its output: 32A orange, 16A yellow,
    63A/125A red, 220V light blue. A per-cable c.color overrides it. */
@@ -1406,11 +1396,18 @@ function socketKey(el,amp){
   const std=[16,32,63,125].filter(a=>a>=amp);
   return (std.length?std[0]:125)+'A';
 }
-/* A tent is fed from a single phase, so a 3-phase unit carries 3 x its rating in total
-   (e.g. 63A cabinet = 63A on L1 + 63A on L2 + 63A on L3). */
+/* A 3-phase CEE tent (380/400V 16A/32A/63A/125A) draws its rated amps on ALL THREE
+   phases at once — it counts against L1 AND L2 AND L3 of every node on its feed path.
+   Only a 220V tent is single-phase (assigned to the least-loaded phase). The earlier
+   one-phase-per-tent model undercounted 3-phase loads and was rejected by the user. */
 function tentReq(el){ el=(el||'').toLowerCase().trim(); if(!el||el==='none')return null;
-  const amp=ampOf(el)||6;
-  return {phase:1,amp,key:socketKey(el,amp)}; }
+  let amp=ampOf(el)||6;
+  const key=socketKey(el,amp);
+  /* A 220V hookup is a 16A schuko circuit, and the whole 16A lands on ONE phase.
+     The workbook says "220v 6A" (16A mentally divided over three phases — an
+     undercount under the single-phase model), so count every 220V tent as 16A. */
+  if(key==='220V') amp=Math.max(amp,16);
+  return {phase:key==='220V'?1:3,amp,key}; }
 
 // el node output complement (three-phase cabinets)
 function outputs(n){
@@ -1418,7 +1415,7 @@ function outputs(n){
   if(n.kind==='source'){
     if(n.unl!==false) return [];
     const m=n.outs||{}, o=[];
-    ['220V','16A','32A','63A'].forEach(k=>{ const c=m[k]||0;
+    ['220V','16A','32A','63A','125A'].forEach(k=>{ const c=m[k]||0;
       for(let i=0;i<c;i++) o.push({r:k==='220V'?16:parseInt(k),ph:k==='220V'?1:3,key:k}); });
     return o;
   }
@@ -1439,15 +1436,17 @@ function freeCount(n,key){
   if(n.kind==='source' && n.unl!==false){ const amp=key==='220V'?16:(parseInt(key)||0); return amp<=n.rating?Infinity:0; }
   return (complementMap(n)[key]||0)-usedOut(n.id,key);
 }
+/* CEE plugs are rating-specific: a cable only fits an outlet of its OWN type, so a
+   full outlet type means no connection — NEVER fall back to a larger free outlet.
+   (The old fallback let a second 16A cable land on a cabinet's 32A outlet, so a
+   cabinet with one 16A outlet accepted two 16A cables.) */
 function pickOutput(n,req){
-  const unl=(n.kind==='source' && n.unl!==false);
-  const cand=(req.key==='220V')?['220V']:[16,32,63,125].filter(a=>a>=req.amp).map(a=>a+'A');
-  for(const k of cand){
+  const k=req.key;
+  if(n.kind==='source' && n.unl!==false){
     const need=(k==='220V')?16:parseInt(k);
-    if(unl){ if(need<=n.rating) return k; continue; }
-    if(freeCount(n,k)>0) return k;
+    return need<=n.rating?k:null;
   }
-  return null;
+  return freeCount(n,k)>0?k:null;
 }
 function inputOf(id){ const c=cables.find(x=>x.dstKind==='node'&&x.dst===id); return c?c.src:null; }
 /* Reference designations per IEC 81346 / SEK Handbok 419, derived from the wiring and
@@ -1503,16 +1502,28 @@ function phaseLoads(id,seen){ seen=seen||new Set(); const out=[0,0,0]; if(seen.h
   return out;
 }
 function peakLoad(id){ const p=phaseLoads(id); return Math.max(p[0],p[1],p[2]); }
-function overloaded(n){ return n.domain==='el' && peakLoad(n.id)>nodeRatingAmp(n); }
-/* Assign every tent to a phase (L1/L2/L3) so the load is balanced at EVERY node on its feed
-   path, not just its own cabinet. Phases stay aligned up a feed chain (a tent on L1 draws L1
-   at its cabinet AND every cabinet/source above it), so balancing each cabinet in isolation
-   fails on chains: e.g. a source feeding many cabinets that each hold a single tent — every
-   lone tent defaults to L1 and they all pile onto the source's L1. Here we walk tents biggest
-   first (LPT) and put each on the phase that keeps the worst UTILISATION (load/rating) along
-   its whole path to the source lowest — sparing a near-limit cabinet even when a big source
-   could absorb more. Utilisation is quantised so near-ties fall back to the lowest absolute
-   peak, which also evens out a high-capacity source. Returns true if any tent's phase changed. */
+/* Load bands per phase, vs the per-phase rating (nameplate sums, not measured amps):
+     green  <=100%   always safe
+     amber  100-130% fine in practice — an MCB holds 113% of In indefinitely
+                     (IEC 60898), a gG fuse 125% (IEC 60269), and coincident real
+                     draw at a market is well under nameplate (demand ~75% at rush)
+     red    >130%    a busy hour can realistically trip the cabinet's main breaker
+   130% (not the theoretical ~150%) keeps margin for a cabinet of pure fryer
+   vendors. Replaces the earlier flat +3A tolerance. */
+const OVER_RED=1.3, AMBER='#ffb020', REDC='#ff6b6b';
+function loadLevel(peak,rating){ return peak>rating*OVER_RED?2:peak>rating?1:0; }
+function loadColor(lv,def){ return lv===2?REDC:lv===1?AMBER:def; }
+/* Phase assignment. A 3-phase tent (any CEE otype) draws on ALL THREE phases — its
+   cable keeps phase 0 ("all") and there is nothing to balance. Only the 220V tents
+   are single-phase; they are balanced on top of the 3-phase base load so the load is
+   even at EVERY node on their feed path, not just their own cabinet. Phases stay
+   aligned up a feed chain (a tent on L1 draws L1 at its cabinet AND every cabinet/
+   source above it), so balancing each cabinet in isolation fails on chains. We walk
+   the 220V tents biggest first (LPT) and put each on the phase that keeps the worst
+   UTILISATION (load/rating) along its whole path to the source lowest — sparing a
+   near-limit cabinet even when a big source could absorb more. Utilisation is
+   quantised so near-ties fall back to the lowest absolute peak, which also evens out
+   a high-capacity source. Returns true if any cable's phase changed. */
 function rebalanceEl(){
   const load={};                         // load[nodeId] = [L1,L2,L3] accumulated so far
   const paths={};                        // cache: nodeId -> [self, parent, …, root]
@@ -1524,8 +1535,12 @@ function rebalanceEl(){
     return (paths[id]=p);
   }
   let changed=false;
-  cables.filter(c=>c.domain==='el' && c.dstKind==='tent')
-    .map(c=>({c,amp:tentAmp(c.dst)})).sort((a,b)=>b.amp-a.amp)
+  const tc=cables.filter(c=>c.domain==='el' && c.dstKind==='tent').map(c=>({c,amp:tentAmp(c.dst)}));
+  tc.filter(x=>x.c.otype!=='220V').forEach(({c,amp})=>{   // 3-phase base load, all phases
+    for(const nid of pathOf(c.src)){ load[nid][0]+=amp; load[nid][1]+=amp; load[nid][2]+=amp; }
+    if(c.phase!==0){ c.phase=0; changed=true; }
+  });
+  tc.filter(x=>x.c.otype==='220V').sort((a,b)=>b.amp-a.amp)
     .forEach(({c,amp})=>{
       const path=pathOf(c.src);
       let best=0, bestU=Infinity, bestA=Infinity;   // min worst-utilisation, tie-break on abs peak
@@ -1589,6 +1604,13 @@ const srcBg=document.getElementById('srcBg');
 function srcDefaultFill(kind){ return kind==='source'?'#0e2033':'#181b22'; }   // matches the CSS .node / .node.source bg
 function srcOutsVis(){ const unl=(srcKind==='source')&&document.getElementById('srcUnl').checked; document.getElementById('srcOuts').style.display=unl?'none':''; }
 document.getElementById('srcUnl').onchange=srcOutsVis;
+/* a unit never has three-phase outlets rated above its own incoming feed — hide those
+   rows as the rating is typed, and save them as 0 (the save handler clamps too) */
+function srcClampOuts(){
+  const amp=parseInt(document.getElementById('srcAmp').value)||0;
+  [16,32,63,125].forEach(a=>{ document.getElementById('o'+a+'Row').style.display=(a<=amp)?'':'none'; });
+}
+document.getElementById('srcAmp').oninput=srcClampOuts;
 document.getElementById('srcColor').oninput=()=>{ srcColorCustom=true; };
 document.getElementById('srcColorReset').onclick=()=>{ srcColorCustom=false; document.getElementById('srcColor').value=srcDefaultFill(srcKind); };
 function openSrcModal(nodeId,kind){
@@ -1608,7 +1630,7 @@ function openSrcModal(nodeId,kind){
   document.getElementById('o125').value=o['125A']||0;
   srcColorCustom=!!(n&&n.color);
   document.getElementById('srcColor').value=(n&&n.color)||srcDefaultFill(srcKind);
-  srcOutsVis(); srcBg.style.display='flex'; document.getElementById('srcAmp').focus();
+  srcOutsVis(); srcClampOuts(); srcBg.style.display='flex'; document.getElementById('srcAmp').focus();
 }
 document.getElementById('srcCancel').onclick=()=>{srcBg.style.display='none';srcEditing=null;};
 document.getElementById('srcSave').onclick=()=>{
@@ -1620,6 +1642,7 @@ document.getElementById('srcSave').onclick=()=>{
               '32A':parseInt(document.getElementById('o32').value)||0,
               '63A':parseInt(document.getElementById('o63').value)||0,
               '125A':parseInt(document.getElementById('o125').value)||0};
+  [16,32,63,125].forEach(a=>{ if(a>amp) outs[a+'A']=0; });   // hidden rows must not survive as sockets
   const color=srcColorCustom?document.getElementById('srcColor').value:null;   // null => CSS default middle
   const isSrc=srcKind==='source';
   srcBg.style.display='none';
@@ -1697,14 +1720,14 @@ function renderElTree(){
   cables.forEach(c=>{ if(c.domain==='el'&&c.dstKind==='node') (kids[c.src]=kids[c.src]||[]).push(c.dst); });
   const seen=new Set();
   function nodeRow(n){
-    const pl=phaseLoads(n.id), r=nodeRatingAmp(n), peak=Math.max(pl[0],pl[1],pl[2]), over=peak>r;
+    const pl=phaseLoads(n.id), r=nodeRatingAmp(n), peak=Math.max(pl[0],pl[1],pl[2]), lv=loadLevel(peak,r);
     const free=(n.kind==='source'&&n.unl!==false)?'unlimited outputs':Object.keys(complementMap(n)).map(k=>freeCount(n,k)+'×'+k).join(' ')+' free';
     const row=document.createElement('div'); row.className='etnode'; row.title='Click to find it on the plan';
-    if(over) row.style.borderColor='#ff6b6b';
+    if(lv) row.style.borderColor=loadColor(lv);
     row.innerHTML='<span class="etname">'+esc(EN[n.id]||'?')+'</span>'
       +'<div class="etinfo">'+(n.kind==='source'?(n.rating+'A source'):(n.rating+'A cabinet'))
       +'<div class="etsub">'+esc(free)+'</div></div>'
-      +'<div class="etload" style="color:'+(over?'#ff6b6b':'var(--muted)')+'">L1 '+pl[0]+' · L2 '+pl[1]+' · L3 '+pl[2]+'<br>max '+peak+'/'+r+'A</div>';
+      +'<div class="etload" style="color:'+loadColor(lv,'var(--muted)')+'">L1 '+pl[0]+' · L2 '+pl[1]+' · L3 '+pl[2]+'<br>max '+peak+'/'+r+'A</div>';
     row.onclick=()=>{ map.panTo([n.lat,n.lng]); if(currentTab==='el') highlightFromNode(n.id); };
     return row;
   }
@@ -1816,9 +1839,9 @@ function addNode(spec,lat,lng){
 }
 function renderNode(n){
   if(n.domain!==curDomain()) return;
-  let title,sub,cls,brdr,over=false;
+  let title,sub,cls,brdr,lv=0;
   if(n.domain==='el'){
-    const pl=phaseLoads(n.id), load=Math.max(pl[0],pl[1],pl[2]); over=load>nodeRatingAmp(n);
+    const pl=phaseLoads(n.id), load=Math.max(pl[0],pl[1],pl[2]); lv=loadLevel(load,nodeRatingAmp(n));
     title=n.kind==='source'?(n.rating+'A IN'):(n.rating+'A'); sub=pl[0]+'/'+pl[1]+'/'+pl[2];
     cls='node'+(n.kind==='source'?' source':''); brdr=ratingColor(nodeRatingAmp(n));
   }else{
@@ -1837,7 +1860,7 @@ function renderNode(n){
   const nm=(n.domain==='el'&&showCabNames)?(elNames()[n.id]||'?'):null;
   const html='<div class="'+cls+'" style="border-color:'+brdr+fill+'">'
     +(nm?'<div class="nname">'+esc(nm)+'</div>':'')
-    +'<div class="er">'+title+'</div>'+(sub?'<div class="eu" style="color:'+(over?'#ff6b6b':'#cfd3dc')+'">'+sub+'</div>':'')+'</div>';
+    +'<div class="er">'+title+'</div>'+(sub?'<div class="eu" style="color:'+loadColor(lv,'#cfd3dc')+'">'+sub+'</div>':'')+'</div>';
   let m=nodeMarkers[n.id];
   if(!m){
     const icon=L.divIcon({className:'node-div',html,iconSize:[58,44],iconAnchor:[29,22]});
@@ -1847,7 +1870,7 @@ function renderNode(n){
       if(wireMode && connectSource && connectSource!==n.id){ connect(connectSource,{kind:'node',id:n.id}); return; }
       const sel=connectSource!==n.id; setConnectSource(sel?n.id:null);
       if(sel&&n.domain==='el') highlightFromNode(n.id); else { clearHl(); refreshHl(); } });
-    m.on('dblclick',ev=>{L.DomEvent.stopPropagation(ev); if(n.domain==='el') openSrcModal(n.id);});
+    m.on('dblclick',ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN&&n.domain==='el') openSrcModal(n.id);});
     m.on('drag',()=>{const p=m.getLatLng();n.lat=p.lat;n.lng=p.lng;redrawCables();});
     m.on('dragend',saveNet);
     nodeMarkers[n.id]=m;
@@ -1857,7 +1880,7 @@ function renderNode(n){
   }
   const root=m.getElement()&&m.getElement().querySelector('.node');
   if(root){ root.classList.toggle('sel',connectSource===n.id); root.classList.toggle('hl',hl.nodes.has(n.id)); }
-  if(m.dragging){ wireMode?m.dragging.disable():m.dragging.enable(); }
+  if(m.dragging){ (wireMode||!ADMIN)?m.dragging.disable():m.dragging.enable(); }   // public: nodes are look-only
 }
 function setConnectSource(id){
   connectSource=id; nodes.forEach(renderNode);
@@ -1893,16 +1916,17 @@ function connect(srcId,dst){
   }
   const key=pickOutput(src,req);
   if(!key){ flashBanner('No free '+req.key+' output on the '+nodeName(src)+'.',true); return; }
-  if(dst.kind==='tent') cables=cables.filter(c=>!(c.dstKind==='tent'&&c.dst===dst.id));
-  else cables=cables.filter(c=>!(c.dstKind==='node'&&c.dst===dst.id));
+  if(dst.kind==='tent') cables=cables.filter(c=>!(c.dstKind==='tent'&&c.dst===dst.id&&c.domain==='el'));
+  else cables=cables.filter(c=>!(c.dstKind==='node'&&c.dst===dst.id&&c.domain==='el'));
   const nc={src:srcId,dst:dst.id,dstKind:dst.kind,otype:key,phase:0,domain:'el'};
   cables.push(nc);
   if(dst.kind==='tent') rebalanceEl();   // re-spread tents across L1/L2/L3, balanced along each feed chain
   const phase=nc.phase;
   saveNet(); redrawCables(); nodes.forEach(renderNode);
-  const pl=phaseLoads(srcId), peak=Math.max(pl[0],pl[1],pl[2]);
-  if(peak>nodeRatingAmp(src)) flashBanner('Connected '+label+' — '+nodeName(src)+' overloaded (L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A, max '+peak+'/'+src.rating+').',true);
-  else flashBanner('Connected '+label+' via '+key+(phase?(' on L'+phase):'')+'. Load L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A.',false);
+  const pl=phaseLoads(srcId), peak=Math.max(pl[0],pl[1],pl[2]), lv=loadLevel(peak,nodeRatingAmp(src));
+  if(lv===2) flashBanner('Connected '+label+' — '+nodeName(src)+' overloaded (L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A, max '+peak+'/'+src.rating+' is over 130%).',true);
+  else if(lv===1) flashBanner('Connected '+label+' via '+key+(phase?(' on L'+phase):' on L1+L2+L3')+' — '+nodeName(src)+' over rating but within the 130% margin (max '+peak+'/'+src.rating+' A).',false);
+  else flashBanner('Connected '+label+' via '+key+(phase?(' on L'+phase):' on L1+L2+L3')+'. Load L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A.',false);
   renderLegend();
 }
 function redrawCables(){
@@ -1918,8 +1942,9 @@ function redrawCables(){
     if(!b)return;
     let weight=(dom==='water')?3.5:(c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5)), dash=null;
     let color=cableColor(c);                      // default by rating (32A orange, 16A yellow…), or c.color override
-    const over=(dom!=='water')&&overloaded(s);
-    if(over){ color='#ff5252'; dash='6,5'; }       // overloaded source: red dashed, overrides the wire colour
+    const lv=(dom!=='water')?loadLevel(peakLoad(s.id),nodeRatingAmp(s)):0;
+    if(lv===2){ color='#ff0000'; dash='6,5'; }     // red band: VIVID red dashed — clearly hotter than the 63A/125A wire colour (#ff6b6b)
+    else if(lv===1){ dash='10,6'; }                // amber band: keep the wire colour, dashed = worth a glance
     const isHl=hl.cables.has(c);
     if(isHl){ color='#ffd400'; weight=weight+2.5; }
     const openCab=ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN) openCabModal(c);};
@@ -1996,7 +2021,7 @@ function renderVattenLegend(){
 document.addEventListener('keydown',e=>{
   if(curDomain()){
     if(e.key==='Escape'){ armNode=null; if(wireMode) setWire(false); else setConnectSource(null); }
-    else if((e.key==='Delete'||e.key==='Backspace') && connectSource){ const tag=(e.target.tagName||'').toLowerCase(); if(tag!=='input'&&tag!=='select'){ removeNode(connectSource); e.preventDefault(); } }
+    else if((e.key==='Delete'||e.key==='Backspace') && ADMIN && connectSource){ const tag=(e.target.tagName||'').toLowerCase(); if(tag!=='input'&&tag!=='select'){ removeNode(connectSource); e.preventDefault(); } }
   }
 });
 
@@ -2043,8 +2068,8 @@ function seedCampingDefaults(){
 }
 
 /* One-time seed of the Arena bale heart ("Bal hjärta"): ONE object whose footprint
-   is drawn as the 25-halmbal heart (240 x 80 cm bales, two layers, guide 12 m wide)
-   via the internal shape:'balheart' + the BALHEART offsets next to tentCorners.
+   is drawn as the 15-halmbal heart (240 x 80 cm bales, single course, guide 11.5 m
+   wide) via the internal shape:'balheart' + the BALHEART offsets next to tentCorners.
    One name, one list entry, moved/rotated as a single structure; the shape is not
    offered in the add/edit modal. Anchored ~10 m SW of the "ljus bod" (621,844
    behind the laktare) and rot 40 to line up with the arena's other objects
@@ -2053,7 +2078,9 @@ function seedCampingDefaults(){
    row) + pre-placed in Arena, arena dirty flag set so the next admin save syncs.
    Version history: v2 12 m wide; v3 next to the ljus bod + rot 40; v4 one plain
    rect object, drops the 25 bale_* objects; v5 the object draws the bales again
-   (shape 'balheart'); v6 heart guide 11.5 m wide (footprint 11.5 x 10.4).
+   (shape 'balheart'); v6 heart guide 11.5 m wide (footprint 11.5 x 10.4). The
+   second bale course was dropped later (drawing-only change - the def and the v6
+   seed are unchanged, so no reseed).
    v5+ KEEP a moved heart's position and only swap the def; they also clear a
    stale modal-edit override that could pin an old shape/size. */
 function seedArenaBales(){
