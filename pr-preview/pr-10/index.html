@@ -298,14 +298,14 @@
     <div id="srcOuts" style="display:none">
       <div class="row">
         <div><label>220V outputs</label><input id="o220" type="number" min="0" step="1" value="4"/></div>
-        <div><label>16A outputs</label><input id="o16" type="number" min="0" step="1" value="1"/></div>
+        <div id="o16Row"><label>16A outputs</label><input id="o16" type="number" min="0" step="1" value="1"/></div>
       </div>
       <div class="row">
-        <div><label>32A outputs</label><input id="o32" type="number" min="0" step="1" value="1"/></div>
-        <div><label>63A outputs</label><input id="o63" type="number" min="0" step="1" value="1"/></div>
+        <div id="o32Row"><label>32A outputs</label><input id="o32" type="number" min="0" step="1" value="1"/></div>
+        <div id="o63Row"><label>63A outputs</label><input id="o63" type="number" min="0" step="1" value="1"/></div>
       </div>
       <div class="row">
-        <div><label>125A outputs</label><input id="o125" type="number" min="0" step="1" value="0"/></div>
+        <div id="o125Row"><label>125A outputs</label><input id="o125" type="number" min="0" step="1" value="0"/></div>
         <div></div>
       </div>
     </div>
@@ -1402,7 +1402,7 @@ function outputs(n){
   if(n.kind==='source'){
     if(n.unl!==false) return [];
     const m=n.outs||{}, o=[];
-    ['220V','16A','32A','63A'].forEach(k=>{ const c=m[k]||0;
+    ['220V','16A','32A','63A','125A'].forEach(k=>{ const c=m[k]||0;
       for(let i=0;i<c;i++) o.push({r:k==='220V'?16:parseInt(k),ph:k==='220V'?1:3,key:k}); });
     return o;
   }
@@ -1586,6 +1586,13 @@ const srcBg=document.getElementById('srcBg');
 function srcDefaultFill(kind){ return kind==='source'?'#0e2033':'#181b22'; }   // matches the CSS .node / .node.source bg
 function srcOutsVis(){ const unl=(srcKind==='source')&&document.getElementById('srcUnl').checked; document.getElementById('srcOuts').style.display=unl?'none':''; }
 document.getElementById('srcUnl').onchange=srcOutsVis;
+/* a unit never has three-phase outlets rated above its own incoming feed — hide those
+   rows as the rating is typed, and save them as 0 (the save handler clamps too) */
+function srcClampOuts(){
+  const amp=parseInt(document.getElementById('srcAmp').value)||0;
+  [16,32,63,125].forEach(a=>{ document.getElementById('o'+a+'Row').style.display=(a<=amp)?'':'none'; });
+}
+document.getElementById('srcAmp').oninput=srcClampOuts;
 document.getElementById('srcColor').oninput=()=>{ srcColorCustom=true; };
 document.getElementById('srcColorReset').onclick=()=>{ srcColorCustom=false; document.getElementById('srcColor').value=srcDefaultFill(srcKind); };
 function openSrcModal(nodeId,kind){
@@ -1605,7 +1612,7 @@ function openSrcModal(nodeId,kind){
   document.getElementById('o125').value=o['125A']||0;
   srcColorCustom=!!(n&&n.color);
   document.getElementById('srcColor').value=(n&&n.color)||srcDefaultFill(srcKind);
-  srcOutsVis(); srcBg.style.display='flex'; document.getElementById('srcAmp').focus();
+  srcOutsVis(); srcClampOuts(); srcBg.style.display='flex'; document.getElementById('srcAmp').focus();
 }
 document.getElementById('srcCancel').onclick=()=>{srcBg.style.display='none';srcEditing=null;};
 document.getElementById('srcSave').onclick=()=>{
@@ -1617,6 +1624,7 @@ document.getElementById('srcSave').onclick=()=>{
               '32A':parseInt(document.getElementById('o32').value)||0,
               '63A':parseInt(document.getElementById('o63').value)||0,
               '125A':parseInt(document.getElementById('o125').value)||0};
+  [16,32,63,125].forEach(a=>{ if(a>amp) outs[a+'A']=0; });   // hidden rows must not survive as sockets
   const color=srcColorCustom?document.getElementById('srcColor').value:null;   // null => CSS default middle
   const isSrc=srcKind==='source';
   srcBg.style.display='none';
