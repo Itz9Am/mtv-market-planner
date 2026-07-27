@@ -1836,6 +1836,10 @@ document.querySelectorAll('#elControls .ela').forEach(b=>{
 let srcEditing=null, srcKind='source', srcColorCustom=false;
 const srcBg=document.getElementById('srcBg');
 function srcDefaultFill(kind){ return kind==='source'?'#0e2033':'#181b22'; }   // matches the CSS .node / .node.source bg
+/* every NEW cabinet starts with this middle fill (the dark red already used across the
+   plan, e.g. A1N5N2) — stored on the node at creation, so existing cabinets keep whatever
+   they have and "Reset to default" on an existing cabinet still clears to the CSS fill */
+const NEW_CAB_COLOR='#831100';
 function srcOutsVis(){ const unl=(srcKind==='source')&&document.getElementById('srcUnl').checked; document.getElementById('srcOuts').style.display=unl?'none':''; }
 document.getElementById('srcUnl').onchange=srcOutsVis;
 /* a unit never has three-phase outlets rated above its own incoming feed — hide those
@@ -1846,7 +1850,8 @@ function srcClampOuts(){
 }
 document.getElementById('srcAmp').oninput=srcClampOuts;
 document.getElementById('srcColor').oninput=()=>{ srcColorCustom=true; };
-document.getElementById('srcColorReset').onclick=()=>{ srcColorCustom=false; document.getElementById('srcColor').value=srcDefaultFill(srcKind); };
+document.getElementById('srcColorReset').onclick=()=>{ srcColorCustom=false;
+  document.getElementById('srcColor').value=(!srcEditing&&srcKind==='elskap')?NEW_CAB_COLOR:srcDefaultFill(srcKind); };
 function openSrcModal(nodeId,kind){
   srcEditing=nodeId;
   const n=nodeId?nodes.find(x=>x.id===nodeId):null;
@@ -1863,7 +1868,7 @@ function openSrcModal(nodeId,kind){
   document.getElementById('o63').value=o['63A']||0;
   document.getElementById('o125').value=o['125A']||0;
   srcColorCustom=!!(n&&n.color);
-  document.getElementById('srcColor').value=(n&&n.color)||srcDefaultFill(srcKind);
+  document.getElementById('srcColor').value=(n&&n.color)||((!n&&srcKind==='elskap')?NEW_CAB_COLOR:srcDefaultFill(srcKind));
   srcOutsVis(); srcClampOuts(); srcBg.style.display='flex'; document.getElementById('srcAmp').focus();
 }
 document.getElementById('srcCancel').onclick=()=>{srcBg.style.display='none';srcEditing=null;};
@@ -2103,6 +2108,7 @@ function addNode(spec,lat,lng){
   if(spec.kind==='source'){ n.unl=spec.unl!==false; n.outs=spec.outs||null; }
   else if(spec.outs){ n.outs=spec.outs; }
   if(spec.color) n.color=spec.color;
+  else if(spec.kind==='elskap') n.color=NEW_CAB_COLOR;   // new cabinets start dark red (like A1N5N2)
   nodes.push(n); saveNet(); renderNode(n); setConnectSource(n.id);
 }
 /* A water koppling renders as a small gray junction dot, a bit wider than the pipe —

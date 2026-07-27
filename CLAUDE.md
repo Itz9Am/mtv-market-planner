@@ -243,7 +243,10 @@ the map node (the **Names** toggle in the El toolbar, `LS.cabnames`, global like
   *middle* only — the **border stays the rating colour** (`ratingColor`, drawn as an inline
   `border-color`). `color` absent means *use the CSS default* (`#181b22` cabinet /
   `#0e2033` source); "Reset to default" clears it. Like `outs`, absent ≠ a stored value —
-  `nodeFromRow`/`nodeToRow` keep the column blank when unset.
+  `nodeFromRow`/`nodeToRow` keep the column blank when unset. **New cabinets** are created
+  with `NEW_CAB_COLOR` (`#831100`, the dark red the user paints cabinets, e.g. A1N5N2)
+  stored on the node — existing cabinets are untouched, and Reset on an existing cabinet
+  still clears to the CSS default.
 - **Wire colour** (`c.color`): default is the output's rating colour (`cableColor` →
   `otypeColor`: 32A orange, 16A yellow, 63A/125A red, 220V light blue; water blue). Every
   wire is drawn as two polylines — a black **casing** underneath for a clean outline, then
