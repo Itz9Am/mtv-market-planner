@@ -1613,13 +1613,17 @@ function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
    replacing the earlier rating-colour defaults: 32A orange, 16A yellow, 63A/125A red,
    220V light blue — otypeColor keeps that mapping if it's ever wanted back). A per-cable
    c.color override, the overload red/amber bands and the gold highlight still win. */
-const NET_GRAY='#9aa0ab';
+const NET_GRAY='#444444';   // THE gray (user 2026-07: "the correct one is the one A1N1N1 has")
 /* Gray = ALREADY IN PLACE at the site; a central/cable that was GIVEN a colour is NEW
-   and counts as material to source (user rule 2026-07). Explicitly recolouring back
-   to NET_GRAY also marks it as existing. */
-function isNewMat(col){ return !isBlank(col) && String(col).toLowerCase()!==NET_GRAY; }
+   and counts as material to source (user rule 2026-07). The user accidentally applied
+   SEVERAL gray shades (#444444, #232323 …), so ANY gray shade counts as existing
+   (isGrayish: low channel spread) and every gray draws as the one NET_GRAY. */
+function hexRGB(col){ const m=/^#([0-9a-f]{6})$/i.exec(String(col||'').trim()); if(!m)return null;
+  const v=parseInt(m[1],16); return [(v>>16)&255,(v>>8)&255,v&255]; }
+function isGrayish(col){ const c=hexRGB(col); return !!c && Math.max(c[0],c[1],c[2])-Math.min(c[0],c[1],c[2])<=30; }
+function isNewMat(col){ return !isBlank(col) && !isGrayish(col); }
 function otypeColor(ot){ if(ot==='220V')return '#9FC5E8'; return ratingColor(parseInt(ot)||0); }
-function cableColor(c){ if(c.color)return c.color; if(c.domain==='water')return '#2b8cff'; return NET_GRAY; }
+function cableColor(c){ if(c.domain==='water') return c.color||'#2b8cff'; return isNewMat(c.color)?c.color:NET_GRAY; }
 /* ---- cable geometry: waypoints (bend/curve dots), smoothing, lengths ----
    A cable's anchors are [source, …c.pts…, destination]. A 'b' dot is a sharp corner,
    a 'c' dot pulls a smooth Catmull-Rom curve through it, an 'n' dot rides on a water
@@ -2406,7 +2410,7 @@ function renderNode(n){
   // The middle fill (n.color) and border live in the icon HTML; selection/highlight are
   // applied as class toggles on the live element AFTER render so a plain select click never
   // rebuilds the DOM — rebuilding it mid double-click was eating the dblclick that edits the node.
-  const fill=n.color?(';background:'+n.color):'';
+  const fill=n.color?(';background:'+(isGrayish(n.color)?NET_GRAY:n.color)):'';   // every gray shade draws as THE gray
   const nm=(n.domain==='el'&&showCabNames)?(elNames()[n.id]||'?'):null;
   const html='<div class="'+cls+'" style="border-color:'+brdr+fill+'">'
     +(nm?'<div class="nname">'+esc(nm)+'</div>':'')

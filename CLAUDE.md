@@ -241,8 +241,8 @@ and the `elskap` placements column (below).
 
 Third seg option under El (`renderElMat()`, `#elMat`). Semantics the user set
 (2026-07): **gray = already in place at the site**, so only centrals and cables that
-were *given a colour* count as new material (`isNewMat` — no colour, or explicitly
-NET_GRAY, is skipped). Sections:
+were *given a colour* count as new material (`isNewMat` — no colour, or any grayish
+colour, is skipped; see the Colours section). Sections:
 
 - **New centrals**: coloured nodes grouped kind+rating, `need / have / rent` against
   the inventory.
@@ -268,12 +268,19 @@ once could double-book a piece (accepted; the network lives on Marknad).
 
 ### Colours (both optional, both persisted)
 
-**Placed centrals and cables draw NEUTRAL GRAY by default** (`NET_GRAY`, user request
-2026-07): `cableColor()` no longer falls back to the rating colour, and `renderNode`'s
-border is gray instead of `ratingColor`. `otypeColor`/`ratingColor` keep the old
-mapping (32A orange, 16A yellow, 63A/125A red, 220V light blue) but are no longer used
-for defaults. Load-band colouring (amber/red text, vivid red dashed wires) and the gold
-highlight are unchanged and still win visually.
+**Placed centrals and cables draw NEUTRAL GRAY by default** (`NET_GRAY='#444444'`, user
+request 2026-07): `cableColor()` no longer falls back to the rating colour, and
+`renderNode`'s border is gray instead of `ratingColor`. `otypeColor`/`ratingColor` keep
+the old mapping (32A orange, 16A yellow, 63A/125A red, 220V light blue) but are no
+longer used for defaults. Load-band colouring (amber/red text, vivid red dashed wires)
+and the gold highlight are unchanged and still win visually.
+
+**ANY gray shade counts as gray.** The user accidentally applied several grays
+(`#444444` on the trunk cables — the one they declared correct, "the one A1N1N1 has" —
+plus `#232323`), so `isGrayish()` (hex channel spread ≤ 30) decides: a grayish
+node/cable colour renders as `NET_GRAY` and does NOT count as new material
+(`isNewMat = has colour && !grayish`). The stored values are left untouched — this is
+a render/count-time normalisation, not a data migration.
 
 - **Node middle fill** (`n.color`): the source/cabinet modal has a colour picker for the
   *middle* only — the **border stays gray** (drawn as an inline `border-color`).
