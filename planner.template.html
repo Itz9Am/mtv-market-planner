@@ -30,6 +30,11 @@
   /* El tab sub-views: Overview (legend) | Cabinets (distribution tree) | Material (procurement list) */
   #elViewSeg{margin:8px 14px 0}
   #elViewSeg button{flex:1}
+  /* Material view: inventory entry forms */
+  #elMat .invform{display:flex;gap:6px;margin:6px 10px;align-items:center}
+  #elMat .invform select,#elMat .invform input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:7px 8px;border-radius:7px;font-size:12px}
+  #elMat .invform input[type=number]{max-width:64px}
+  #elMat .invform button{white-space:nowrap}
   #elTree{padding:6px 10px 16px}
   #elTree .etkids{margin:0 0 0 13px;border-left:1px dashed var(--line);padding-left:9px}
   #elTree .etnode{display:flex;align-items:center;gap:8px;padding:7px 9px;margin:5px 0;background:var(--panel2);border:1px solid var(--line);border-radius:9px;cursor:pointer}
@@ -388,7 +393,7 @@
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1',sizes:'mtvi_sizes_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1',sizes:'mtvi_sizes_v1',inv:'mtvi_inv_v1',invDirty:'mtvi_invdirty_v1'};
 /* Two independent plans ("areas"), each with its own tents, wiring, scale, view and base
    image. The plan-state keys below are namespaced per area in localStorage; the default
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
@@ -1450,6 +1455,7 @@ async function runAutoSave(){
 async function autoLoadStartup(){
   const cfg=sheetCfg();
   if(!cfg.spreadsheetId) return;
+  if(lsGet(LS.invDirty,0)) runInvSave(); else loadInventory();   // inventory rides its own tab; fire-and-forget
   if(lsGet(LS.dirty,0)){ setSync('pending'); queueSheetSave(); return; }
   if(!haveToken() && !cfg.apiKey){ try{ await getToken(false); }catch(e){ setSync('signin'); return; } }
   setSync('loading');
@@ -1488,6 +1494,7 @@ async function remoteReload(){
     const M=currentAreaObjs(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
     applySheetState(P,N,C,M,true);                 // keepView: don't yank the user's pan/zoom
     GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
+    loadInventory();                               // fire-and-forget; inventory saves don't bump meta.savedAt
     return M;
   } finally { SYNC.loading=false; }
 }
@@ -1512,6 +1519,59 @@ async function pollRemote(){
 let pollTimer=null;
 function startPolling(){ if(!pollTimer) pollTimer=setInterval(pollRemote,15000); }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRemote(); });   // catch up on refocus
+
+/* --- inventory (what we own): GLOBAL, synced via its own `inventory` Sheet tab ---
+   Deliberately OUTSIDE the main four-tab batch: the tab may not exist yet, and one
+   missing range fails a whole batchGet/batchUpdate — so inventory reads and writes
+   are separate, lenient requests whose errors can never break the plan sync. The
+   tab is auto-created (addSheet) on the first save that finds it missing.
+   INV={cables:[{otype,len,count}],centrals:[{kind,rating,count}]} — one row each. */
+let INV=lsGet(LS.inv,{cables:[],centrals:[]});
+const INV_HEADERS=['kind','type','len','count'];
+const INV_RANGE='inventory!A1:D', INV_CLEAR='inventory!A2:D';
+function invRows(){
+  return [INV_HEADERS]
+    .concat(INV.cables.map(c=>['cable',c.otype,c.len,c.count]))
+    .concat(INV.centrals.map(c=>[c.kind,c.rating,'',c.count]));
+}
+function invFromRows(values){
+  const out={cables:[],centrals:[]};
+  rowsToObjects(values,INV_HEADERS).forEach(o=>{
+    const cnt=gnum(o.count)||0; if(cnt<=0) return;
+    if(o.kind==='cable'){ const len=gnum(o.len); if(len>0&&!isBlank(o.type)) out.cables.push({otype:String(o.type),len,count:cnt}); }
+    else if(o.kind==='source'||o.kind==='elskap'){ const r=gnum(o.type); if(r) out.centrals.push({kind:o.kind,rating:r,count:cnt}); }
+  });
+  return out;
+}
+async function loadInventory(){
+  if(!sheetCfg().spreadsheetId) return;
+  try{
+    const vr=await sheetBatchGet([INV_RANGE]);
+    if(!lsGet(LS.invDirty,0)){   // local unsynced inventory edits win, like LS.dirty
+      INV=invFromRows((vr[0]&&vr[0].values)||[]); lsSet(LS.inv,INV);
+      if(currentTab==='el') renderElMat();
+    }
+  }catch(e){/* tab doesn't exist yet, or transient — the local inventory stands */}
+}
+let invTimer=null;
+function queueInvSave(){
+  lsSet(LS.inv,INV); lsSet(LS.invDirty,1);
+  clearTimeout(invTimer); invTimer=setTimeout(runInvSave,2000);
+}
+async function runInvSave(){
+  if(!sheetCfg().spreadsheetId) return;
+  try{ if(!haveToken()) await getToken(false); }   // silent only — never a popup
+  catch(e){ return; }                              // stays local-dirty; retried on next edit / sign-in
+  try{
+    try{ await sheetApi('/values:batchClear',{ranges:[INV_CLEAR]}); }
+    catch(e){
+      if(!/Unable to parse range|not found/i.test(e.message||'')) throw e;
+      await sheetApi(':batchUpdate',{requests:[{addSheet:{properties:{title:'inventory'}}}]});   // first save: create the tab
+    }
+    await sheetApi('/values:batchUpdate',{valueInputOption:'RAW',data:[{range:INV_RANGE,values:invRows()}]});
+    lsSet(LS.invDirty,0);
+  }catch(e){/* keep the dirty flag; retried on the next inventory edit or startup */}
+}
 
 /* --- sign-in (config is hard-coded; no settings UI). The sync indicator is the
    only Sheet control: click it to sign in, which the browser allows because it's a
@@ -1551,6 +1611,10 @@ function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
    220V light blue — otypeColor keeps that mapping if it's ever wanted back). A per-cable
    c.color override, the overload red/amber bands and the gold highlight still win. */
 const NET_GRAY='#9aa0ab';
+/* Gray = ALREADY IN PLACE at the site; a central/cable that was GIVEN a colour is NEW
+   and counts as material to source (user rule 2026-07). Explicitly recolouring back
+   to NET_GRAY also marks it as existing. */
+function isNewMat(col){ return !isBlank(col) && String(col).toLowerCase()!==NET_GRAY; }
 function otypeColor(ot){ if(ot==='220V')return '#9FC5E8'; return ratingColor(parseInt(ot)||0); }
 function cableColor(c){ if(c.color)return c.color; if(c.domain==='water')return '#2b8cff'; return NET_GRAY; }
 /* ---- cable geometry: waypoints (bend/curve dots), smoothing, lengths ----
@@ -2016,65 +2080,189 @@ function renderElTree(){
   }
 }
 
-/* The Material view: a procurement list for the active area's el network.
-   FIRST CUT — the user will specify what it should contain in detail; extend here.
-   Currently: centrals grouped by kind + rating (with their designations), then cable
-   per socket type — run count, total metres, and every individual run
-   (designation → destination · length, longest first). Clicking a run pans to it. */
+/* --- material allocation: fit the owned cable pieces onto the NEW runs ---
+   Heuristic, longest run first: best-fit single piece (smallest that covers), else a
+   chain — largest pieces first, finished by the smallest piece that completes it. If
+   the pool can't reach a run's length at all, that run is RENTED whole (the owned
+   pieces stay in the pool for the remaining runs). Rent suggestions decompose the
+   need, rounded up to 5 m, into standard lengths so no rented metre is wasted.
+   Pure — node-tested (see CLAUDE.md). */
+const RENT_LENS=[5,10,25,50];
+function rentPiecesFor(need){
+  let n=Math.ceil(need/5)*5; const out=[];
+  while(n>=50){ out.push(50); n-=50; }
+  if(n>=25){ out.push(25); n-=25; }
+  while(n>=10){ out.push(10); n-=10; }
+  if(n>0) out.push(5);
+  return out;
+}
+function allocateCable(runs,pieces){
+  const pool=pieces.slice().sort((a,b)=>a-b), alloc=[];
+  runs.slice().sort((a,b)=>b.need-a.need).forEach(r=>{
+    const need=Math.ceil(r.need);
+    const i=pool.findIndex(l=>l>=need);                    // pool is ascending → best fit
+    if(i>=0){ alloc.push({run:r,own:[pool[i]],rent:[]}); pool.splice(i,1); return; }
+    const tmp=pool.slice(), take=[]; let sum=0;            // chain: big first, tight finish
+    while(sum<need&&tmp.length){
+      const f=tmp.findIndex(l=>l>=need-sum);
+      if(f>=0){ take.push(tmp[f]); sum+=tmp[f]; tmp.splice(f,1); }
+      else { const big=tmp.pop(); take.push(big); sum+=big; }
+    }
+    if(sum>=need){ take.forEach(l=>pool.splice(pool.indexOf(l),1)); alloc.push({run:r,own:take,rent:[]}); }
+    else alloc.push({run:r,own:[],rent:rentPiecesFor(need)});   // can't cover → rent this run whole
+  });
+  return {alloc,left:pool};
+}
+
+/* The Material view: what NEW material the plan needs and how to source it.
+   Gray (the default) = already in place at the site, so only centrals and cables that
+   were GIVEN a colour count (isNewMat). The owned inventory (editable at the bottom,
+   synced via the `inventory` Sheet tab) is allocated onto the new runs; the shortfall
+   is summed under "To rent". Allocation is per ACTIVE AREA against the whole global
+   inventory — with new material in two areas at once the same piece could be counted
+   twice; acceptable for now (the network lives on Marknad). */
 function renderElMat(){
   const el=document.getElementById('elMat'); if(!el) return; el.innerHTML='';
   const elNodes=nodes.filter(n=>n.domain==='el'), elc=cables.filter(c=>c.domain==='el');
-  if(!elNodes.length&&!elc.length){
-    const d=document.createElement('div'); d.className='hint';
-    d.textContent='Nothing to list yet — add sources, cabinets and cables and the material list appears here.';
-    el.appendChild(d); return;
-  }
+  const matNodes=elNodes.filter(n=>isNewMat(n.color)), matRuns=elc.filter(c=>isNewMat(c.color));
+  const grayN=elNodes.length-matNodes.length, grayC=elc.length-matRuns.length;
+  const h0=document.createElement('div'); h0.className='hint';
+  h0.textContent='Gray = already in place. Only centrals and cables given a colour count as new material'
+    +((grayN||grayC)?(' — skipping '+grayN+' gray central(s) and '+grayC+' gray cable(s).'):'.');
+  el.appendChild(h0);
   const EN=elNames();
-  /* centrals, grouped by kind + rating */
-  const t1=document.createElement('div'); t1.className='legsub'; t1.textContent='Centrals ('+elNodes.length+')'; el.appendChild(t1);
-  const grp={};
-  elNodes.forEach(n=>{ const k=n.kind+'|'+n.rating; (grp[k]=grp[k]||[]).push(n); });
-  Object.keys(grp).sort((a,b)=>{
-    const [ka,ra]=a.split('|'), [kb,rb]=b.split('|');
-    if(ka!==kb) return ka==='source'?-1:1;      // sources first, then cabinets
-    return (+rb)-(+ra);                          // big ratings first
-  }).forEach(k=>{
-    const [kind,r]=k.split('|'), list=grp[k];
-    const row=document.createElement('div'); row.className='legrow';
-    row.innerHTML='<div class="sw" style="background:'+(kind==='source'?'#0e2033':'#181b22')+';border:2px solid '+NET_GRAY+';'+(kind==='source'?'border-radius:50%':'')+'"></div>'
-      +'<div class="lname">'+r+' A '+(kind==='source'?'source':'cabinet')
-      +'<div style="font-size:10px;color:var(--muted);font-weight:400">'+esc(list.map(n=>EN[n.id]||'?').join(' · '))+'</div></div>'
-      +'<div class="lcount">'+list.length+'&#215;</div>';
-    el.appendChild(row);
-  });
-  /* cable per socket type: run count, total metres, individual runs */
-  const t2=document.createElement('div'); t2.className='legsub'; t2.textContent='Cable ('+elc.length+' run'+(elc.length===1?'':'s')+')'; el.appendChild(t2);
-  if(!elc.length){
-    const d=document.createElement('div'); d.className='hint'; d.textContent='No cables yet.'; el.appendChild(d);
-  }else if(!ppm){
-    const d=document.createElement('div'); d.className='hint'; d.textContent='Set the scale (ppm) to calculate cable lengths.'; el.appendChild(d);
-  }else{
-    let tot=0;
-    ['125A','63A','32A','16A','220V','?'].forEach(k=>{
-      const runs=elc.filter(c=>(c.otype||'?')===k); if(!runs.length) return;
-      const rows=runs.map(c=>({c,m:cableLenM(c)||0})).sort((a,b)=>b.m-a.m);
-      const sum=rows.reduce((s,x)=>s+x.m,0); tot+=sum;
+  const rent={}, rentOrder=[];                     // label -> count, insertion-ordered
+  const addRent=(label,n)=>{ if(!(n>0))return; if(!(label in rent))rentOrder.push(label); rent[label]=(rent[label]||0)+n; };
+  const usedPieces={};                             // 'otype|len' -> pieces used, for the inventory rows
+  /* new centrals vs the centrals we own */
+  if(matNodes.length){
+    const t1=document.createElement('div'); t1.className='legsub'; t1.textContent='New centrals ('+matNodes.length+')'; el.appendChild(t1);
+    const grp={};
+    matNodes.forEach(n=>{ const k=n.kind+'|'+n.rating; (grp[k]=grp[k]||[]).push(n); });
+    Object.keys(grp).sort((a,b)=>{
+      const A=a.split('|'), B=b.split('|');
+      if(A[0]!==B[0]) return A[0]==='source'?-1:1;
+      return (+B[1])-(+A[1]);
+    }).forEach(k=>{
+      const p=k.split('|'), kind=p[0], r=+p[1], list=grp[k];
+      const kl=kind==='source'?'source':'cabinet';
+      const have=INV.centrals.filter(c=>c.kind===kind&&c.rating===r).reduce((s,c)=>s+c.count,0);
+      const short=Math.max(0,list.length-have);
+      addRent(r+' A '+kl,short);
+      const row=document.createElement('div'); row.className='legrow';
+      row.innerHTML='<div class="sw" style="background:'+(kind==='source'?'#0e2033':'#181b22')+';border:2px solid '+NET_GRAY+';'+(kind==='source'?'border-radius:50%':'')+'"></div>'
+        +'<div class="lname">'+r+' A '+kl
+        +'<div style="font-size:10px;color:var(--muted);font-weight:400">'+esc(list.map(n=>EN[n.id]||'?').join(' · '))+'</div></div>'
+        +'<div class="lcount">need '+list.length+' · have '+Math.min(have,list.length)
+        +(short?' · <b style="color:var(--danger)">rent '+short+'</b>':'')+'</div>';
+      el.appendChild(row);
+    });
+  }
+  /* new cable runs, allocated onto the owned pieces */
+  if(matRuns.length){
+    const t2=document.createElement('div'); t2.className='legsub'; t2.textContent='New cable ('+matRuns.length+' run'+(matRuns.length===1?'':'s')+')'; el.appendChild(t2);
+    if(!ppm){ const d=document.createElement('div'); d.className='hint'; d.textContent='Set the scale (ppm) to calculate cable lengths.'; el.appendChild(d); }
+    else ['125A','63A','32A','16A','220V','?'].forEach(k=>{
+      const runs=matRuns.filter(c=>(c.otype||'?')===k); if(!runs.length) return;
+      const needs=runs.map(c=>({c,need:Math.ceil(cableLenM(c)||0)}));
+      const pieces=[]; INV.cables.forEach(p=>{ if(p.otype===k) for(let i=0;i<p.count;i++) pieces.push(p.len); });
+      const A=allocateCable(needs,pieces);
+      const totNeed=needs.reduce((s,x)=>s+x.need,0);
       const hd=document.createElement('div'); hd.className='legrow';
-      hd.innerHTML='<div class="sw" style="background:'+NET_GRAY+'"></div><div class="lname"><b>'+esc(k)+' cable</b></div><div class="lcount">'+runs.length+'&#215; · '+fmtM(sum)+'</div>';
+      hd.innerHTML='<div class="sw" style="background:'+NET_GRAY+'"></div><div class="lname"><b>'+esc(k)+' cable</b></div><div class="lcount">'+needs.length+' run(s) · '+totNeed+' m</div>';
       el.appendChild(hd);
-      rows.forEach(x=>{
+      A.alloc.forEach(a=>{
+        a.own.forEach(l=>{ const key=k+'|'+l; usedPieces[key]=(usedPieces[key]||0)+1; });
+        a.rent.forEach(l=>addRent(l+' m '+k+' cable',1));
         let dn;
-        if(x.c.dstKind==='tent'){ const t=placed.find(p=>String(p.ref.id)===String(x.c.dst)); dn=t?refOf(t).name:String(x.c.dst); }
-        else dn=EN[x.c.dst]||'?';
+        if(a.run.c.dstKind==='tent'){ const t=placed.find(p=>String(p.ref.id)===String(a.run.c.dst)); dn=t?refOf(t).name:String(a.run.c.dst); }
+        else dn=EN[a.run.c.dst]||'?';
+        const got=(a.own.length?a.own:a.rent).reduce((s,l)=>s+l,0);
+        const use=a.own.length?('own '+a.own.join('+')+' m'+(got>a.run.need?' ('+(got-a.run.need)+' m over)':''))
+                              :('rent '+a.rent.join('+')+' m');
         const row=document.createElement('div'); row.className='legrow'; row.style.cursor='pointer'; row.title='Click to find it on the plan';
-        row.innerHTML='<div class="sw" style="background:transparent"></div><div class="lname" style="font-weight:400">'+esc(EN[x.c.src]||'?')+' &rarr; '+esc(dn)+'</div><div class="lcount">'+fmtM(x.m)+'</div>';
-        row.onclick=()=>{ const A=cableAnchors(x.c); if(A) map.panTo(pathMidpoint(pathFromAnchors(A))); };
+        row.innerHTML='<div class="sw" style="background:transparent"></div>'
+          +'<div class="lname" style="font-weight:400">'+esc(EN[a.run.c.src]||'?')+' &rarr; '+esc(dn)
+          +'<div style="font-size:10px;color:var(--muted);font-weight:400">need '+a.run.need+' m &rarr; '+esc(use)+'</div></div>'
+          +'<div class="lcount"'+(a.rent.length?' style="color:var(--danger)"':'')+'>'+got+' m</div>';
+        row.onclick=()=>{ const an=cableAnchors(a.run.c); if(an) map.panTo(pathMidpoint(pathFromAnchors(an))); };
         el.appendChild(row);
       });
     });
+  }
+  if(!matNodes.length&&!matRuns.length){
+    const d=document.createElement('div'); d.className='hint';
+    d.textContent='Nothing marked as new yet. Give a central a colour (double-click it) or a cable a colour (Wire tool on, double-click the wire) and it is counted here.';
+    el.appendChild(d);
+  }
+  /* to rent: the merged shortfall */
+  const t3=document.createElement('div'); t3.className='legsub'; t3.textContent='To rent'; el.appendChild(t3);
+  if(!rentOrder.length){
+    const d=document.createElement('div'); d.className='hint'; d.textContent='Nothing — the inventory covers all new material.'; el.appendChild(d);
+  }else rentOrder.forEach(label=>{
     const row=document.createElement('div'); row.className='legrow';
-    row.innerHTML='<div class="sw" style="background:transparent"></div><div class="lname"><b>Total cable</b></div><div class="lcount"><b>'+fmtM(tot)+'</b></div>';
+    row.innerHTML='<div class="sw" style="background:transparent"></div><div class="lname" style="color:var(--danger)">'+rent[label]+' &#215; '+esc(label)+'</div>';
     el.appendChild(row);
+  });
+  /* inventory editor (what we have) */
+  const t4=document.createElement('div'); t4.className='legsub'; t4.textContent='Inventory — what we have'; el.appendChild(t4);
+  const OT_ORDER=['125A','63A','32A','16A','220V'];
+  const invRemove=(arr,item)=>{ const i=arr.indexOf(item); if(i>=0)arr.splice(i,1); queueInvSave(); renderElMat(); };
+  const mkRow=(label,sub,onRemove)=>{
+    const row=document.createElement('div'); row.className='legrow';
+    const nm=document.createElement('div'); nm.className='lname';
+    nm.innerHTML=esc(label)+(sub?'<div style="font-size:10px;color:var(--muted);font-weight:400">'+esc(sub)+'</div>':'');
+    row.appendChild(nm);
+    if(ADMIN){
+      const x=document.createElement('button'); x.textContent='✕'; x.title='Remove from inventory';
+      x.style.cssText='padding:2px 8px;font-size:11px'; x.onclick=onRemove; row.appendChild(x);
+    }
+    return row;
+  };
+  INV.cables.slice().sort((a,b)=>{ const d=OT_ORDER.indexOf(a.otype)-OT_ORDER.indexOf(b.otype); return d||b.len-a.len; })
+    .forEach(p=>{
+      const used=Math.min(usedPieces[p.otype+'|'+p.len]||0,p.count);
+      el.appendChild(mkRow(p.count+' × '+p.len+' m '+p.otype+' cable',
+        used?('used '+used+' · spare '+(p.count-used)):'unused',
+        ()=>invRemove(INV.cables,p)));
+    });
+  INV.centrals.slice().sort((a,b)=>(a.kind===b.kind?b.rating-a.rating:(a.kind==='source'?-1:1)))
+    .forEach(p=>{
+      el.appendChild(mkRow(p.count+' × '+p.rating+' A '+(p.kind==='source'?'source':'cabinet'),'',
+        ()=>invRemove(INV.centrals,p)));
+    });
+  if(!INV.cables.length&&!INV.centrals.length){
+    const d=document.createElement('div'); d.className='hint'; d.textContent='Empty — everything new lands under "To rent". Add the cable and centrals you own below.'; el.appendChild(d);
+  }
+  if(ADMIN){
+    const mkSel=opts=>{ const s=document.createElement('select');
+      opts.forEach(o=>{ const e=document.createElement('option'); e.value=o[0]; e.textContent=o[1]; s.appendChild(e); }); return s; };
+    const mkNum=(ph,val)=>{ const i=document.createElement('input'); i.type='number'; i.min='1'; i.placeholder=ph; if(val)i.value=val; return i; };
+    // cable form: type · length · count
+    const cf=document.createElement('div'); cf.className='invform';
+    const cSel=mkSel([['16A','16A'],['32A','32A'],['63A','63A'],['125A','125A'],['220V','220V']]);
+    const cLen=mkNum('m'), cCnt=mkNum('count',1);
+    const cBtn=document.createElement('button'); cBtn.textContent='Add cable';
+    cBtn.onclick=()=>{ const len=parseFloat(String(cLen.value).replace(',','.')), cnt=parseInt(cCnt.value,10)||1;
+      if(!(len>0)) return;
+      const ex=INV.cables.find(p=>p.otype===cSel.value&&p.len===len);
+      if(ex) ex.count+=cnt; else INV.cables.push({otype:cSel.value,len,count:cnt});
+      queueInvSave(); renderElMat(); };
+    [cSel,cLen,cCnt,cBtn].forEach(x=>cf.appendChild(x)); el.appendChild(cf);
+    // central form: kind · rating · count
+    const nf=document.createElement('div'); nf.className='invform';
+    const nKind=mkSel([['elskap','cabinet'],['source','source']]);
+    const nRat=mkSel([['16','16 A'],['32','32 A'],['63','63 A'],['125','125 A']]);
+    const nCnt=mkNum('count',1);
+    const nBtn=document.createElement('button'); nBtn.textContent='Add central';
+    nBtn.onclick=()=>{ const cnt=parseInt(nCnt.value,10)||1, r=parseInt(nRat.value,10);
+      const ex=INV.centrals.find(p=>p.kind===nKind.value&&p.rating===r);
+      if(ex) ex.count+=cnt; else INV.centrals.push({kind:nKind.value,rating:r,count:cnt});
+      queueInvSave(); renderElMat(); };
+    [nKind,nRat,nCnt,nBtn].forEach(x=>nf.appendChild(x)); el.appendChild(nf);
+    const hs=document.createElement('div'); hs.className='hint';
+    hs.textContent='The inventory is shared across the areas and synced via the "inventory" tab in the Sheet (created automatically on the first save).';
+    el.appendChild(hs);
   }
 }
 

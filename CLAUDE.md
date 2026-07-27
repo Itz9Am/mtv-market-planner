@@ -237,13 +237,34 @@ the map node (the **Names** toggle in the El toolbar, `LS.cabnames`, global like
 (`Overview | Cabinets | Material` seg → `renderElTree()`, a clickable distribution tree);
 and the `elskap` placements column (below).
 
-### El sidebar: Material sub-view
+### El sidebar: Material sub-view (+ inventory)
 
-Third seg option under El (`renderElMat()`, `#elMat`): a procurement list — centrals
-grouped by kind+rating with their designations, then cable per socket type with run
-count, total metres and every individual run (`A1 → name · length`, longest first,
-click pans to the run). **First cut** — the user said more detail on its contents is
-coming (2026-07); extend `renderElMat()` when it does.
+Third seg option under El (`renderElMat()`, `#elMat`). Semantics the user set
+(2026-07): **gray = already in place at the site**, so only centrals and cables that
+were *given a colour* count as new material (`isNewMat` — no colour, or explicitly
+NET_GRAY, is skipped). Sections:
+
+- **New centrals**: coloured nodes grouped kind+rating, `need / have / rent` against
+  the inventory.
+- **New cable**: per socket type, each coloured run (`A1 → name`, need in whole
+  metres) with the owned pieces allocated onto it — `allocateCable()`: longest run
+  first, best-fit single piece, else a chain (largest first, tightest finisher); a run
+  the pool can't reach is rented whole. Rent suggestions (`rentPiecesFor`) decompose
+  the need rounded up to 5 m into standard lengths `RENT_LENS=[5,10,25,50]` with zero
+  rented waste. Both helpers are pure and node-tested (harness pattern).
+- **To rent**: the merged shortfall (centrals + cable pieces).
+- **Inventory — what we have**: editable list (admin) of owned cable pieces
+  (`type/len/count`) and centrals (`kind/rating/count`), with per-row used/spare.
+
+Inventory state is **global across areas** (`INV`, `LS.inv`/`LS.invDirty`,
+un-namespaced) and syncs through its **own `inventory` Sheet tab**
+(`kind|type|len|count`), deliberately OUTSIDE the four-tab batch: a missing range
+fails a whole batchGet/batchUpdate, so `loadInventory()`/`runInvSave()` are separate,
+lenient requests (errors never break plan sync) and the tab is **auto-created**
+(`addSheet`) on the first save that finds it missing. `LS.invDirty` mirrors the
+`LS.dirty` rule: local unsynced inventory wins over a startup load. Caveat: allocation
+runs per ACTIVE area against the whole global inventory — new material in two areas at
+once could double-book a piece (accepted; the network lives on Marknad).
 
 ### Colours (both optional, both persisted)
 
@@ -508,6 +529,8 @@ nodes       id | domain | kind | rating | x | y | unl |
 cables      src | dst | dstKind | domain | otype | phase | color
             (+ trailing area | pts)
 meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
+inventory   kind | type | len | count      (owned material; NOT in the main batch —
+            auto-created, lenient separate read/write, see the Material sub-view section)
 ```
 
 `pts` (cable waypoints) is a trailing column AFTER `area`, for the same positional-
