@@ -234,18 +234,60 @@ They are **derived from the wiring by `elNames()`, never stored** — rewiring r
 A cabinet with no path to a source shows `?`. Surfaced in four places: a name badge on
 the map node (the **Names** toggle in the El toolbar, `LS.cabnames`, global like
 `letters`); the El legend rows; the **Cabinets** sub-view of the El sidebar
-(`Overview | Cabinets` seg → `renderElTree()`, a clickable distribution tree); and the
-`elskap` placements column (below).
+(`Overview | Cabinets | Material` seg → `renderElTree()`, a clickable distribution tree);
+and the `elskap` placements column (below).
+
+### El sidebar: Material sub-view (+ inventory)
+
+Third seg option under El (`renderElMat()`, `#elMat`). Semantics the user set
+(2026-07): **gray = already in place at the site**, so only centrals and cables that
+were *given a colour* count as new material (`isNewMat` — no colour, or any grayish
+colour, is skipped; see the Colours section). Sections:
+
+- **New centrals**: coloured nodes grouped kind+rating, `need / have / rent` against
+  the inventory.
+- **New cable**: per socket type, each coloured run (`A1 → name`, need in whole
+  metres) with the owned pieces allocated onto it — `allocateCable()`: longest run
+  first, best-fit single piece, else a chain (largest first, tightest finisher); a run
+  the pool can't reach is rented whole. Rent suggestions (`rentPiecesFor`) decompose
+  the need rounded up to 5 m into standard lengths `RENT_LENS=[5,10,25,50]` with zero
+  rented waste. Both helpers are pure and node-tested (harness pattern).
+- **To rent**: the merged shortfall (centrals + cable pieces).
+- **Inventory — what we have**: editable list (admin) of owned cable pieces
+  (`type/len/count`) and centrals (`kind/rating/count`), with per-row used/spare.
+
+Inventory state is **global across areas** (`INV`, `LS.inv`/`LS.invDirty`,
+un-namespaced) and syncs through its **own `inventory` Sheet tab**
+(`kind|type|len|count`), deliberately OUTSIDE the four-tab batch: a missing range
+fails a whole batchGet/batchUpdate, so `loadInventory()`/`runInvSave()` are separate,
+lenient requests (errors never break plan sync) and the tab is **auto-created**
+(`addSheet`) on the first save that finds it missing. `LS.invDirty` mirrors the
+`LS.dirty` rule: local unsynced inventory wins over a startup load. Caveat: allocation
+runs per ACTIVE area against the whole global inventory — new material in two areas at
+once could double-book a piece (accepted; the network lives on Marknad).
 
 ### Colours (both optional, both persisted)
 
+**Placed centrals and cables draw NEUTRAL GRAY by default** (`NET_GRAY='#444444'`, user
+request 2026-07): `cableColor()` no longer falls back to the rating colour, and
+`renderNode`'s border is gray instead of `ratingColor`. `otypeColor`/`ratingColor` keep
+the old mapping (32A orange, 16A yellow, 63A/125A red, 220V light blue) but are no
+longer used for defaults. Load-band colouring (amber/red text, vivid red dashed wires)
+and the gold highlight are unchanged and still win visually.
+
+**ANY gray shade counts as gray.** The user accidentally applied several grays
+(`#444444` on the trunk cables — the one they declared correct, "the one A1N1N1 has" —
+plus `#232323`), so `isGrayish()` (hex channel spread ≤ 30) decides: a grayish
+node/cable colour renders as `NET_GRAY` and does NOT count as new material
+(`isNewMat = has colour && !grayish`). The stored values are left untouched — this is
+a render/count-time normalisation, not a data migration.
+
 - **Node middle fill** (`n.color`): the source/cabinet modal has a colour picker for the
-  *middle* only — the **border stays the rating colour** (`ratingColor`, drawn as an inline
-  `border-color`). `color` absent means *use the CSS default* (`#181b22` cabinet /
+  *middle* only — the **border stays gray** (drawn as an inline `border-color`).
+  `color` absent means *use the CSS default* (`#181b22` cabinet /
   `#0e2033` source); "Reset to default" clears it. Like `outs`, absent ≠ a stored value —
   `nodeFromRow`/`nodeToRow` keep the column blank when unset.
-- **Wire colour** (`c.color`): default is the output's rating colour (`cableColor` →
-  `otypeColor`: 32A orange, 16A yellow, 63A/125A red, 220V light blue; water blue). Every
+- **Wire colour** (`c.color`): default is neutral gray (water pipes stay blue). Every
   wire is drawn as two polylines — a black **casing** underneath for a clean outline, then
   the colour on top. Right-clicking a wire **with the Wire tool on** (admin) opens a small
   modal to recolour or remove it; "Use default" clears the override. Overload still wins
@@ -320,6 +362,10 @@ branches from it); deleting a pipe cascades through its kopplingar and their bra
 ### Product requirements the user has stated explicitly
 
 - **No emoji anywhere.** Monochrome glyphs (`↺ ↻ ✕`) only. `build.py` warns.
+- **NEVER native `<select>` dropdowns** ("those shiny drop downs", 2026-07). Closed
+  option sets use the app's `.seg` segmented buttons (see the inventory forms in
+  `renderElMat`). The pre-existing styled selects in the modals are tolerated legacy —
+  don't add new ones, and prefer converting them to segs when touching those modals.
 - Footprints are always true-to-scale; the earlier fixed-size toggle was removed.
 - Names are always drawn, even when unreadably small. Placement letters can be hidden
   via the **Letters** toggle; tent sizes (metres) show on the label under a **Sizes**
@@ -494,6 +540,8 @@ nodes       id | domain | kind | rating | x | y | unl |
 cables      src | dst | dstKind | domain | otype | phase | color
             (+ trailing area | pts)
 meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
+inventory   kind | type | len | count      (owned material; NOT in the main batch —
+            auto-created, lenient separate read/write, see the Material sub-view section)
 ```
 
 `pts` (cable waypoints) is a trailing column AFTER `area`, for the same positional-

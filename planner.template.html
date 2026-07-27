@@ -27,9 +27,17 @@
   .tabs .tab:hover{color:var(--txt)}
   .tabs .tab.on{color:var(--txt);border-bottom-color:var(--accent);font-weight:600}
   #elLegend{padding:6px 4px}
-  /* El tab sub-views: Overview (legend) | Cabinets (distribution tree) */
+  /* El tab sub-views: Overview (legend) | Cabinets (distribution tree) | Material (procurement list) */
   #elViewSeg{margin:8px 14px 0}
   #elViewSeg button{flex:1}
+  /* Material view: inventory entry forms. NO native <select> dropdowns (user rule) —
+     closed option sets are .seg segmented buttons. */
+  #elMat .invform{display:flex;gap:6px;margin:6px 10px;align-items:center}
+  #elMat .invform.invtop{margin-bottom:0}
+  #elMat .invform input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:7px 8px;border-radius:7px;font-size:12px}
+  #elMat .invform button{white-space:nowrap}
+  #elMat .invform .seg{flex:1}
+  #elMat .invform .seg button{flex:1;padding:6px 4px;font-size:11px;white-space:nowrap}
   #elTree{padding:6px 10px 16px}
   #elTree .etkids{margin:0 0 0 13px;border-left:1px dashed var(--line);padding-left:9px}
   #elTree .etnode{display:flex;align-items:center;gap:8px;padding:7px 9px;margin:5px 0;background:var(--panel2);border:1px solid var(--line);border-radius:9px;cursor:pointer}
@@ -199,9 +207,11 @@
       <div class="seg" id="elViewSeg">
         <button data-v="overview" class="on">Overview</button>
         <button data-v="cabinets">Cabinets</button>
+        <button data-v="material">Material</button>
       </div>
       <div id="elLegend"></div>
       <div id="elTree" style="display:none"></div>
+      <div id="elMat" style="display:none"></div>
     </div>
     <div id="vattenUI" style="display:none">
       <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. With Wire on: click a pipe to add a blue dot you can drag to bend it; <b>double-click the dot</b> to switch sharp/curve, right-click it to make it a gray <b>koppling</b> or remove it. A koppling is a junction: click it and then a tent/handfat to branch a new pipe from that point (right-click removes it with its branches). <b>Double-click the pipe</b> (or right-click) to recolour or remove it. Ctrl+Z undoes, Ctrl+Shift+Z redoes. Select a fixture and press Delete.</div>
@@ -364,7 +374,7 @@
 <div class="modal-bg" id="cabBg">
   <div class="modal">
     <h3>Wire colour</h3>
-    <p>Pick a colour for this wire. By default a wire takes its cabinet's rating colour (32A orange, 16A yellow, 63A/125A red) with a black outline.</p>
+    <p>Pick a colour for this wire. By default a wire is neutral gray with a black outline.</p>
     <div class="row">
       <div><label>Wire colour</label><input id="cabColor" type="color" value="#ffb35c" style="height:38px;padding:2px"/></div>
       <div><label>&nbsp;</label><button id="cabColorReset" type="button" style="width:100%">Use default</button></div>
@@ -389,7 +399,7 @@
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1',sizes:'mtvi_sizes_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1',sizes:'mtvi_sizes_v1',inv:'mtvi_inv_v1',invDirty:'mtvi_invdirty_v1'};
 /* Two independent plans ("areas"), each with its own tents, wiring, scale, view and base
    image. The plan-state keys below are namespaced per area in localStorage; the default
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
@@ -1075,7 +1085,7 @@ function renderLegend(){
     const p=phaseLoads(n.id), peak=Math.max(p[0],p[1],p[2]), lv=loadLevel(peak,nodeRatingAmp(n));
     const free=(n.kind==='source'&&n.unl!==false)?'unlimited':Object.keys(complementMap(n)).map(k=>`${freeCount(n,k)}×${k}`).join(' ');
     const row=document.createElement('div'); row.className='legrow';
-    row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${loadColor(lv,'var(--muted)')}">${peak}/${nodeRatingAmp(n)} A</div>`;
+    row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${NET_GRAY};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${loadColor(lv,'var(--muted)')}">${peak}/${nodeRatingAmp(n)} A</div>`;
     el.appendChild(row);
   });
   /* cable lengths, per socket type — what the electricians need to order/pull */
@@ -1088,7 +1098,7 @@ function renderLegend(){
       elc.forEach(c=>{ const m=cableLenM(c); if(m==null)return; const k=c.otype||'?'; byType[k]=(byType[k]||0)+m; tot+=m; });
       ['125A','63A','32A','16A','220V','?'].filter(k=>byType[k]).forEach(k=>{
         const row=document.createElement('div'); row.className='legrow';
-        row.innerHTML='<div class="sw" style="background:'+(k==='?'?'#888':otypeColor(k))+'"></div><div class="lname">'+esc(k)+' cable</div><div class="lcount">'+fmtM(byType[k])+'</div>';
+        row.innerHTML='<div class="sw" style="background:'+NET_GRAY+'"></div><div class="lname">'+esc(k)+' cable</div><div class="lcount">'+fmtM(byType[k])+'</div>';
         el.appendChild(row);
       });
       const row=document.createElement('div'); row.className='legrow';
@@ -1101,6 +1111,7 @@ function renderLegend(){
   const waiting=library.filter(x=>!placedAnywhere(x.id)&&!removed.has(String(x.id))&&tentReq(applyEdits(x).electricity)).length;
   if(waiting){ const d=document.createElement('div'); d.className='hint'; d.textContent=waiting+' more tent(s) needing power are not placed yet.'; el.appendChild(d); }
   renderElTree();   // keep the Cabinets sub-view in sync with every change that redraws the legend
+  renderElMat();    // …and the Material sub-view
 }
 
 /* ---------- Google Sheets sync (shared project state) ----------
@@ -1462,6 +1473,7 @@ async function runAutoSave(){
 async function autoLoadStartup(){
   const cfg=sheetCfg();
   if(!cfg.spreadsheetId) return;
+  if(lsGet(LS.invDirty,0)) runInvSave(); else loadInventory();   // inventory rides its own tab; fire-and-forget
   if(lsGet(LS.dirty,0)){ setSync('pending'); queueSheetSave(); return; }
   if(!haveToken() && !cfg.apiKey){ try{ await getToken(false); }catch(e){ setSync('signin'); return; } }
   setSync('loading');
@@ -1500,6 +1512,7 @@ async function remoteReload(){
     const M=currentAreaObjs(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
     applySheetState(P,N,C,M,true);                 // keepView: don't yank the user's pan/zoom
     GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
+    loadInventory();                               // fire-and-forget; inventory saves don't bump meta.savedAt
     return M;
   } finally { SYNC.loading=false; }
 }
@@ -1524,6 +1537,59 @@ async function pollRemote(){
 let pollTimer=null;
 function startPolling(){ if(!pollTimer) pollTimer=setInterval(pollRemote,15000); }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRemote(); });   // catch up on refocus
+
+/* --- inventory (what we own): GLOBAL, synced via its own `inventory` Sheet tab ---
+   Deliberately OUTSIDE the main four-tab batch: the tab may not exist yet, and one
+   missing range fails a whole batchGet/batchUpdate — so inventory reads and writes
+   are separate, lenient requests whose errors can never break the plan sync. The
+   tab is auto-created (addSheet) on the first save that finds it missing.
+   INV={cables:[{otype,len,count}],centrals:[{kind,rating,count}]} — one row each. */
+let INV=lsGet(LS.inv,{cables:[],centrals:[]});
+const INV_HEADERS=['kind','type','len','count'];
+const INV_RANGE='inventory!A1:D', INV_CLEAR='inventory!A2:D';
+function invRows(){
+  return [INV_HEADERS]
+    .concat(INV.cables.map(c=>['cable',c.otype,c.len,c.count]))
+    .concat(INV.centrals.map(c=>[c.kind,c.rating,'',c.count]));
+}
+function invFromRows(values){
+  const out={cables:[],centrals:[]};
+  rowsToObjects(values,INV_HEADERS).forEach(o=>{
+    const cnt=gnum(o.count)||0; if(cnt<=0) return;
+    if(o.kind==='cable'){ const len=gnum(o.len); if(len>0&&!isBlank(o.type)) out.cables.push({otype:String(o.type),len,count:cnt}); }
+    else if(o.kind==='source'||o.kind==='elskap'){ const r=gnum(o.type); if(r) out.centrals.push({kind:o.kind,rating:r,count:cnt}); }
+  });
+  return out;
+}
+async function loadInventory(){
+  if(!sheetCfg().spreadsheetId) return;
+  try{
+    const vr=await sheetBatchGet([INV_RANGE]);
+    if(!lsGet(LS.invDirty,0)){   // local unsynced inventory edits win, like LS.dirty
+      INV=invFromRows((vr[0]&&vr[0].values)||[]); lsSet(LS.inv,INV);
+      if(currentTab==='el') renderElMat();
+    }
+  }catch(e){/* tab doesn't exist yet, or transient — the local inventory stands */}
+}
+let invTimer=null;
+function queueInvSave(){
+  lsSet(LS.inv,INV); lsSet(LS.invDirty,1);
+  clearTimeout(invTimer); invTimer=setTimeout(runInvSave,2000);
+}
+async function runInvSave(){
+  if(!sheetCfg().spreadsheetId) return;
+  try{ if(!haveToken()) await getToken(false); }   // silent only — never a popup
+  catch(e){ return; }                              // stays local-dirty; retried on next edit / sign-in
+  try{
+    try{ await sheetApi('/values:batchClear',{ranges:[INV_CLEAR]}); }
+    catch(e){
+      if(!/Unable to parse range|not found/i.test(e.message||'')) throw e;
+      await sheetApi(':batchUpdate',{requests:[{addSheet:{properties:{title:'inventory'}}}]});   // first save: create the tab
+    }
+    await sheetApi('/values:batchUpdate',{valueInputOption:'RAW',data:[{range:INV_RANGE,values:invRows()}]});
+    lsSet(LS.invDirty,0);
+  }catch(e){/* keep the dirty flag; retried on the next inventory edit or startup */}
+}
 
 /* --- sign-in (config is hard-coded; no settings UI). The sync indicator is the
    only Sheet control: click it to sign in, which the browser allows because it's a
@@ -1558,10 +1624,21 @@ function ampOf(s){ const m=/(\d+)\s*A/i.exec(s||''); return m?parseInt(m[1]):0; 
 function tentAmp(id){ const t=placed.find(x=>String(x.ref.id)===String(id)); if(!t)return 0;
   const r=tentReq(refOf(t).electricity); return r?r.amp:0; }   // through tentReq so the 220V=16A rule applies to the load maths
 function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
-/* default wire colour = the rating colour of its output: 32A orange, 16A yellow,
-   63A/125A red, 220V light blue. A per-cable c.color overrides it. */
+/* Placed centrals and cables draw NEUTRAL GRAY by default (user request 2026-07,
+   replacing the earlier rating-colour defaults: 32A orange, 16A yellow, 63A/125A red,
+   220V light blue — otypeColor keeps that mapping if it's ever wanted back). A per-cable
+   c.color override, the overload red/amber bands and the gold highlight still win. */
+const NET_GRAY='#444444';   // THE gray (user 2026-07: "the correct one is the one A1N1N1 has")
+/* Gray = ALREADY IN PLACE at the site; a central/cable that was GIVEN a colour is NEW
+   and counts as material to source (user rule 2026-07). The user accidentally applied
+   SEVERAL gray shades (#444444, #232323 …), so ANY gray shade counts as existing
+   (isGrayish: low channel spread) and every gray draws as the one NET_GRAY. */
+function hexRGB(col){ const m=/^#([0-9a-f]{6})$/i.exec(String(col||'').trim()); if(!m)return null;
+  const v=parseInt(m[1],16); return [(v>>16)&255,(v>>8)&255,v&255]; }
+function isGrayish(col){ const c=hexRGB(col); return !!c && Math.max(c[0],c[1],c[2])-Math.min(c[0],c[1],c[2])<=30; }
+function isNewMat(col){ return !isBlank(col) && !isGrayish(col); }
 function otypeColor(ot){ if(ot==='220V')return '#9FC5E8'; return ratingColor(parseInt(ot)||0); }
-function cableColor(c){ if(c.color)return c.color; if(c.domain==='water')return '#2b8cff'; return otypeColor(c.otype); }
+function cableColor(c){ if(c.domain==='water') return c.color||'#2b8cff'; return isNewMat(c.color)?c.color:NET_GRAY; }
 /* ---- cable geometry: waypoints (bend/curve dots), smoothing, lengths ----
    A cable's anchors are [source, …c.pts…, destination]. A 'b' dot is a sharp corner,
    a 'c' dot pulls a smooth Catmull-Rom curve through it, an 'n' dot rides on a water
@@ -1966,13 +2043,15 @@ function setLengths(on){ showLengths=on; lsSet(LS.lengths,on);
   redrawCables(); }
 document.getElementById('lenBtnEl').onclick=()=>setLengths(!showLengths);
 document.getElementById('lenBtnVa').onclick=()=>setLengths(!showLengths);
-/* El sidebar sub-views: Overview (legend) | Cabinets (distribution tree) */
+/* El sidebar sub-views: Overview (legend) | Cabinets (distribution tree) | Material (procurement list) */
 let elView='overview';
 function setElView(v){ elView=v;
   document.querySelectorAll('#elViewSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.getElementById('elLegend').style.display=v==='overview'?'':'none';
   document.getElementById('elTree').style.display=v==='cabinets'?'':'none';
-  if(v==='cabinets') renderElTree(); }
+  document.getElementById('elMat').style.display=v==='material'?'':'none';
+  if(v==='cabinets') renderElTree();
+  if(v==='material') renderElMat(); }
 document.querySelectorAll('#elViewSeg button').forEach(b=>{ b.onclick=()=>setElView(b.dataset.v); });
 /* The Cabinets view: the whole distribution tree, one card per source/cabinet with its
    designation, per-phase load and free sockets, and the tents it feeds indented under it.
@@ -2020,6 +2099,204 @@ function renderElTree(){
   if(orphans.length){
     const h=document.createElement('div'); h.className='legsub'; h.textContent='Not connected to a source'; el.appendChild(h);
     orphans.forEach(n=>renderSub(n,el));
+  }
+}
+
+/* --- material allocation: fit the owned cable pieces onto the NEW runs ---
+   Heuristic, longest run first: best-fit single piece (smallest that covers), else a
+   chain — largest pieces first, finished by the smallest piece that completes it. If
+   the pool can't reach a run's length at all, that run is RENTED whole (the owned
+   pieces stay in the pool for the remaining runs). Rent suggestions decompose the
+   need, rounded up to 5 m, into standard lengths so no rented metre is wasted.
+   Pure — node-tested (see CLAUDE.md). */
+const RENT_LENS=[5,10,25,50];
+function rentPiecesFor(need){
+  let n=Math.ceil(need/5)*5; const out=[];
+  while(n>=50){ out.push(50); n-=50; }
+  if(n>=25){ out.push(25); n-=25; }
+  while(n>=10){ out.push(10); n-=10; }
+  if(n>0) out.push(5);
+  return out;
+}
+function allocateCable(runs,pieces){
+  const pool=pieces.slice().sort((a,b)=>a-b), alloc=[];
+  runs.slice().sort((a,b)=>b.need-a.need).forEach(r=>{
+    const need=Math.ceil(r.need);
+    const i=pool.findIndex(l=>l>=need);                    // pool is ascending → best fit
+    if(i>=0){ alloc.push({run:r,own:[pool[i]],rent:[]}); pool.splice(i,1); return; }
+    const tmp=pool.slice(), take=[]; let sum=0;            // chain: big first, tight finish
+    while(sum<need&&tmp.length){
+      const f=tmp.findIndex(l=>l>=need-sum);
+      if(f>=0){ take.push(tmp[f]); sum+=tmp[f]; tmp.splice(f,1); }
+      else { const big=tmp.pop(); take.push(big); sum+=big; }
+    }
+    if(sum>=need){ take.forEach(l=>pool.splice(pool.indexOf(l),1)); alloc.push({run:r,own:take,rent:[]}); }
+    else alloc.push({run:r,own:[],rent:rentPiecesFor(need)});   // can't cover → rent this run whole
+  });
+  return {alloc,left:pool};
+}
+
+/* The Material view: what NEW material the plan needs and how to source it.
+   Gray (the default) = already in place at the site, so only centrals and cables that
+   were GIVEN a colour count (isNewMat). The owned inventory (editable at the bottom,
+   synced via the `inventory` Sheet tab) is allocated onto the new runs; the shortfall
+   is summed under "To rent". Allocation is per ACTIVE AREA against the whole global
+   inventory — with new material in two areas at once the same piece could be counted
+   twice; acceptable for now (the network lives on Marknad). */
+function renderElMat(){
+  const el=document.getElementById('elMat'); if(!el) return; el.innerHTML='';
+  const elNodes=nodes.filter(n=>n.domain==='el'), elc=cables.filter(c=>c.domain==='el');
+  const matNodes=elNodes.filter(n=>isNewMat(n.color)), matRuns=elc.filter(c=>isNewMat(c.color));
+  const grayN=elNodes.length-matNodes.length, grayC=elc.length-matRuns.length;
+  const h0=document.createElement('div'); h0.className='hint';
+  h0.textContent='Gray = already in place. Only centrals and cables given a colour count as new material'
+    +((grayN||grayC)?(' — skipping '+grayN+' gray central(s) and '+grayC+' gray cable(s).'):'.');
+  el.appendChild(h0);
+  const EN=elNames();
+  const rent={}, rentOrder=[];                     // label -> count, insertion-ordered
+  const addRent=(label,n)=>{ if(!(n>0))return; if(!(label in rent))rentOrder.push(label); rent[label]=(rent[label]||0)+n; };
+  const usedPieces={};                             // 'otype|len' -> pieces used, for the inventory rows
+  /* new centrals vs the centrals we own */
+  if(matNodes.length){
+    const t1=document.createElement('div'); t1.className='legsub'; t1.textContent='New centrals ('+matNodes.length+')'; el.appendChild(t1);
+    const grp={};
+    matNodes.forEach(n=>{ const k=n.kind+'|'+n.rating; (grp[k]=grp[k]||[]).push(n); });
+    Object.keys(grp).sort((a,b)=>{
+      const A=a.split('|'), B=b.split('|');
+      if(A[0]!==B[0]) return A[0]==='source'?-1:1;
+      return (+B[1])-(+A[1]);
+    }).forEach(k=>{
+      const p=k.split('|'), kind=p[0], r=+p[1], list=grp[k];
+      const kl=kind==='source'?'source':'cabinet';
+      const have=INV.centrals.filter(c=>c.kind===kind&&c.rating===r).reduce((s,c)=>s+c.count,0);
+      const short=Math.max(0,list.length-have);
+      addRent(r+' A '+kl,short);
+      const row=document.createElement('div'); row.className='legrow';
+      row.innerHTML='<div class="sw" style="background:'+(kind==='source'?'#0e2033':'#181b22')+';border:2px solid '+NET_GRAY+';'+(kind==='source'?'border-radius:50%':'')+'"></div>'
+        +'<div class="lname">'+r+' A '+kl
+        +'<div style="font-size:10px;color:var(--muted);font-weight:400">'+esc(list.map(n=>EN[n.id]||'?').join(' · '))+'</div></div>'
+        +'<div class="lcount">need '+list.length+' · have '+Math.min(have,list.length)
+        +(short?' · <b style="color:var(--danger)">rent '+short+'</b>':'')+'</div>';
+      el.appendChild(row);
+    });
+  }
+  /* new cable runs, allocated onto the owned pieces */
+  if(matRuns.length){
+    const t2=document.createElement('div'); t2.className='legsub'; t2.textContent='New cable ('+matRuns.length+' run'+(matRuns.length===1?'':'s')+')'; el.appendChild(t2);
+    if(!ppm){ const d=document.createElement('div'); d.className='hint'; d.textContent='Set the scale (ppm) to calculate cable lengths.'; el.appendChild(d); }
+    else ['125A','63A','32A','16A','220V','?'].forEach(k=>{
+      const runs=matRuns.filter(c=>(c.otype||'?')===k); if(!runs.length) return;
+      const needs=runs.map(c=>({c,need:Math.ceil(cableLenM(c)||0)}));
+      const pieces=[]; INV.cables.forEach(p=>{ if(p.otype===k) for(let i=0;i<p.count;i++) pieces.push(p.len); });
+      const A=allocateCable(needs,pieces);
+      const totNeed=needs.reduce((s,x)=>s+x.need,0);
+      const hd=document.createElement('div'); hd.className='legrow';
+      hd.innerHTML='<div class="sw" style="background:'+NET_GRAY+'"></div><div class="lname"><b>'+esc(k)+' cable</b></div><div class="lcount">'+needs.length+' run(s) · '+totNeed+' m</div>';
+      el.appendChild(hd);
+      A.alloc.forEach(a=>{
+        a.own.forEach(l=>{ const key=k+'|'+l; usedPieces[key]=(usedPieces[key]||0)+1; });
+        a.rent.forEach(l=>addRent(l+' m '+k+' cable',1));
+        let dn;
+        if(a.run.c.dstKind==='tent'){ const t=placed.find(p=>String(p.ref.id)===String(a.run.c.dst)); dn=t?refOf(t).name:String(a.run.c.dst); }
+        else dn=EN[a.run.c.dst]||'?';
+        const got=(a.own.length?a.own:a.rent).reduce((s,l)=>s+l,0);
+        const use=a.own.length?('own '+a.own.join('+')+' m'+(got>a.run.need?' ('+(got-a.run.need)+' m over)':''))
+                              :('rent '+a.rent.join('+')+' m');
+        const row=document.createElement('div'); row.className='legrow'; row.style.cursor='pointer'; row.title='Click to find it on the plan';
+        row.innerHTML='<div class="sw" style="background:transparent"></div>'
+          +'<div class="lname" style="font-weight:400">'+esc(EN[a.run.c.src]||'?')+' &rarr; '+esc(dn)
+          +'<div style="font-size:10px;color:var(--muted);font-weight:400">need '+a.run.need+' m &rarr; '+esc(use)+'</div></div>'
+          +'<div class="lcount"'+(a.rent.length?' style="color:var(--danger)"':'')+'>'+got+' m</div>';
+        row.onclick=()=>{ const an=cableAnchors(a.run.c); if(an) map.panTo(pathMidpoint(pathFromAnchors(an))); };
+        el.appendChild(row);
+      });
+    });
+  }
+  if(!matNodes.length&&!matRuns.length){
+    const d=document.createElement('div'); d.className='hint';
+    d.textContent='Nothing marked as new yet. Give a central a colour (double-click it) or a cable a colour (Wire tool on, double-click the wire) and it is counted here.';
+    el.appendChild(d);
+  }
+  /* to rent: the merged shortfall */
+  const t3=document.createElement('div'); t3.className='legsub'; t3.textContent='To rent'; el.appendChild(t3);
+  if(!rentOrder.length){
+    const d=document.createElement('div'); d.className='hint'; d.textContent='Nothing — the inventory covers all new material.'; el.appendChild(d);
+  }else rentOrder.forEach(label=>{
+    const row=document.createElement('div'); row.className='legrow';
+    row.innerHTML='<div class="sw" style="background:transparent"></div><div class="lname" style="color:var(--danger)">'+rent[label]+' &#215; '+esc(label)+'</div>';
+    el.appendChild(row);
+  });
+  /* inventory editor (what we have) */
+  const t4=document.createElement('div'); t4.className='legsub'; t4.textContent='Inventory — what we have'; el.appendChild(t4);
+  const OT_ORDER=['125A','63A','32A','16A','220V'];
+  const invRemove=(arr,item)=>{ const i=arr.indexOf(item); if(i>=0)arr.splice(i,1); queueInvSave(); renderElMat(); };
+  const mkRow=(label,sub,onRemove)=>{
+    const row=document.createElement('div'); row.className='legrow';
+    const nm=document.createElement('div'); nm.className='lname';
+    nm.innerHTML=esc(label)+(sub?'<div style="font-size:10px;color:var(--muted);font-weight:400">'+esc(sub)+'</div>':'');
+    row.appendChild(nm);
+    if(ADMIN){
+      const x=document.createElement('button'); x.textContent='✕'; x.title='Remove from inventory';
+      x.style.cssText='padding:2px 8px;font-size:11px'; x.onclick=onRemove; row.appendChild(x);
+    }
+    return row;
+  };
+  INV.cables.slice().sort((a,b)=>{ const d=OT_ORDER.indexOf(a.otype)-OT_ORDER.indexOf(b.otype); return d||b.len-a.len; })
+    .forEach(p=>{
+      const used=Math.min(usedPieces[p.otype+'|'+p.len]||0,p.count);
+      el.appendChild(mkRow(p.count+' × '+p.len+' m '+p.otype+' cable',
+        used?('used '+used+' · spare '+(p.count-used)):'unused',
+        ()=>invRemove(INV.cables,p)));
+    });
+  INV.centrals.slice().sort((a,b)=>(a.kind===b.kind?b.rating-a.rating:(a.kind==='source'?-1:1)))
+    .forEach(p=>{
+      el.appendChild(mkRow(p.count+' × '+p.rating+' A '+(p.kind==='source'?'source':'cabinet'),'',
+        ()=>invRemove(INV.centrals,p)));
+    });
+  if(!INV.cables.length&&!INV.centrals.length){
+    const d=document.createElement('div'); d.className='hint'; d.textContent='Empty — everything new lands under "To rent". Add the cable and centrals you own below.'; el.appendChild(d);
+  }
+  if(ADMIN){
+    /* NO native <select> dropdowns — the user banned them (2026-07). Closed option
+       sets are picked with the app's own .seg segmented buttons instead. */
+    const mkSeg=opts=>{
+      const s=document.createElement('div'); s.className='seg'; let val=opts[0][0];
+      const btns=opts.map(o=>{
+        const b=document.createElement('button'); b.type='button'; b.textContent=o[1];
+        if(o[0]===val) b.classList.add('on');
+        b.onclick=()=>{ val=o[0]; btns.forEach(x=>x.classList.toggle('on',x===b)); };
+        s.appendChild(b); return b; });
+      s.getVal=()=>val; return s;
+    };
+    const mkNum=(ph,val)=>{ const i=document.createElement('input'); i.type='number'; i.min='1'; i.placeholder=ph; if(val)i.value=val; return i; };
+    // cable: type seg, then length · count · add
+    const cSeg=mkSeg([['16A','16A'],['32A','32A'],['63A','63A'],['125A','125A'],['220V','220V']]);
+    const cf0=document.createElement('div'); cf0.className='invform invtop'; cf0.appendChild(cSeg); el.appendChild(cf0);
+    const cf=document.createElement('div'); cf.className='invform';
+    const cLen=mkNum('m'), cCnt=mkNum('count',1);
+    const cBtn=document.createElement('button'); cBtn.textContent='Add cable';
+    cBtn.onclick=()=>{ const len=parseFloat(String(cLen.value).replace(',','.')), cnt=parseInt(cCnt.value,10)||1;
+      if(!(len>0)) return;
+      const ex=INV.cables.find(p=>p.otype===cSeg.getVal()&&p.len===len);
+      if(ex) ex.count+=cnt; else INV.cables.push({otype:cSeg.getVal(),len,count:cnt});
+      queueInvSave(); renderElMat(); };
+    [cLen,cCnt,cBtn].forEach(x=>cf.appendChild(x)); el.appendChild(cf);
+    // central: kind + rating segs, then count · add
+    const nKind=mkSeg([['elskap','cabinet'],['source','source']]);
+    const nRat=mkSeg([['16','16'],['32','32'],['63','63'],['125','125']]);
+    const nf0=document.createElement('div'); nf0.className='invform invtop';
+    nf0.appendChild(nKind); nf0.appendChild(nRat); el.appendChild(nf0);
+    const nf=document.createElement('div'); nf.className='invform';
+    const nCnt=mkNum('count',1);
+    const nBtn=document.createElement('button'); nBtn.textContent='Add central';
+    nBtn.onclick=()=>{ const cnt=parseInt(nCnt.value,10)||1, r=parseInt(nRat.getVal(),10);
+      const ex=INV.centrals.find(p=>p.kind===nKind.getVal()&&p.rating===r);
+      if(ex) ex.count+=cnt; else INV.centrals.push({kind:nKind.getVal(),rating:r,count:cnt});
+      queueInvSave(); renderElMat(); };
+    [nCnt,nBtn].forEach(x=>nf.appendChild(x)); el.appendChild(nf);
+    const hs=document.createElement('div'); hs.className='hint';
+    hs.textContent='The inventory is shared across the areas and synced via the "inventory" tab in the Sheet (created automatically on the first save).';
+    el.appendChild(hs);
   }
 }
 
@@ -2135,7 +2412,7 @@ function renderNode(n){
   if(n.domain==='el'){
     const pl=phaseLoads(n.id), load=Math.max(pl[0],pl[1],pl[2]); lv=loadLevel(load,nodeRatingAmp(n));
     title=n.kind==='source'?(n.rating+'A IN'):(n.rating+'A'); sub=pl[0]+'/'+pl[1]+'/'+pl[2];
-    cls='node'+(n.kind==='source'?' source':''); brdr=ratingColor(nodeRatingAmp(n));
+    cls='node'+(n.kind==='source'?' source':''); brdr=NET_GRAY;   // gray by default, like the cables
   }else{
     title=n.kind==='brunn'?'Brunn':'Handfat'; sub=''; cls='node water'+(n.kind==='brunn'?' brunn':''); brdr='#2b8cff';
   }
@@ -2148,7 +2425,7 @@ function renderNode(n){
   // The middle fill (n.color) and border live in the icon HTML; selection/highlight are
   // applied as class toggles on the live element AFTER render so a plain select click never
   // rebuilds the DOM — rebuilding it mid double-click was eating the dblclick that edits the node.
-  const fill=n.color?(';background:'+n.color):'';
+  const fill=n.color?(';background:'+(isGrayish(n.color)?NET_GRAY:n.color)):'';   // every gray shade draws as THE gray
   const nm=(n.domain==='el'&&showCabNames)?(elNames()[n.id]||'?'):null;
   const html='<div class="'+cls+'" style="border-color:'+brdr+fill+'">'
     +(nm?'<div class="nname">'+esc(nm)+'</div>':'')
@@ -2247,7 +2524,7 @@ function drawCable(c,dom){
   const s=nodes.find(n=>n.id===c.src); if(!s)return;
   const A=cableAnchors(c); if(!A)return;
   let weight=(dom==='water')?3.5:(c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5)), dash=null;
-  let color=cableColor(c);                      // default by rating (32A orange, 16A yellow…), or c.color override
+  let color=cableColor(c);                      // neutral gray by default, or c.color override
   const lv=(dom!=='water')?loadLevel(peakLoad(s.id),nodeRatingAmp(s)):0;
   if(lv===2){ color='#ff0000'; dash='6,5'; }     // red band: VIVID red dashed — clearly hotter than the 63A/125A wire colour (#ff6b6b)
   else if(lv===1){ dash='10,6'; }                // amber band: keep the wire colour, dashed = worth a glance
