@@ -91,6 +91,14 @@
   .modal p{color:var(--muted);font-size:12px;line-height:1.5;margin:6px 0}
   .modal label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
   .modal input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:8px 10px;border-radius:7px;font-size:13px}
+  /* refined selects: kill the glossy native chrome, match the inputs, subtle chevron */
+  .modal select{width:100%;background-color:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    padding:8px 30px 8px 10px;border-radius:7px;font-size:13px;font-family:inherit;line-height:1.3;
+    -webkit-appearance:none;appearance:none;cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a90a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 10px center}
+  .modal select:hover{border-color:var(--accent)}
+  .modal select:focus,.modal input:focus{outline:none;border-color:var(--accent)}
   .row{display:flex;gap:10px}.row>div{flex:1}
   .modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
   .leaflet-container{background:#111;outline:none}
@@ -278,11 +286,22 @@
     <label>Name</label><input id="mName" placeholder="Name"/>
     <label>Letters (Placering)</label><input id="mLetters" placeholder="e.g. MAT, STV3"/>
     <div class="row">
-      <div><label>Power input (electricity)</label><input id="mEl" placeholder="e.g. 220v 6A, none"/></div>
-      <div><label>Water input</label><select id="mWater" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:8px;border-radius:7px"><option value="0">No</option><option value="1">Yes</option></select></div>
+      <div><label>Power input (electricity)</label>
+        <select id="mElSel">
+          <option value="">(not set)</option>
+          <option value="none">none</option>
+          <option value="220v 6A">220v 6A</option>
+          <option value="220v 16A">220v 16A</option>
+          <option value="380v 16A">380v 16A</option>
+          <option value="380v 32A">380v 32A</option>
+          <option value="custom">Custom&hellip;</option>
+        </select>
+        <input id="mEl" placeholder="e.g. 380v 63A" style="display:none;margin-top:6px"/>
+      </div>
+      <div><label>Water input</label><select id="mWater"><option value="0">No</option><option value="1">Yes</option></select></div>
     </div>
     <label>Shape</label>
-    <select id="mShape" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:8px;border-radius:7px"><option value="rect">Rectangle</option><option value="circle">Circle</option></select>
+    <select id="mShape"><option value="rect">Rectangle</option><option value="circle">Circle</option></select>
     <div class="row">
       <div><label id="mLenLabel">Length (m)</label><input id="mLen" type="number" step="0.1" value="3"/></div>
       <div id="mWidWrap"><label>Width (m)</label><input id="mWid" type="number" step="0.1" value="3"/></div>
@@ -290,7 +309,7 @@
     <div class="row">
       <div><label>Colour</label><input id="mColor" type="color" value="#B6D7A8" style="height:38px;padding:2px"/></div>
       <div><label>Pink stripes (Nya)</label>
-        <select id="mNya" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:8px;border-radius:7px"><option value="0">No</option><option value="1">Yes</option></select>
+        <select id="mNya"><option value="0">No</option><option value="1">Yes</option></select>
       </div>
     </div>
     <div class="actions"><button id="mCancel">Cancel</button><button id="mSave" class="primary">Save</button></div>
@@ -393,8 +412,8 @@ const DEFAULT_IMG='marknad_base_clean.png?v=68ee3f3b';   // committed & publishe
 let imgData=lsGet(LS.img,null), imgBounds=null, imgOverlay=null;
 let ppm=lsGet(LS.ppm, areaDef().ppm!=null?areaDef().ppm:null);   // cached scale, else the area's default (Sheet meta overrides on load)
 let currentTab='placering';
-const EL_COLORS={'220v 6A':'#9FC5E8','380v 16A':'#F9CB9C','380v 32A':'#E06666','none':'#C9CDD6','':'#8A90A0'};
-const EL_LIST=['220v 6A','380v 16A','380v 32A','none','']; // legend order
+const EL_COLORS={'220v 6A':'#9FC5E8','220v 16A':'#6FA8DC','380v 16A':'#F9CB9C','380v 32A':'#E06666','none':'#C9CDD6','':'#8A90A0'};
+const EL_LIST=['220v 6A','220v 16A','380v 16A','380v 32A','none','']; // legend order
 function elColor(e){ e=(e||'').trim(); return EL_COLORS[e]!==undefined?EL_COLORS[e]:'#C4A6E0'; }
 function elLabel(e){ e=(e||'').trim(); if(e==='none')return 'No el'; if(e==='')return '?'; return e; }
 let placed=[], placedIds=new Set(), selectedUid=null, selUids=new Set(), uidSeq=1, armedRef=null;
@@ -838,12 +857,22 @@ function updateShapeUI(){
   document.getElementById('mLenLabel').textContent=circle?'Diameter (m)':'Length (m)';
 }
 mShape.onchange=updateShapeUI;
+/* electricity dropdown: the known classes plus "Custom…" which reveals the free-text
+   input (for one-offs like 380v 63A). The stored value is always the plain string. */
+const M_EL_OPTS=['','none','220v 6A','220v 16A','380v 16A','380v 32A'];
+const mElSel=document.getElementById('mElSel');
+function setElField(v){ v=(v||'').trim(); const i=document.getElementById('mEl');
+  if(M_EL_OPTS.includes(v)){ mElSel.value=v; i.style.display='none'; i.value=''; }
+  else { mElSel.value='custom'; i.style.display=''; i.value=v; } }
+mElSel.onchange=()=>{ const i=document.getElementById('mEl'), c=mElSel.value==='custom';
+  i.style.display=c?'':'none'; if(c) i.focus(); };
+function elFieldValue(){ return mElSel.value==='custom'?document.getElementById('mEl').value.trim():mElSel.value; }
 function openAdd(){
   editingId=null; editingShape=null;
   document.getElementById('modalTitle').textContent='Add custom object';
   document.getElementById('mName').value='';
   document.getElementById('mLetters').value='';
-  document.getElementById('mEl').value='';
+  setElField('');
   document.getElementById('mWater').value='0';
   document.getElementById('mLen').value='3';
   document.getElementById('mWid').value='3';
@@ -857,7 +886,7 @@ function openEdit(m){
   document.getElementById('modalTitle').textContent='Edit object';
   document.getElementById('mName').value=m.name||'';
   document.getElementById('mLetters').value=m.placering||'';
-  document.getElementById('mEl').value=m.electricity||'';
+  setElField(m.electricity||'');
   document.getElementById('mWater').value=String(m.water?1:0);
   document.getElementById('mLen').value=m.length!=null?m.length:'';
   document.getElementById('mWid').value=m.width!=null?m.width:'';
@@ -875,7 +904,7 @@ document.getElementById('mSave').onclick=()=>{
   let wid=circle?len:(parseFloat(document.getElementById('mWid').value)||null);
   const data={name,
     placering:document.getElementById('mLetters').value.trim(),
-    electricity:document.getElementById('mEl').value.trim(),
+    electricity:elFieldValue(),
     water:document.getElementById('mWater').value==='1',
     shape:circle?'circle':'rect',
     length:len, width:wid,
