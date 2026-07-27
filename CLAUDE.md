@@ -565,11 +565,21 @@ to a snapshot; on Sheet load a missing id gets a minimal stub `ref`.
   reads sheets that are already link-public. Restrictions are HTTP-referrer/IP plus
   API-service only. Public read therefore = API key + "Anyone with the link → Viewer".
 - Admin writes = **OAuth 2.0 client ID** (Google Identity Services token client,
-  scopes `https://www.googleapis.com/auth/spreadsheets` plus `userinfo.email` so
-  `savedBy` can be filled from the signed-in account). The client ID is public by
-  design; real enforcement is Drive sharing — only accounts with **Editor** on the
-  sheet can write. Prefer an **Internal** consent screen if the admins share a
-  Workspace domain, to skip verification.
+  scopes `https://www.googleapis.com/auth/drive.file` plus `userinfo.email` so
+  `savedBy` can be filled from the signed-in account). `drive.file` is **per-file**:
+  the consent screen says "files you use with this app", not "all your
+  spreadsheets" (the earlier broad `spreadsheets` scope was replaced for exactly
+  that complaint). The cost: each admin account must **open the plan sheet with the
+  app once** via the Google Picker — `ensureFileAccess()` runs after interactive
+  sign-in, probes the sheet, and only shows the Picker on a 404; the grant persists
+  per account, so it's one-time. The Picker needs the **Google Picker API enabled**
+  in the Cloud project and included in the API key's API restrictions, and its
+  `setAppId` is the project number (derived from the client-id prefix). The client
+  ID is public by design; real enforcement is Drive sharing — only accounts with
+  **Editor** on the sheet can write. Prefer an **Internal** consent screen if the
+  admins share a Workspace domain, to skip verification. A signed-in admin who
+  hasn't granted the file yet reads via the API key fallback (404 → `keyGet`) and
+  gets a "pick the spreadsheet" error on write.
 - The OAuth client is a **web** client; its **Authorized JavaScript origins** must
   list the origin the HTML is served from. `file://` has a null origin and will fail —
   the app has to be hosted (e.g. GitHub Pages). The client *secret* is unused; the

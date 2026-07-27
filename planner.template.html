@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js" async defer></script>
 <style>
   :root{--bg:#1c1e26;--panel:#23262f;--panel2:#2b2f3a;--line:#3a3f4d;--txt:#e8eaf0;--muted:#9aa0b0;--accent:#e0a94a;--accent2:#4a90e0;--danger:#e05a5a;--ok:#5ac47a}
   *{box-sizing:border-box}
@@ -1245,7 +1246,10 @@ function ensureTokenClient(){
   if(GS.tokenClient) return;
   GS.tokenClient=google.accounts.oauth2.initTokenClient({
     client_id:sheetCfg().clientId,
-    scope:'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email',
+    // drive.file: per-file access, so the consent screen says "files you use with this
+    // app" instead of "all your spreadsheets". The plan sheet is granted once per
+    // account via the Picker in ensureFileAccess().
+    scope:'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
     callback:(resp)=>{ const ok=GS.cbResolve, no=GS.cbReject; GS.cbResolve=GS.cbReject=null;
       if(resp.error){ if(no)no(new Error(resp.error_description||resp.error)); return; }
       GS.token=resp.access_token; GS.tokenExp=Date.now()+((resp.expires_in||3600)*1000);
@@ -1265,11 +1269,55 @@ function getToken(interactive,forceConsent){
     if(haveToken() && !forceConsent) return GS.token;
     ensureTokenClient();
     return new Promise((res,rej)=>{ GS.cbResolve=res; GS.cbReject=rej;
-      // forceConsent re-shows the permission screen so a missing Sheets scope can be granted
+      // forceConsent re-shows the permission screen so a missing scope can be granted
       GS.tokenClient.requestAccessToken({prompt:forceConsent?'consent':(interactive?'':'none')}); });
   });
 }
 function isScopeErr(status,msg){ return status===401||status===403||/scope|permission|insufficient/i.test(msg||''); }
+
+/* --- per-file access grant (drive.file) ---
+   A drive.file token can only touch files this app created or the user picked in the
+   Google Picker. The grant is remembered per Google account, so the Picker runs at
+   most once per admin: sign-in probes the sheet and only opens the Picker on a 404. */
+function sheetVisible(){
+  const cfg=sheetCfg();
+  return fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(cfg.spreadsheetId)+'?fields=spreadsheetId',
+    {headers:{Authorization:'Bearer '+GS.token}}).then(r=>r.ok).catch(()=>false);
+}
+function ensurePickerLib(){
+  return new Promise((res,rej)=>{
+    if(window.google&&google.picker) return res();
+    let n=0; const t=setInterval(()=>{
+      if(window.gapi){ clearInterval(t);
+        gapi.load('picker',{callback:res,onerror:()=>rej(new Error('Google Picker failed to load.'))}); }
+      else if(++n>100){ clearInterval(t); rej(new Error('Google Picker library did not load. Check your connection.')); }
+    },100);
+  });
+}
+async function ensureFileAccess(){
+  if(!haveToken()) return false;
+  if(await sheetVisible()) return true;
+  await ensurePickerLib();
+  const cfg=sheetCfg();
+  const picked=await new Promise(res=>{
+    const view=new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+      .setMode(google.picker.DocsViewMode.LIST);
+    new google.picker.PickerBuilder()
+      .setOAuthToken(GS.token)
+      .setDeveloperKey(cfg.apiKey)
+      .setAppId(cfg.clientId.split('-')[0])   // Cloud project number — must match the OAuth client
+      .addView(view)
+      .setTitle('Select the plan spreadsheet to give this app access to it')
+      .setCallback(d=>{
+        if(d.action===google.picker.Action.PICKED) res(d.docs&&d.docs[0]&&d.docs[0].id);
+        else if(d.action===google.picker.Action.CANCEL) res(null);
+      })
+      .build().setVisible(true);
+  });
+  if(!picked){ alert('No spreadsheet selected.\n\nThe app only gets access to the plan sheet when you pick it — click the sync status again to retry. Until then the plan is read-only.'); return false; }
+  if(picked!==cfg.spreadsheetId){ alert('That is not the shared plan spreadsheet.\n\nClick the sync status to sign in again and select the plan sheet the organiser shared with you.'); return false; }
+  return true;
+}
 
 /* --- Sheets REST calls --- */
 async function sheetErr(r){ try{ const j=await r.json(); return (j.error&&j.error.message)||''; }catch(e){ return ''; } }
@@ -1286,11 +1334,12 @@ async function sheetBatchGet(ranges){
   const r=await fetch(base,{headers:{Authorization:'Bearer '+GS.token}});
   if(r.ok) return (await r.json()).valueRanges||[];
   const msg=await sheetErr(r);
+  if(r.status===404 && cfg.apiKey) return keyGet();              // drive.file token without the file grant — keep the token, read link-public
   if(isScopeErr(r.status,msg)){
     GS.token=null; GS.tokenExp=0;                                // drop the under-scoped token
     if(cfg.apiKey) return keyGet();                              // link-public sheets still read with a key
-    throw new Error('Read failed ('+r.status+'): '+msg+'\n\nThe signed-in Google account is missing the Sheets permission. Open Settings → Sign in again and grant it, or add the '+
-      'https://www.googleapis.com/auth/spreadsheets scope to the OAuth consent screen (and enable the Google Sheets API).');
+    throw new Error('Read failed ('+r.status+'): '+msg+'\n\nThe signed-in Google account is missing the Drive permission. Sign in again and grant it, or add the '+
+      'https://www.googleapis.com/auth/drive.file scope to the OAuth consent screen (and enable the Google Sheets API).');
   }
   throw new Error('Read failed ('+r.status+'). '+msg);
   // returned in the same order as `ranges`
@@ -1302,8 +1351,10 @@ async function sheetApi(path,body){
   if(!r.ok){ const msg=await sheetErr(r);
     const scope=r.status===401||/insufficient|scope/i.test(msg);
     if(scope){ GS.token=null; GS.tokenExp=0;
-      throw new Error('Write failed ('+r.status+'): '+msg+'\n\nThe signed-in account lacks the Sheets write scope. Open Settings → Sign in again and grant it, or add the '+
-        'https://www.googleapis.com/auth/spreadsheets scope to the OAuth consent screen.'); }
+      throw new Error('Write failed ('+r.status+'): '+msg+'\n\nThe signed-in account lacks the Drive write scope. Sign in again and grant it, or add the '+
+        'https://www.googleapis.com/auth/drive.file scope to the OAuth consent screen.'); }
+    if(r.status===404){                                     // drive.file: this account never picked the plan sheet
+      throw new Error('Write failed ('+r.status+'): '+msg+'\n\nThis app only has access to the spreadsheet you pick. Click the sync status to sign in again and select the shared plan spreadsheet.'); }
     if(r.status===403){                                     // token is fine; the account can't edit this file
       throw new Error('Write failed ('+r.status+'): '+msg+'\n\nThe signed-in Google account'+(GS.email?(' ('+GS.email+')'):'')+
         ' does not have Editor access to this spreadsheet. Share the sheet with that account as Editor, or Settings → Sign in with an account that can edit it.'); }
@@ -1514,8 +1565,8 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRemo
    only Sheet control: click it to sign in, which the browser allows because it's a
    user gesture. Once signed in, clicking just checks for remote updates. --- */
 document.getElementById('syncStatus').onclick=async()=>{
-  if(haveToken()){ pollRemote(); return; }
-  try{ await getToken(true,true); autoLoadStartup(); }   // force consent, then pull the shared plan
+  if(haveToken()){ if(!(await ensureFileAccess())) return; pollRemote(); return; }
+  try{ await getToken(true,true); await ensureFileAccess(); autoLoadStartup(); }   // force consent + one-time file grant, then pull the shared plan
   catch(e){ alert('Sign-in failed.\n\n'+e.message); }
 };
 
@@ -1533,7 +1584,7 @@ function exitAdminMode(){ ADMIN=false; lsSet(LS.admin,false); applyMode(); }
    editing UI; without a valid Editor token nothing can be written anyway (Drive sharing
    is the real gate), so this just reveals the tools. */
 document.getElementById('adminBtn').onclick=async()=>{
-  try{ await getToken(true,true); enterAdmin(); autoLoadStartup(); }
+  try{ await getToken(true,true); await ensureFileAccess(); enterAdmin(); autoLoadStartup(); }
   catch(e){ alert('Admin sign-in failed.\n\n'+e.message); }
 };
 document.getElementById('exitAdmin').onclick=exitAdminMode;
