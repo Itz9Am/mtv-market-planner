@@ -392,7 +392,7 @@ const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
    `admin` and `area` itself stay global. */
 const AREAS=[{key:'marknad',label:'Marknad',img:'marknad_base_clean.png'},
-             {key:'arena',label:'Arena',img:'arena_base.png',ppm:4.39},
+             {key:'arena',label:'Arena',img:'arena_base.png',ppm:5.27,ppmFixed:true},
              {key:'camping',label:'Camping',img:'camping_base.png',ppm:3.0}];
 /* The tent LIST is shared across areas — `custom` (added objects) and `removed` are
    global, so the sidebar shows the same tents everywhere. Only the per-area PLAN keys
@@ -404,6 +404,9 @@ function nsKey(k){ return (area!=='marknad' && AREA_SCOPED.has(k)) ? k+'::'+area
 function lsGet(k,d){try{const v=localStorage.getItem(nsKey(k));return v?JSON.parse(v):d;}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(nsKey(k),JSON.stringify(v));}catch(e){}}
 function areaDef(){ return AREAS.find(a=>a.key===area)||AREAS[0]; }
+/* ppmFixed: the code constant IS the scale — it wins over the localStorage cache and
+   the Sheet meta row on every load. Re-tune by editing the AREAS entry, nothing else. */
+function fixedPpm(){ const d=areaDef(); return (d.ppmFixed&&d.ppm!=null)?d.ppm:null; }
 function areaImg(){ return areaDef().img; }   // the active area's committed base plan
 // The base plan to show: the area's committed image, unless a real data-URL upload is
 // cached (legacy). A cached plain filename never wins — that's how the old bug left the
@@ -437,7 +440,7 @@ function refOf(t){
 let library=TENTS.concat(customTents);
 const DEFAULT_IMG='marknad_base_clean.png';   // committed & published next to the HTML
 let imgData=lsGet(LS.img,null), imgBounds=null, imgOverlay=null;
-let ppm=lsGet(LS.ppm, areaDef().ppm!=null?areaDef().ppm:null);   // cached scale, else the area's default (Sheet meta overrides on load)
+let ppm=fixedPpm()!=null?fixedPpm():lsGet(LS.ppm, areaDef().ppm!=null?areaDef().ppm:null);   // cached scale, else the area's default (Sheet meta overrides on load — unless ppmFixed)
 let currentTab='placering';
 const EL_COLORS={'220v 6A':'#9FC5E8','220v 16A':'#6FA8DC','380v 16A':'#F9CB9C','380v 32A':'#E06666','none':'#C9CDD6','':'#8A90A0'};
 const EL_LIST=['220v 6A','220v 16A','380v 16A','380v 32A','none','']; // legend order
@@ -1362,7 +1365,7 @@ function applySheetState(P,N,C,M,keepView){
   const cur=(keepView&&imgBounds)?{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}:null; // preserve pan/zoom
   placed.forEach(removeTentMarker); placed=[]; placedIds=new Set(); deselect(); showDomainLayers();
   nodes=N.map(nodeFromRow); cables=C.map(cableFromRow); saveNet();
-  ppm=gnum(M.ppm); lsSet(LS.ppm,ppm); updateScaleReadout();
+  ppm=fixedPpm()!=null?fixedPpm():gnum(M.ppm); lsSet(LS.ppm,ppm); updateScaleReadout();
   const vz=gnum(M.viewZoom), vx=gnum(M.viewX), vy=gnum(M.viewY);
   const view=(vz!=null&&vx!=null&&vy!=null)?{c:[vy,vx],z:vz}:null;
   const useView=cur||view;
@@ -2055,7 +2058,7 @@ function reloadAreaState(){
   // re-read every per-area global from the now area-namespaced localStorage
   customTents=lsGet(LS.custom,[]); edits=lsGet(LS.edits,{}); removed=new Set(lsGet(LS.removed,[]));
   library=TENTS.concat(customTents);
-  ppm=lsGet(LS.ppm, areaDef().ppm!=null?areaDef().ppm:null); nodes=lsGet(LS.nodes,[]); cables=lsGet(LS.cables,[]); imgData=lsGet(LS.img,null);
+  ppm=fixedPpm()!=null?fixedPpm():lsGet(LS.ppm, areaDef().ppm!=null?areaDef().ppm:null); nodes=lsGet(LS.nodes,[]); cables=lsGet(LS.cables,[]); imgData=lsGet(LS.img,null);
   loadPlaced();
 }
 function teardownRender(){
