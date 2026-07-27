@@ -30,11 +30,14 @@
   /* El tab sub-views: Overview (legend) | Cabinets (distribution tree) | Material (procurement list) */
   #elViewSeg{margin:8px 14px 0}
   #elViewSeg button{flex:1}
-  /* Material view: inventory entry forms */
+  /* Material view: inventory entry forms. NO native <select> dropdowns (user rule) —
+     closed option sets are .seg segmented buttons. */
   #elMat .invform{display:flex;gap:6px;margin:6px 10px;align-items:center}
-  #elMat .invform select,#elMat .invform input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:7px 8px;border-radius:7px;font-size:12px}
-  #elMat .invform input[type=number]{max-width:64px}
+  #elMat .invform.invtop{margin-bottom:0}
+  #elMat .invform input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:7px 8px;border-radius:7px;font-size:12px}
   #elMat .invform button{white-space:nowrap}
+  #elMat .invform .seg{flex:1}
+  #elMat .invform .seg button{flex:1;padding:6px 4px;font-size:11px;white-space:nowrap}
   #elTree{padding:6px 10px 16px}
   #elTree .etkids{margin:0 0 0 13px;border-left:1px dashed var(--line);padding-left:9px}
   #elTree .etnode{display:flex;align-items:center;gap:8px;padding:7px 9px;margin:5px 0;background:var(--panel2);border:1px solid var(--line);border-radius:9px;cursor:pointer}
@@ -2235,31 +2238,43 @@ function renderElMat(){
     const d=document.createElement('div'); d.className='hint'; d.textContent='Empty — everything new lands under "To rent". Add the cable and centrals you own below.'; el.appendChild(d);
   }
   if(ADMIN){
-    const mkSel=opts=>{ const s=document.createElement('select');
-      opts.forEach(o=>{ const e=document.createElement('option'); e.value=o[0]; e.textContent=o[1]; s.appendChild(e); }); return s; };
+    /* NO native <select> dropdowns — the user banned them (2026-07). Closed option
+       sets are picked with the app's own .seg segmented buttons instead. */
+    const mkSeg=opts=>{
+      const s=document.createElement('div'); s.className='seg'; let val=opts[0][0];
+      const btns=opts.map(o=>{
+        const b=document.createElement('button'); b.type='button'; b.textContent=o[1];
+        if(o[0]===val) b.classList.add('on');
+        b.onclick=()=>{ val=o[0]; btns.forEach(x=>x.classList.toggle('on',x===b)); };
+        s.appendChild(b); return b; });
+      s.getVal=()=>val; return s;
+    };
     const mkNum=(ph,val)=>{ const i=document.createElement('input'); i.type='number'; i.min='1'; i.placeholder=ph; if(val)i.value=val; return i; };
-    // cable form: type · length · count
+    // cable: type seg, then length · count · add
+    const cSeg=mkSeg([['16A','16A'],['32A','32A'],['63A','63A'],['125A','125A'],['220V','220V']]);
+    const cf0=document.createElement('div'); cf0.className='invform invtop'; cf0.appendChild(cSeg); el.appendChild(cf0);
     const cf=document.createElement('div'); cf.className='invform';
-    const cSel=mkSel([['16A','16A'],['32A','32A'],['63A','63A'],['125A','125A'],['220V','220V']]);
     const cLen=mkNum('m'), cCnt=mkNum('count',1);
     const cBtn=document.createElement('button'); cBtn.textContent='Add cable';
     cBtn.onclick=()=>{ const len=parseFloat(String(cLen.value).replace(',','.')), cnt=parseInt(cCnt.value,10)||1;
       if(!(len>0)) return;
-      const ex=INV.cables.find(p=>p.otype===cSel.value&&p.len===len);
-      if(ex) ex.count+=cnt; else INV.cables.push({otype:cSel.value,len,count:cnt});
+      const ex=INV.cables.find(p=>p.otype===cSeg.getVal()&&p.len===len);
+      if(ex) ex.count+=cnt; else INV.cables.push({otype:cSeg.getVal(),len,count:cnt});
       queueInvSave(); renderElMat(); };
-    [cSel,cLen,cCnt,cBtn].forEach(x=>cf.appendChild(x)); el.appendChild(cf);
-    // central form: kind · rating · count
+    [cLen,cCnt,cBtn].forEach(x=>cf.appendChild(x)); el.appendChild(cf);
+    // central: kind + rating segs, then count · add
+    const nKind=mkSeg([['elskap','cabinet'],['source','source']]);
+    const nRat=mkSeg([['16','16'],['32','32'],['63','63'],['125','125']]);
+    const nf0=document.createElement('div'); nf0.className='invform invtop';
+    nf0.appendChild(nKind); nf0.appendChild(nRat); el.appendChild(nf0);
     const nf=document.createElement('div'); nf.className='invform';
-    const nKind=mkSel([['elskap','cabinet'],['source','source']]);
-    const nRat=mkSel([['16','16 A'],['32','32 A'],['63','63 A'],['125','125 A']]);
     const nCnt=mkNum('count',1);
     const nBtn=document.createElement('button'); nBtn.textContent='Add central';
-    nBtn.onclick=()=>{ const cnt=parseInt(nCnt.value,10)||1, r=parseInt(nRat.value,10);
-      const ex=INV.centrals.find(p=>p.kind===nKind.value&&p.rating===r);
-      if(ex) ex.count+=cnt; else INV.centrals.push({kind:nKind.value,rating:r,count:cnt});
+    nBtn.onclick=()=>{ const cnt=parseInt(nCnt.value,10)||1, r=parseInt(nRat.getVal(),10);
+      const ex=INV.centrals.find(p=>p.kind===nKind.getVal()&&p.rating===r);
+      if(ex) ex.count+=cnt; else INV.centrals.push({kind:nKind.getVal(),rating:r,count:cnt});
       queueInvSave(); renderElMat(); };
-    [nKind,nRat,nCnt,nBtn].forEach(x=>nf.appendChild(x)); el.appendChild(nf);
+    [nCnt,nBtn].forEach(x=>nf.appendChild(x)); el.appendChild(nf);
     const hs=document.createElement('div'); hs.className='hint';
     hs.textContent='The inventory is shared across the areas and synced via the "inventory" tab in the Sheet (created automatically on the first save).';
     el.appendChild(hs);

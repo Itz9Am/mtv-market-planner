@@ -355,6 +355,10 @@ branches from it); deleting a pipe cascades through its kopplingar and their bra
 ### Product requirements the user has stated explicitly
 
 - **No emoji anywhere.** Monochrome glyphs (`↺ ↻ ✕`) only. `build.py` warns.
+- **NEVER native `<select>` dropdowns** ("those shiny drop downs", 2026-07). Closed
+  option sets use the app's `.seg` segmented buttons (see the inventory forms in
+  `renderElMat`). The pre-existing styled selects in the modals are tolerated legacy —
+  don't add new ones, and prefer converting them to segs when touching those modals.
 - Footprints are always true-to-scale; the earlier fixed-size toggle was removed.
 - Names are always drawn, even when unreadably small. Placement letters can be hidden
   via the **Letters** toggle; tent sizes (metres) show on the label under a **Sizes**
