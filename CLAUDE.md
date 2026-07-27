@@ -234,18 +234,32 @@ They are **derived from the wiring by `elNames()`, never stored** — rewiring r
 A cabinet with no path to a source shows `?`. Surfaced in four places: a name badge on
 the map node (the **Names** toggle in the El toolbar, `LS.cabnames`, global like
 `letters`); the El legend rows; the **Cabinets** sub-view of the El sidebar
-(`Overview | Cabinets` seg → `renderElTree()`, a clickable distribution tree); and the
-`elskap` placements column (below).
+(`Overview | Cabinets | Material` seg → `renderElTree()`, a clickable distribution tree);
+and the `elskap` placements column (below).
+
+### El sidebar: Material sub-view
+
+Third seg option under El (`renderElMat()`, `#elMat`): a procurement list — centrals
+grouped by kind+rating with their designations, then cable per socket type with run
+count, total metres and every individual run (`A1 → name · length`, longest first,
+click pans to the run). **First cut** — the user said more detail on its contents is
+coming (2026-07); extend `renderElMat()` when it does.
 
 ### Colours (both optional, both persisted)
 
+**Placed centrals and cables draw NEUTRAL GRAY by default** (`NET_GRAY`, user request
+2026-07): `cableColor()` no longer falls back to the rating colour, and `renderNode`'s
+border is gray instead of `ratingColor`. `otypeColor`/`ratingColor` keep the old
+mapping (32A orange, 16A yellow, 63A/125A red, 220V light blue) but are no longer used
+for defaults. Load-band colouring (amber/red text, vivid red dashed wires) and the gold
+highlight are unchanged and still win visually.
+
 - **Node middle fill** (`n.color`): the source/cabinet modal has a colour picker for the
-  *middle* only — the **border stays the rating colour** (`ratingColor`, drawn as an inline
-  `border-color`). `color` absent means *use the CSS default* (`#181b22` cabinet /
+  *middle* only — the **border stays gray** (drawn as an inline `border-color`).
+  `color` absent means *use the CSS default* (`#181b22` cabinet /
   `#0e2033` source); "Reset to default" clears it. Like `outs`, absent ≠ a stored value —
   `nodeFromRow`/`nodeToRow` keep the column blank when unset.
-- **Wire colour** (`c.color`): default is the output's rating colour (`cableColor` →
-  `otypeColor`: 32A orange, 16A yellow, 63A/125A red, 220V light blue; water blue). Every
+- **Wire colour** (`c.color`): default is neutral gray (water pipes stay blue). Every
   wire is drawn as two polylines — a black **casing** underneath for a clean outline, then
   the colour on top. Right-clicking a wire **with the Wire tool on** (admin) opens a small
   modal to recolour or remove it; "Use default" clears the override. Overload still wins

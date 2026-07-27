@@ -27,7 +27,7 @@
   .tabs .tab:hover{color:var(--txt)}
   .tabs .tab.on{color:var(--txt);border-bottom-color:var(--accent);font-weight:600}
   #elLegend{padding:6px 4px}
-  /* El tab sub-views: Overview (legend) | Cabinets (distribution tree) */
+  /* El tab sub-views: Overview (legend) | Cabinets (distribution tree) | Material (procurement list) */
   #elViewSeg{margin:8px 14px 0}
   #elViewSeg button{flex:1}
   #elTree{padding:6px 10px 16px}
@@ -199,9 +199,11 @@
       <div class="seg" id="elViewSeg">
         <button data-v="overview" class="on">Overview</button>
         <button data-v="cabinets">Cabinets</button>
+        <button data-v="material">Material</button>
       </div>
       <div id="elLegend"></div>
       <div id="elTree" style="display:none"></div>
+      <div id="elMat" style="display:none"></div>
     </div>
     <div id="vattenUI" style="display:none">
       <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. With Wire on: click a pipe to add a blue dot you can drag to bend it; <b>double-click the dot</b> to switch sharp/curve, right-click it to make it a gray <b>koppling</b> or remove it. A koppling is a junction: click it and then a tent/handfat to branch a new pipe from that point (right-click removes it with its branches). <b>Double-click the pipe</b> (or right-click) to recolour or remove it. Ctrl+Z undoes, Ctrl+Shift+Z redoes. Select a fixture and press Delete.</div>
@@ -361,7 +363,7 @@
 <div class="modal-bg" id="cabBg">
   <div class="modal">
     <h3>Wire colour</h3>
-    <p>Pick a colour for this wire. By default a wire takes its cabinet's rating colour (32A orange, 16A yellow, 63A/125A red) with a black outline.</p>
+    <p>Pick a colour for this wire. By default a wire is neutral gray with a black outline.</p>
     <div class="row">
       <div><label>Wire colour</label><input id="cabColor" type="color" value="#ffb35c" style="height:38px;padding:2px"/></div>
       <div><label>&nbsp;</label><button id="cabColorReset" type="button" style="width:100%">Use default</button></div>
@@ -1069,7 +1071,7 @@ function renderLegend(){
     const p=phaseLoads(n.id), peak=Math.max(p[0],p[1],p[2]), lv=loadLevel(peak,nodeRatingAmp(n));
     const free=(n.kind==='source'&&n.unl!==false)?'unlimited':Object.keys(complementMap(n)).map(k=>`${freeCount(n,k)}×${k}`).join(' ');
     const row=document.createElement('div'); row.className='legrow';
-    row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${loadColor(lv,'var(--muted)')}">${peak}/${nodeRatingAmp(n)} A</div>`;
+    row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${NET_GRAY};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${loadColor(lv,'var(--muted)')}">${peak}/${nodeRatingAmp(n)} A</div>`;
     el.appendChild(row);
   });
   /* cable lengths, per socket type — what the electricians need to order/pull */
@@ -1082,7 +1084,7 @@ function renderLegend(){
       elc.forEach(c=>{ const m=cableLenM(c); if(m==null)return; const k=c.otype||'?'; byType[k]=(byType[k]||0)+m; tot+=m; });
       ['125A','63A','32A','16A','220V','?'].filter(k=>byType[k]).forEach(k=>{
         const row=document.createElement('div'); row.className='legrow';
-        row.innerHTML='<div class="sw" style="background:'+(k==='?'?'#888':otypeColor(k))+'"></div><div class="lname">'+esc(k)+' cable</div><div class="lcount">'+fmtM(byType[k])+'</div>';
+        row.innerHTML='<div class="sw" style="background:'+NET_GRAY+'"></div><div class="lname">'+esc(k)+' cable</div><div class="lcount">'+fmtM(byType[k])+'</div>';
         el.appendChild(row);
       });
       const row=document.createElement('div'); row.className='legrow';
@@ -1095,6 +1097,7 @@ function renderLegend(){
   const waiting=library.filter(x=>!placedAnywhere(x.id)&&!removed.has(String(x.id))&&tentReq(applyEdits(x).electricity)).length;
   if(waiting){ const d=document.createElement('div'); d.className='hint'; d.textContent=waiting+' more tent(s) needing power are not placed yet.'; el.appendChild(d); }
   renderElTree();   // keep the Cabinets sub-view in sync with every change that redraws the legend
+  renderElMat();    // …and the Material sub-view
 }
 
 /* ---------- Google Sheets sync (shared project state) ----------
@@ -1543,10 +1546,13 @@ function ampOf(s){ const m=/(\d+)\s*A/i.exec(s||''); return m?parseInt(m[1]):0; 
 function tentAmp(id){ const t=placed.find(x=>String(x.ref.id)===String(id)); if(!t)return 0;
   const r=tentReq(refOf(t).electricity); return r?r.amp:0; }   // through tentReq so the 220V=16A rule applies to the load maths
 function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
-/* default wire colour = the rating colour of its output: 32A orange, 16A yellow,
-   63A/125A red, 220V light blue. A per-cable c.color overrides it. */
+/* Placed centrals and cables draw NEUTRAL GRAY by default (user request 2026-07,
+   replacing the earlier rating-colour defaults: 32A orange, 16A yellow, 63A/125A red,
+   220V light blue — otypeColor keeps that mapping if it's ever wanted back). A per-cable
+   c.color override, the overload red/amber bands and the gold highlight still win. */
+const NET_GRAY='#9aa0ab';
 function otypeColor(ot){ if(ot==='220V')return '#9FC5E8'; return ratingColor(parseInt(ot)||0); }
-function cableColor(c){ if(c.color)return c.color; if(c.domain==='water')return '#2b8cff'; return otypeColor(c.otype); }
+function cableColor(c){ if(c.color)return c.color; if(c.domain==='water')return '#2b8cff'; return NET_GRAY; }
 /* ---- cable geometry: waypoints (bend/curve dots), smoothing, lengths ----
    A cable's anchors are [source, …c.pts…, destination]. A 'b' dot is a sharp corner,
    a 'c' dot pulls a smooth Catmull-Rom curve through it, an 'n' dot rides on a water
@@ -1951,13 +1957,15 @@ function setLengths(on){ showLengths=on; lsSet(LS.lengths,on);
   redrawCables(); }
 document.getElementById('lenBtnEl').onclick=()=>setLengths(!showLengths);
 document.getElementById('lenBtnVa').onclick=()=>setLengths(!showLengths);
-/* El sidebar sub-views: Overview (legend) | Cabinets (distribution tree) */
+/* El sidebar sub-views: Overview (legend) | Cabinets (distribution tree) | Material (procurement list) */
 let elView='overview';
 function setElView(v){ elView=v;
   document.querySelectorAll('#elViewSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.getElementById('elLegend').style.display=v==='overview'?'':'none';
   document.getElementById('elTree').style.display=v==='cabinets'?'':'none';
-  if(v==='cabinets') renderElTree(); }
+  document.getElementById('elMat').style.display=v==='material'?'':'none';
+  if(v==='cabinets') renderElTree();
+  if(v==='material') renderElMat(); }
 document.querySelectorAll('#elViewSeg button').forEach(b=>{ b.onclick=()=>setElView(b.dataset.v); });
 /* The Cabinets view: the whole distribution tree, one card per source/cabinet with its
    designation, per-phase load and free sockets, and the tents it feeds indented under it.
@@ -2005,6 +2013,68 @@ function renderElTree(){
   if(orphans.length){
     const h=document.createElement('div'); h.className='legsub'; h.textContent='Not connected to a source'; el.appendChild(h);
     orphans.forEach(n=>renderSub(n,el));
+  }
+}
+
+/* The Material view: a procurement list for the active area's el network.
+   FIRST CUT — the user will specify what it should contain in detail; extend here.
+   Currently: centrals grouped by kind + rating (with their designations), then cable
+   per socket type — run count, total metres, and every individual run
+   (designation → destination · length, longest first). Clicking a run pans to it. */
+function renderElMat(){
+  const el=document.getElementById('elMat'); if(!el) return; el.innerHTML='';
+  const elNodes=nodes.filter(n=>n.domain==='el'), elc=cables.filter(c=>c.domain==='el');
+  if(!elNodes.length&&!elc.length){
+    const d=document.createElement('div'); d.className='hint';
+    d.textContent='Nothing to list yet — add sources, cabinets and cables and the material list appears here.';
+    el.appendChild(d); return;
+  }
+  const EN=elNames();
+  /* centrals, grouped by kind + rating */
+  const t1=document.createElement('div'); t1.className='legsub'; t1.textContent='Centrals ('+elNodes.length+')'; el.appendChild(t1);
+  const grp={};
+  elNodes.forEach(n=>{ const k=n.kind+'|'+n.rating; (grp[k]=grp[k]||[]).push(n); });
+  Object.keys(grp).sort((a,b)=>{
+    const [ka,ra]=a.split('|'), [kb,rb]=b.split('|');
+    if(ka!==kb) return ka==='source'?-1:1;      // sources first, then cabinets
+    return (+rb)-(+ra);                          // big ratings first
+  }).forEach(k=>{
+    const [kind,r]=k.split('|'), list=grp[k];
+    const row=document.createElement('div'); row.className='legrow';
+    row.innerHTML='<div class="sw" style="background:'+(kind==='source'?'#0e2033':'#181b22')+';border:2px solid '+NET_GRAY+';'+(kind==='source'?'border-radius:50%':'')+'"></div>'
+      +'<div class="lname">'+r+' A '+(kind==='source'?'source':'cabinet')
+      +'<div style="font-size:10px;color:var(--muted);font-weight:400">'+esc(list.map(n=>EN[n.id]||'?').join(' · '))+'</div></div>'
+      +'<div class="lcount">'+list.length+'&#215;</div>';
+    el.appendChild(row);
+  });
+  /* cable per socket type: run count, total metres, individual runs */
+  const t2=document.createElement('div'); t2.className='legsub'; t2.textContent='Cable ('+elc.length+' run'+(elc.length===1?'':'s')+')'; el.appendChild(t2);
+  if(!elc.length){
+    const d=document.createElement('div'); d.className='hint'; d.textContent='No cables yet.'; el.appendChild(d);
+  }else if(!ppm){
+    const d=document.createElement('div'); d.className='hint'; d.textContent='Set the scale (ppm) to calculate cable lengths.'; el.appendChild(d);
+  }else{
+    let tot=0;
+    ['125A','63A','32A','16A','220V','?'].forEach(k=>{
+      const runs=elc.filter(c=>(c.otype||'?')===k); if(!runs.length) return;
+      const rows=runs.map(c=>({c,m:cableLenM(c)||0})).sort((a,b)=>b.m-a.m);
+      const sum=rows.reduce((s,x)=>s+x.m,0); tot+=sum;
+      const hd=document.createElement('div'); hd.className='legrow';
+      hd.innerHTML='<div class="sw" style="background:'+NET_GRAY+'"></div><div class="lname"><b>'+esc(k)+' cable</b></div><div class="lcount">'+runs.length+'&#215; · '+fmtM(sum)+'</div>';
+      el.appendChild(hd);
+      rows.forEach(x=>{
+        let dn;
+        if(x.c.dstKind==='tent'){ const t=placed.find(p=>String(p.ref.id)===String(x.c.dst)); dn=t?refOf(t).name:String(x.c.dst); }
+        else dn=EN[x.c.dst]||'?';
+        const row=document.createElement('div'); row.className='legrow'; row.style.cursor='pointer'; row.title='Click to find it on the plan';
+        row.innerHTML='<div class="sw" style="background:transparent"></div><div class="lname" style="font-weight:400">'+esc(EN[x.c.src]||'?')+' &rarr; '+esc(dn)+'</div><div class="lcount">'+fmtM(x.m)+'</div>';
+        row.onclick=()=>{ const A=cableAnchors(x.c); if(A) map.panTo(pathMidpoint(pathFromAnchors(A))); };
+        el.appendChild(row);
+      });
+    });
+    const row=document.createElement('div'); row.className='legrow';
+    row.innerHTML='<div class="sw" style="background:transparent"></div><div class="lname"><b>Total cable</b></div><div class="lcount"><b>'+fmtM(tot)+'</b></div>';
+    el.appendChild(row);
   }
 }
 
@@ -2120,7 +2190,7 @@ function renderNode(n){
   if(n.domain==='el'){
     const pl=phaseLoads(n.id), load=Math.max(pl[0],pl[1],pl[2]); lv=loadLevel(load,nodeRatingAmp(n));
     title=n.kind==='source'?(n.rating+'A IN'):(n.rating+'A'); sub=pl[0]+'/'+pl[1]+'/'+pl[2];
-    cls='node'+(n.kind==='source'?' source':''); brdr=ratingColor(nodeRatingAmp(n));
+    cls='node'+(n.kind==='source'?' source':''); brdr=NET_GRAY;   // gray by default, like the cables
   }else{
     title=n.kind==='brunn'?'Brunn':'Handfat'; sub=''; cls='node water'+(n.kind==='brunn'?' brunn':''); brdr='#2b8cff';
   }
@@ -2232,7 +2302,7 @@ function drawCable(c,dom){
   const s=nodes.find(n=>n.id===c.src); if(!s)return;
   const A=cableAnchors(c); if(!A)return;
   let weight=(dom==='water')?3.5:(c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5)), dash=null;
-  let color=cableColor(c);                      // default by rating (32A orange, 16A yellow…), or c.color override
+  let color=cableColor(c);                      // neutral gray by default, or c.color override
   const lv=(dom!=='water')?loadLevel(peakLoad(s.id),nodeRatingAmp(s)):0;
   if(lv===2){ color='#ff0000'; dash='6,5'; }     // red band: VIVID red dashed — clearly hotter than the 63A/125A wire colour (#ff6b6b)
   else if(lv===1){ dash='10,6'; }                // amber band: keep the wire colour, dashed = worth a glance
