@@ -312,8 +312,11 @@
       </div>
       <div><label>Water input</label><select id="mWater"><option value="0">No</option><option value="1">Yes</option></select></div>
     </div>
-    <label>Shape</label>
-    <select id="mShape"><option value="rect">Rectangle</option><option value="circle">Circle</option></select>
+    <div class="row">
+      <div><label>Shape</label>
+        <select id="mShape"><option value="rect">Rectangle</option><option value="circle">Circle</option></select></div>
+      <div><label>Marknadsst&aring;nd (rented stalls)</label><input id="mStand" type="number" min="0" step="1" value="0"/></div>
+    </div>
     <div class="row">
       <div><label id="mLenLabel">Length (m)</label><input id="mLen" type="number" step="0.1" value="3"/></div>
       <div id="mWidWrap"><label>Width (m)</label><input id="mWid" type="number" step="0.1" value="3"/></div>
@@ -969,6 +972,7 @@ function openAdd(){
   document.getElementById('mWid').value='3';
   document.getElementById('mColor').value='#B6D7A8';
   document.getElementById('mNya').value='0';
+  document.getElementById('mStand').value='0';
   mShape.value='rect'; updateShapeUI();
   modalBg.style.display='flex'; document.getElementById('mName').focus();
 }
@@ -983,6 +987,7 @@ function openEdit(m){
   document.getElementById('mWid').value=m.width!=null?m.width:'';
   document.getElementById('mColor').value=/^#[0-9a-fA-F]{6}$/.test(m.color||'')?m.color:'#B6D7A8';
   document.getElementById('mNya').value=String(m.nya?1:0);
+  document.getElementById('mStand').value=String(m.stand||0);
   mShape.value=m.shape==='circle'?'circle':'rect'; updateShapeUI();
   modalBg.style.display='flex'; document.getElementById('mName').focus();
 }
@@ -1000,7 +1005,8 @@ document.getElementById('mSave').onclick=()=>{
     shape:circle?'circle':'rect',
     length:len, width:wid,
     color:document.getElementById('mColor').value,
-    nya:parseInt(document.getElementById('mNya').value)||0};
+    nya:parseInt(document.getElementById('mNya').value)||0,
+    stand:parseInt(document.getElementById('mStand').value)||0};
   if(editingShape==='balheart'){   // internal composite shape: survives a rename/recolour
     data.shape='balheart';
     if(data.length==null)data.length=10.4; if(data.width==null)data.width=11.5;
@@ -1109,7 +1115,7 @@ function renderLegend(){
    other. `meta` becomes one row PER area. No manual sheet change is needed — the columns
    already exist empty and an UNFORMATTED_VALUE read omits trailing blanks. */
 const SHEET_HEADERS={
-  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape','area','elskap'],
+  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape','area','elskap','stand'],
   nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','color','area'],
   cables:['src','dst','dstKind','domain','otype','phase','color','area','pts'],
   meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy','area']
@@ -1118,8 +1124,8 @@ const SHEET_HEADERS={
    rows are parsed positionally and other areas' rows re-emit verbatim, so it must never
    shift the earlier columns under an old client. Not JSON — a compact "x y k;x y k" list
    (k: b=bend c=curve, or "n <nodeId>" for a koppling junction riding on the pipe). */
-const SHEET_RANGES={placements:'placements!A1:O',nodes:'nodes!A1:N',cables:'cables!A1:I',meta:'meta!A1:H'};
-const SHEET_CLEAR=['placements!A2:O','nodes!A2:N','cables!A2:I','meta!A2:H'];
+const SHEET_RANGES={placements:'placements!A1:P',nodes:'nodes!A1:N',cables:'cables!A1:I',meta:'meta!A1:H'};
+const SHEET_CLEAR=['placements!A2:P','nodes!A2:N','cables!A2:I','meta!A2:H'];
 /* raw values (incl. header) of ALL areas from the last read — lets a write preserve other
    areas' rows. Persisted globally so a save before this session's first read still can't
    clobber the other area. */
@@ -1226,7 +1232,7 @@ function customFromRow(o){
     length:gnum(o.length),width:gnum(o.width),
     color:(!isBlank(o.color)&&/^#[0-9a-fA-F]{6}$/.test(String(o.color)))?String(o.color):'#B6D7A8',
     electricity:isBlank(o.electricity)?'':String(o.electricity),
-    water:gbool(o.water),nya:gnum(o.nya)||0,shape:gshape(o.shape)};
+    water:gbool(o.water),nya:gnum(o.nya)||0,stand:gnum(o.stand)||0,shape:gshape(o.shape)};
   if(c.length==null)c.length=3; if(c.width==null)c.width=3;
   return c;
 }
@@ -1324,6 +1330,15 @@ function placementRow(t){
   return base.concat([r.name||'',r.placering||'',r.length!=null?r.length:'',r.width!=null?r.width:'',
     r.color||'',r.electricity||'',r.water?1:'',r.nya||0,gshape(r.shape)]);
 }
+/* `stand` (marknadsstand count) is a trailing column AFTER `area`/`elskap` — same
+   positional-safety rule as `pts`: a mid-row insert would shift columns under a
+   still-open old client. Blank for an unedited library tent (so Excel re-imports
+   keep driving it), a number once edited or for a custom object. */
+function standCol(t){
+  const id=t.ref.id;
+  if(!isCustomId(id) && !edits[id]) return '';
+  return refOf(t).stand||0;
+}
 /* An edited LIBRARY tent is re-resolved from the library every render, so its override
    can't ride on the placed ref — it travels through the local `edits` map. Rebuild those
    overrides from the def cols of library-tent placements (custom objects are rebuilt
@@ -1333,7 +1348,7 @@ function editDefFromRow(o){
   return {name:String(o.name),placering:isBlank(o.placering)?'':String(o.placering),
     electricity:isBlank(o.electricity)?'':String(o.electricity),water:gbool(o.water),
     shape:gshape(o.shape),length:gnum(o.length),width:gnum(o.width),
-    color:isBlank(o.color)?'':String(o.color),nya:gnum(o.nya)||0};
+    color:isBlank(o.color)?'':String(o.color),nya:gnum(o.nya)||0,stand:gnum(o.stand)||0};
 }
 function reconcileEdits(P){
   let touched=false;
@@ -1352,7 +1367,7 @@ function sheetData(savedAt,savedBy){
   const A=area;   // tag this area's rows; re-emit the other areas' rows verbatim so they survive
   const EN=elNames();   // one designations map for all the placement rows
   return [
-    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>placementRow(t).concat([A,feedCabName(t.ref.id,EN)]))).concat(otherAreaRows('placements'))},
+    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>placementRow(t).concat([A,feedCabName(t.ref.id,EN),standCol(t)]))).concat(otherAreaRows('placements'))},
     {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(n=>nodeToRow(n).concat([A]))).concat(otherAreaRows('nodes'))},
     {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(c=>cableToRow(c).concat([A,ptsToStr(c.pts)]))).concat(otherAreaRows('cables'))},
     {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy).concat([A])].concat(otherAreaRows('meta'))}
