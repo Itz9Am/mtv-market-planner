@@ -115,8 +115,13 @@
   .legsub{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);padding:12px 10px 3px}
   /* public (no-login) view: map only, no editing UI. admin view: full UI. */
   body.public #sidebar{display:none}
-  /* public view keeps the topbar, but only the Placering group (Letters toggle) is ever
-     shown there — El/Vatten groups stay display:none since tabs are hidden in public */
+  /* public view keeps the topbar and can switch tabs via #pubTabs (admin uses the
+     sidebar tabs instead). El/Vatten are read-only there: the editing buttons in the
+     El group are hidden (only the Names toggle stays, like Letters), and the Vatten
+     group (all editing) is hidden entirely. */
+  body.admin #pubTabs{display:none}
+  body.public #elControls .ela,body.public #elControls .lbl,body.public #elControls #wireEl{display:none!important}
+  body.public #vattenControls{display:none!important}
   #adminBtn{position:absolute;right:12px;bottom:12px;z-index:700;width:30px;height:34px;border-radius:8px;background:rgba(20,22,30,.5);border:1px solid var(--line);color:var(--muted);opacity:.3;display:none;align-items:center;justify-content:center;font-size:16px;line-height:1;padding:0;transition:opacity .15s,color .15s,border-color .15s}
   #adminBtn:hover{opacity:1;color:var(--txt);border-color:var(--accent)}
   body.public #adminBtn{display:flex}
@@ -230,6 +235,11 @@
       </div>
     </div>
     <div id="topbar">
+      <div class="seg" id="pubTabs">
+        <button data-tab="placering" class="on">Placering</button>
+        <button data-tab="el">El</button>
+        <button data-tab="vatten">Vatten</button>
+      </div>
       <div class="grp" id="placeringControls">
         <button id="lettersBtn" class="wirebtn on" title="Show or hide the Placering letters on tents">Letters</button>
         <button id="measureBtn" class="wirebtn" title="Calibrate the scale: click two points a known distance apart, then type the metres">Measure</button>
@@ -545,9 +555,10 @@ function capHtmlFor(t){
 }
 function tentClick(t,e){
   L.DomEvent.stopPropagation(e);
-  if(!ADMIN) return;   // public view: tents are look-only
+  // El/Vatten clicks may highlight in public too (wireMode is admin-only, so no writes)
   if(currentTab==='el'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); else highlightFromTent(t.ref.id); return; }
   if(currentTab==='vatten'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); return; }
+  if(!ADMIN) return;   // public view: Placering tents are look-only
   if(e.originalEvent&&e.originalEvent.shiftKey) toggleSel(t.uid);   // shift-click: add/remove from the multi-selection
   else selectTent(t.uid);
 }
@@ -899,6 +910,7 @@ function setTab(tab){
   document.getElementById('tabPlacering').classList.toggle('on',tab==='placering');
   document.getElementById('tabEl').classList.toggle('on',tab==='el');
   document.getElementById('tabVatten').classList.toggle('on',tab==='vatten');
+  document.querySelectorAll('#pubTabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   const pl=tab==='placering';
   document.getElementById('placementUI').style.display=pl?'':'none';
   document.getElementById('tentList').style.display=pl?'':'none';
@@ -919,6 +931,7 @@ function setTab(tab){
 document.getElementById('tabPlacering').onclick=()=>setTab('placering');
 document.getElementById('tabEl').onclick=()=>setTab('el');
 document.getElementById('tabVatten').onclick=()=>setTab('vatten');
+document.querySelectorAll('#pubTabs button').forEach(b=>{ b.onclick=()=>setTab(b.dataset.tab); });
 function renderLegend(){
   const el=document.getElementById('elLegend'); if(!el)return; el.innerHTML='';
   const cnt={}; placed.forEach(t=>{const e=(refOf(t).electricity||'').trim(); cnt[e]=(cnt[e]||0)+1;});
@@ -1347,7 +1360,7 @@ document.getElementById('syncStatus').onclick=async()=>{
 function applyMode(){
   document.body.classList.toggle('admin',ADMIN);
   document.body.classList.toggle('public',!ADMIN);
-  if(!ADMIN && currentTab!=='placering') setTab('placering');   // public only ever shows the tents
+  setTab(currentTab);   // keep the tab (public may view all three); re-runs the wire/arm/selection resets
   deselect();
   setTimeout(()=>{ map.invalidateSize(); refreshAll(); positionCtl(); },0);
 }
@@ -1857,7 +1870,7 @@ function renderNode(n){
       if(wireMode && connectSource && connectSource!==n.id){ connect(connectSource,{kind:'node',id:n.id}); return; }
       const sel=connectSource!==n.id; setConnectSource(sel?n.id:null);
       if(sel&&n.domain==='el') highlightFromNode(n.id); else { clearHl(); refreshHl(); } });
-    m.on('dblclick',ev=>{L.DomEvent.stopPropagation(ev); if(n.domain==='el') openSrcModal(n.id);});
+    m.on('dblclick',ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN&&n.domain==='el') openSrcModal(n.id);});
     m.on('drag',()=>{const p=m.getLatLng();n.lat=p.lat;n.lng=p.lng;redrawCables();});
     m.on('dragend',saveNet);
     nodeMarkers[n.id]=m;
@@ -1867,7 +1880,7 @@ function renderNode(n){
   }
   const root=m.getElement()&&m.getElement().querySelector('.node');
   if(root){ root.classList.toggle('sel',connectSource===n.id); root.classList.toggle('hl',hl.nodes.has(n.id)); }
-  if(m.dragging){ wireMode?m.dragging.disable():m.dragging.enable(); }
+  if(m.dragging){ (wireMode||!ADMIN)?m.dragging.disable():m.dragging.enable(); }   // public: nodes are look-only
 }
 function setConnectSource(id){
   connectSource=id; nodes.forEach(renderNode);
@@ -1930,7 +1943,7 @@ function redrawCables(){
     let weight=(dom==='water')?3.5:(c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5)), dash=null;
     let color=cableColor(c);                      // default by rating (32A orange, 16A yellow…), or c.color override
     const lv=(dom!=='water')?loadLevel(peakLoad(s.id),nodeRatingAmp(s)):0;
-    if(lv===2){ color='#ff5252'; dash='6,5'; }     // red band: red dashed, overrides the wire colour
+    if(lv===2){ color='#ff0000'; dash='6,5'; }     // red band: VIVID red dashed — clearly hotter than the 63A/125A wire colour (#ff6b6b)
     else if(lv===1){ dash='10,6'; }                // amber band: keep the wire colour, dashed = worth a glance
     const isHl=hl.cables.has(c);
     if(isHl){ color='#ffd400'; weight=weight+2.5; }
@@ -2008,7 +2021,7 @@ function renderVattenLegend(){
 document.addEventListener('keydown',e=>{
   if(curDomain()){
     if(e.key==='Escape'){ armNode=null; if(wireMode) setWire(false); else setConnectSource(null); }
-    else if((e.key==='Delete'||e.key==='Backspace') && connectSource){ const tag=(e.target.tagName||'').toLowerCase(); if(tag!=='input'&&tag!=='select'){ removeNode(connectSource); e.preventDefault(); } }
+    else if((e.key==='Delete'||e.key==='Backspace') && ADMIN && connectSource){ const tag=(e.target.tagName||'').toLowerCase(); if(tag!=='input'&&tag!=='select'){ removeNode(connectSource); e.preventDefault(); } }
   }
 });
 

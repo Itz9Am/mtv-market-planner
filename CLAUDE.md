@@ -288,10 +288,15 @@ signing in. State lives in one boolean, `ADMIN` (persisted in `LS.admin`,
 between the `public` and `admin` classes.
 
 - **Public (default, no login):** the sidebar (`#sidebar`) is hidden by `body.public`
-  CSS; the map with the tents fills the window. The `#topbar` **stays** visible so the
-  **Letters** toggle works in public — only its Placering group ever shows there, since
-  the tabs are hidden and public never switches away from Placering (El/Vatten groups
-  keep their inline `display:none`). The topbar is anchored **top-right**
+  CSS; the map with the tents fills the window. The `#topbar` **stays** visible and
+  now carries a public-only tab switcher (`#pubTabs`, hidden in admin where the
+  sidebar tabs exist), so **public can view all three tabs**. El/Vatten are strictly
+  read-only there: the El group's editing buttons (`.ela`, the `cabinet` label, Wire)
+  are CSS-hidden leaving only the **Names** toggle, the whole Vatten group is hidden,
+  node dragging / dblclick-edit / Delete-key removal are gated on `ADMIN`, and
+  clicking a tent or cabinet in El only highlights the supply chain (`wireMode` is
+  unreachable in public). `applyMode()` keeps the current tab and re-runs `setTab`'s
+  wire/selection resets instead of forcing Placering. The topbar is anchored **top-right**
   (`right:10px`), not top-left, so it clears Leaflet's top-left zoom control. Auto-sync
   still runs read-only (startup pull + 15 s poll), so a shared link stays current.
   `<body>` ships
@@ -299,8 +304,9 @@ between the `public` and `admin` classes.
   so a fresh viewer **never flashes the editing tools** (a persisted admin sees a brief
   public flash instead — the safe direction).
 - **Admin (unlocked by sign-in):** the full UI. `enterAdmin()` / `exitAdminMode()` set
-  the flag and call `applyMode()`. `applyMode()` forces the Placering tab when leaving
-  admin and defers `map.invalidateSize()` (the sidebar showing/hiding resizes the map).
+  the flag and call `applyMode()`. `applyMode()` keeps the current tab (public views
+  all three) and defers `map.invalidateSize()` (the sidebar showing/hiding resizes the
+  map).
 - **The admin entry is deliberately "somewhat hidden":** a faint `⋮` corner button
   (`#adminBtn`, bottom-right of the map, opacity .3 → 1 on hover). It's written as the
   HTML entity `&#8942;` in the template so `build.py`'s emoji check never sees a raw
