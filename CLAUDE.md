@@ -180,8 +180,8 @@ never read `t.ref` directly.
 
 ## Electrical model (El tab)
 
-The user has corrected this three times (most recently 2026-07, reversing the
-single-phase-per-tent model). Get it right.
+The user has corrected this four times (most recently 2026-07, reversing the
+220V=16A clamp; before that the single-phase-per-tent model). Get it right.
 
 - A source or cabinet is rated **per phase**. A 63 A cabinet supplies 63 A on each of
   L1/L2/L3 — 189 A in total.
@@ -191,10 +191,10 @@ single-phase-per-tent model). Get it right.
   places each on the least-loaded phase along its whole feed path (LPT, on top of the
   3-phase base load). The earlier one-phase-per-tent model undercounted 3-phase loads
   and was rejected.
-- **Every 220 V tent counts as 16 A** on its one phase (`tentReq` clamps, `tentAmp`
-  goes through `tentReq`): a 220 V hookup is a 16 A schuko circuit, and the workbook's
-  `220v 6A` is 16 A mentally divided over three phases — an undercount the user asked
-  to correct in the app rather than in the Excel.
+- **A 220 V tent counts its STATED amps** on its one phase (`tentAmp` goes through
+  `tentReq`): `220v 6A` is 6 A, `220v 16A` is 16 A, a bare `220v` defaults to 6 A. The
+  earlier clamp that counted every 220 V tent as 16 A overcounted the 6 A tents and was
+  reversed by the user 2026-07. The socket is a 220 V schuko outlet either way.
 - Cabinet→cabinet feeds carry the downstream cabinet's per-phase aggregate.
 - Load bands per phase vs rating (`loadLevel`, replaced the earlier flat +3 A rule):
   **green** ≤100%; **amber** 100–130% (fine in practice — an MCB holds 113% of In
