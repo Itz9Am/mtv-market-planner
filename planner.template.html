@@ -186,7 +186,7 @@
     </div>
     <div id="tentList"></div>
     <div id="elUI" style="display:none">
-      <div class="hint">Electrical view. Add a <b>Source</b> (a popup sets its amps and outputs) and cabinets from the toolbar. To wire, turn on the <b>Wire</b> tool, click a source/cabinet, then click what it feeds. With Wire off, clicking just selects and highlights the supply chain. Cabinets are three-phase: single-phase 220V loads are balanced across L1/L2/L3, three-phase loads sit on all phases, and any phase over the rating is flagged red. With Wire on, click a cable to add a dot you can drag to bend it (double-click the dot toggles a smooth curve, right-click removes it); with Wire off, click a cable to recolour or remove it. Cable lengths are shown at each wire's midpoint and totalled below. Select a node and press Delete to remove it.</div>
+      <div class="hint">Electrical view. Add a <b>Source</b> (a popup sets its amps and outputs) and cabinets from the toolbar. To wire, turn on the <b>Wire</b> tool, click a source/cabinet, then click what it feeds. With Wire off, clicking just selects and highlights the supply chain. Cabinets are three-phase: single-phase 220V loads are balanced across L1/L2/L3, three-phase loads sit on all phases, and any phase over the rating is flagged red. With Wire on: click a cable to add a dot you can drag to bend it (click the dot for curve/remove), and right-click the cable to recolour or remove it. Cable lengths show at each wire's midpoint (Lengths toggle) and are totalled below. Ctrl+Z undoes, Ctrl+Shift+Z redoes. Select a node and press Delete to remove it.</div>
       <div class="seg" id="elViewSeg">
         <button data-v="overview" class="on">Overview</button>
         <button data-v="cabinets">Cabinets</button>
@@ -195,7 +195,7 @@
       <div id="elTree" style="display:none"></div>
     </div>
     <div id="vattenUI" style="display:none">
-      <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. With Wire on, click a pipe to add a blue dot you can drag to bend it (double-click: bend, curve, then gray <b>koppling</b>); a gray koppling is a junction — click it and then a tent/handfat to branch a new pipe from that point. Right-click a dot or koppling to remove it. With Wire off, click a pipe to recolour or remove it; select a fixture and press Delete.</div>
+      <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. With Wire on: click a pipe to add a blue dot you can drag to bend it — click the dot to make it a curve, a gray <b>koppling</b>, or remove it. A koppling is a junction: click it and then a tent/handfat to branch a new pipe from that point (right-click removes it with its branches). Right-click a pipe to recolour or remove it. Ctrl+Z undoes, Ctrl+Shift+Z redoes. Select a fixture and press Delete.</div>
       <div id="vattenLegend"></div>
     </div>
   </div>
@@ -261,11 +261,13 @@
         <button class="ela" data-r="16">16A</button>
         <button class="ela" data-custom="1">Custom</button>
         <button id="cabNamesBtn" class="wirebtn on" title="Show or hide the cabinet designations (A1, A1N1 &hellip;) on the map">Names</button>
+        <button id="lenBtnEl" class="wirebtn on" title="Show or hide the cable lengths (metres) on the wires">Lengths</button>
         <button id="wireEl" class="wirebtn">Wire</button>
       </div>
       <div class="grp" id="vattenControls" style="display:none">
         <button class="wta" data-w="brunn">Brunn</button>
         <button class="wta" data-w="handfat">Handfat</button>
+        <button id="lenBtnVa" class="wirebtn on" title="Show or hide the pipe lengths (metres)">Lengths</button>
         <button id="wireVa" class="wirebtn">Wire</button>
       </div>
     </div>
@@ -347,10 +349,23 @@
   </div>
 </div>
 
+<div class="modal-bg" id="dotBg">
+  <div class="modal">
+    <h3>Wire dot</h3>
+    <p>A <b>square</b> dot is a sharp bend, a <b>round</b> dot pulls a smooth curve through it. On a water pipe a gray <b>koppling</b> is a junction that other pipes can branch from. Drag the dot on the map to move it.</p>
+    <div class="actions" style="justify-content:flex-start">
+      <button id="dotBend">Sharp bend</button>
+      <button id="dotCurve">Curve</button>
+      <button id="dotKopp">Koppling</button>
+    </div>
+    <div class="actions"><button id="dotRemove" style="color:var(--danger)">Remove dot</button><button id="dotCancel">Cancel</button></div>
+  </div>
+</div>
+
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1'};
 /* Two independent plans ("areas"), each with its own tents, wiring, scale, view and base
    image. The plan-state keys below are namespaced per area in localStorage; the default
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
@@ -385,7 +400,8 @@ let edits=lsGet(LS.edits,{});
 let removed=new Set(lsGet(LS.removed,[]));
 let showLetters=lsGet(LS.letters,true);
 let showCabNames=lsGet(LS.cabnames,true);   // cabinet designations (A1, A1N1 …) on the map; global like `letters`
-function saveRemoved(){ lsSet(LS.removed,[...removed]); }               // per-id field overrides
+let showLengths=lsGet(LS.lengths,true);     // metre labels on wires/pipes; global like `letters`
+function saveRemoved(){ lsSet(LS.removed,[...removed]); histMark(); }               // per-id field overrides
 let editingId=null;                         // which tent the modal is editing (null = add new)
 let editingShape=null;                      // the edited item's current shape; keeps the internal 'balheart' shape across a modal save (the select only offers rect/circle)
 function applyEdits(t){ const e=edits[t.id]; return e?Object.assign({},t,e):t; }
@@ -637,7 +653,7 @@ function removeTentMarker(t){
   ['marker','label','poly','nyaPoly'].forEach(k=>{ if(t[k])map.removeLayer(t[k]); t[k]=null; });
 }
 function refreshAll(){ placed.forEach(renderTentMarker); positionCtl(); }
-function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); queueSheetSave(); }
+function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); queueSheetSave(); histMark(); }
 function loadPlaced(){ placed=[]; (lsGet(LS.placed,[])||[]).forEach(a=>{placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null});}); placedIds=new Set(placed.map(t=>t.ref.id)); refreshOtherPlaced(); }
 /* A tent is placed once across the whole event: `otherPlaced` holds ids placed in the
    OTHER area(s), read straight from their namespaced localStorage, so a vendor dropped on
@@ -715,6 +731,65 @@ document.getElementById('delBtn').onclick=()=>{
   saveNet(); redrawCables();
   deselect(); savePlaced(); renderList(document.getElementById('search').value);
 };
+/* ---------- undo / redo (Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y; Cmd on Mac) ----------
+   Snapshot-based: after every committed change (savePlaced / saveNet / saveRemoved /
+   list edits) the whole editable state — placements, nodes, cables, custom objects,
+   removed set, per-tent edits — is serialized onto a stack, and Ctrl+Z swaps the
+   previous snapshot back in through the same full-rebuild path a Sheet load uses.
+   Snapshots are taken on a 0 ms timer so ONE user action (which may run savePlaced
+   AND saveNet, e.g. deleting a wired tent) lands as ONE history entry. History is
+   per-session and reset whenever remote state is applied (startup pull, poll reload,
+   area switch) — undoing across someone else's save would silently clobber it. */
+const HIST={undo:[],redo:[],cur:null,max:60,timer:null,muted:false};
+function histState(){ return JSON.stringify({
+  placed:placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot||0})),
+  nodes:nodes,cables:cables,custom:customTents,removed:[...removed],edits:edits}); }
+function histInit(){ clearTimeout(HIST.timer); HIST.timer=null; HIST.undo=[]; HIST.redo=[]; HIST.cur=histState(); }
+function histFlush(){
+  clearTimeout(HIST.timer); HIST.timer=null;
+  if(HIST.cur==null){ HIST.cur=histState(); return; }
+  const s=histState(); if(s===HIST.cur) return;
+  HIST.undo.push(HIST.cur); if(HIST.undo.length>HIST.max) HIST.undo.shift();
+  HIST.redo=[]; HIST.cur=s;
+}
+function histMark(){ if(HIST.muted||SYNC.loading) return; clearTimeout(HIST.timer); HIST.timer=setTimeout(histFlush,0); }
+function histApply(s){
+  const st=JSON.parse(s);
+  HIST.muted=true;
+  try{
+    deselect(); connectSource=null; armNode=null; armedRef=null; clearHl(); banner.style.display='none';
+    placed.forEach(removeTentMarker);
+    placed=st.placed.map(a=>({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null}));
+    placedIds=new Set(placed.map(t=>t.ref.id));
+    nodes=st.nodes; cables=st.cables;
+    customTents=st.custom; removed=new Set(st.removed); edits=st.edits;
+    library=TENTS.concat(customTents);
+    lsSet(LS.custom,customTents); lsSet(LS.edits,edits); lsSet(LS.removed,[...removed]);
+    savePlaced(); saveNet();                       // persist locally + queue ONE sheet save
+    refreshAll(); renderList(document.getElementById('search').value);
+    showDomainLayers();                            // rebuilds node markers + cables for the current tab
+    if(currentTab==='el') renderLegend();
+    if(currentTab==='vatten') renderVattenLegend();
+  } finally { HIST.muted=false; }
+}
+function histStep(from,to,label){
+  histFlush();                                     // a change made a moment ago becomes undoable first
+  if(!from.length){ flashBanner('Nothing to '+label+'.',false); setTimeout(()=>banner.style.display='none',1200); return; }
+  to.push(HIST.cur); HIST.cur=from.pop();
+  histApply(HIST.cur);
+  flashBanner((label==='undo'?'Undo':'Redo')+' — '+(label==='undo'?HIST.undo.length:HIST.redo.length)+' more step(s) available.',false);
+  setTimeout(()=>banner.style.display='none',1400);
+}
+document.addEventListener('keydown',e=>{
+  if(!ADMIN||!(e.ctrlKey||e.metaKey))return;
+  const k=(e.key||'').toLowerCase(); if(k!=='z'&&k!=='y')return;
+  const tag=(e.target.tagName||'').toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select')return;
+  if(pointerDown)return;                           // never swap state out from under a live drag
+  e.preventDefault();
+  if(k==='y'||e.shiftKey) histStep(HIST.redo,HIST.undo,'redo');
+  else histStep(HIST.undo,HIST.redo,'undo');
+});
+
 /* Clipboard: cmd/ctrl+C copies the selection, cmd/ctrl+V pastes it, cmd/ctrl+D
    duplicates it in one step. Every pasted item becomes a NEW custom object (fresh
    custom_ id; the def is deep-copied through refOf, so per-item edits are baked
@@ -811,7 +886,7 @@ function removeFromList(m){
   if(isCustom){
     customTents=customTents.filter(c=>String(c.id)!==String(m.id));
     library=library.filter(c=>String(c.id)!==String(m.id));
-    lsSet(LS.custom,customTents);
+    lsSet(LS.custom,customTents); histMark();
   }else{
     removed.add(String(m.id)); saveRemoved();
   }
@@ -906,6 +981,7 @@ document.getElementById('mSave').onclick=()=>{
   refreshAll(); redrawCables();
   if(currentTab==='el') renderLegend();
   queueSheetSave();   // push the edited def (library tent or custom object) so other browsers update
+  histMark();
 };
 
 /* The base image and scale (ppm) are fixed: the image is the committed
@@ -1285,6 +1361,7 @@ function applySheetState(P,N,C,M,keepView){
   else if(imgUrl){ setImage(imgUrl, !!useView); }
   else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
   renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
+  histInit();   // remote state applied — undoing past this point would clobber someone else's save
   return didRebalance;
 }
 /* --- automatic sync: debounced save on every change, load on startup --- */
@@ -1489,7 +1566,7 @@ function cableLenM(c){ if(!ppm)return null; const A=cableAnchors(c); if(!A)retur
 function fmtM(m){ return (m>=9.95?Math.round(m):Math.round(m*10)/10)+' m'; }
 function lenIcon(txt){ return L.divIcon({className:'node-div',html:'<div class="cablen">'+txt+'</div>',iconSize:[0,0],iconAnchor:[0,0]}); }
 function tentPos(id){ const t=placed.find(x=>x.ref.id===id); return t?[t.lat,t.lng]:null; }
-function saveNet(){ lsSet(LS.nodes,nodes); lsSet(LS.cables,cables); queueSheetSave(); }
+function saveNet(){ lsSet(LS.nodes,nodes); lsSet(LS.cables,cables); queueSheetSave(); histMark(); }
 function curDomain(){ return currentTab==='el'?'el':currentTab==='vatten'?'water':null; }
 
 // a tent's demand from its sheet electricity: {phase:1|3, amp}
@@ -1777,6 +1854,25 @@ function openCabModal(c){
   cabBg.style.display='flex';
 }
 function closeCab(){ cabBg.style.display='none'; cabEditing=null; }
+/* dot modal — clicking a dot in wire mode opens it: change bend/curve/koppling or remove.
+   (Right-click on the dot stays as a quick remove.) */
+let dotEditing=null;   // {c,p}
+const dotBg=document.getElementById('dotBg');
+function openDotModal(c,p){
+  dotEditing={c:c,p:p};
+  document.getElementById('dotKopp').style.display=(c.domain==='water')?'':'none';
+  document.getElementById('dotBend').classList.toggle('primary',p.k==='b');
+  document.getElementById('dotCurve').classList.toggle('primary',p.k==='c');
+  dotBg.style.display='flex';
+}
+function closeDot(){ dotBg.style.display='none'; const d=dotEditing; dotEditing=null; return d; }
+function dotRefresh(){ redrawCables(); if(curDomain()==='el')renderLegend(); else renderVattenLegend(); }
+document.getElementById('dotCancel').onclick=closeDot;
+document.getElementById('dotBend').onclick=()=>{ const d=closeDot(); if(!d)return; d.p.k='b'; saveNet(); dotRefresh(); };
+document.getElementById('dotCurve').onclick=()=>{ const d=closeDot(); if(!d)return; d.p.k='c'; saveNet(); dotRefresh(); };
+document.getElementById('dotKopp').onclick=()=>{ const d=closeDot(); if(!d||d.c.domain!=='water')return; wpToKoppling(d.c,d.p); };
+document.getElementById('dotRemove').onclick=()=>{ const d=closeDot(); if(!d)return;
+  d.c.pts=d.c.pts.filter(x=>x!==d.p); saveNet(); dotRefresh(); };
 document.getElementById('cabCancel').onclick=closeCab;
 document.getElementById('cabRemove').onclick=()=>{ const c=cabEditing; closeCab();
   if(c){ removeCableCascade(c); saveNet(); redrawCables(); nodes.forEach(renderNode); renderLegend(); renderVattenLegend(); } };
@@ -1795,8 +1891,8 @@ function setWire(on){
   mapWrap.classList.toggle('wiring',on);
   if(!on){ setConnectSource(null); banner.style.display='none'; }
   else flashBanner(curDomain()==='water'
-    ?'Wire tool on: click a brunn or koppling, then what it feeds. Click a pipe to drop a bend dot (Alt-click: gray koppling) — drag it, double-click cycles bend/curve/koppling, right-click removes. Click Wire again to stop.'
-    :'Wire tool on: click a source/cabinet, then click what it feeds. Click a wire to drop a bend dot — drag it, double-click toggles curve, right-click removes. Click Wire again to stop.',true);
+    ?'Wire tool on: click a brunn or koppling, then what it feeds. Click a pipe to drop a dot (Alt-click: gray koppling); click the dot to change or remove it; right-click the pipe to recolour or remove it. Click Wire again to stop.'
+    :'Wire tool on: click a source/cabinet, then click what it feeds. Click a wire to drop a bend dot; click the dot to make it a curve or remove it; right-click the wire to recolour or remove it. Click Wire again to stop.',true);
   nodes.forEach(renderNode);
   redrawCables();   // bend/curve dots only exist while the wire tool is on
 }
@@ -1808,6 +1904,13 @@ function setCabNames(on){ showCabNames=on; lsSet(LS.cabnames,on);
   document.getElementById('cabNamesBtn').classList.toggle('on',on);
   nodes.forEach(renderNode); }
 document.getElementById('cabNamesBtn').onclick=()=>setCabNames(!showCabNames);
+/* metre labels on wires/pipes — one shared state, a button in each of the El and Vatten groups */
+function setLengths(on){ showLengths=on; lsSet(LS.lengths,on);
+  document.getElementById('lenBtnEl').classList.toggle('on',on);
+  document.getElementById('lenBtnVa').classList.toggle('on',on);
+  redrawCables(); }
+document.getElementById('lenBtnEl').onclick=()=>setLengths(!showLengths);
+document.getElementById('lenBtnVa').onclick=()=>setLengths(!showLengths);
 /* El sidebar sub-views: Overview (legend) | Cabinets (distribution tree) */
 let elView='overview';
 function setElView(v){ elView=v;
@@ -1928,6 +2031,7 @@ function switchArea(a){
   area=a; try{ localStorage.setItem(LS.area,JSON.stringify(a)); }catch(e){}
   document.querySelectorAll('#areaSeg button').forEach(b=>b.classList.toggle('on',b.dataset.area===a));
   reloadAreaState();
+  histInit();                 // history is per-area: undo must never leak edits across areas
   renderList('');
   setImage(baseImg(),true);   // swaps to this area's committed base image, restores its saved view, re-renders
   showDomainLayers();
@@ -1960,7 +2064,7 @@ function renderKoppling(n){
     m.on('click',ev=>{L.DomEvent.stopPropagation(ev); if(armNode)return;
       const sel=connectSource!==n.id; setConnectSource(sel?n.id:null); });
     m.on('dblclick',ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN) kopplingToBend(n.id);});
-    m.on('contextmenu',ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN) removeNode(n.id);});
+    m.on('contextmenu',ev=>{L.DomEvent.stopPropagation(ev); if(ev.originalEvent)ev.originalEvent.preventDefault(); if(ADMIN) removeNode(n.id);});
     m.on('drag',()=>{const p=m.getLatLng();n.lat=p.lat;n.lng=p.lng;redrawCables();});
     m.on('dragend',saveNet);
     nodeMarkers[n.id]=m;
@@ -2094,21 +2198,23 @@ function drawCable(c,dom){
   else if(lv===1){ dash='10,6'; }                // amber band: keep the wire colour, dashed = worth a glance
   const isHl=hl.cables.has(c);
   if(isHl){ color='#ffd400'; weight=weight+2.5; }
-  /* Wire tool on: clicking the wire drops a draggable bend dot right there
-     (Alt-click on a water pipe drops a gray koppling junction instead).
-     Wire tool off: the old recolour/remove modal. */
-  const onClick=ev=>{L.DomEvent.stopPropagation(ev); if(!ADMIN)return;
-    if(wireMode){ addCableDot(c,ev.latlng, dom==='water'&&!!(ev.originalEvent&&ev.originalEvent.altKey)); return; }
-    openCabModal(c);};
+  /* All wire editing lives in wire mode: clicking the wire drops a draggable bend dot
+     right there (Alt-click on a water pipe drops a gray koppling junction instead), and
+     RIGHT-clicking the wire opens the recolour/remove modal. With the Wire tool off a
+     wire click does nothing — no surprise popups while browsing. */
+  const onClick=ev=>{L.DomEvent.stopPropagation(ev); if(!ADMIN||!wireMode)return;
+    addCableDot(c,ev.latlng, dom==='water'&&!!(ev.originalEvent&&ev.originalEvent.altKey));};
+  const onCtx=ev=>{L.DomEvent.stopPropagation(ev); if(ev.originalEvent)ev.originalEvent.preventDefault();
+    if(!ADMIN||!wireMode)return; openCabModal(c);};
   const path=pathFromAnchors(A);
   // black casing underneath gives every wire a clean outline
   const casing=L.polyline(path,{pane:'cables',color:'#000',weight:weight+3,opacity:isHl?1:0.9,dashArray:dash}).addTo(map);
-  casing.on('click',onClick); cableLines.push(casing);
+  casing.on('click',onClick); casing.on('contextmenu',onCtx); cableLines.push(casing);
   const line=L.polyline(path,{pane:'cables',color,weight,opacity:1,dashArray:dash}).addTo(map);
-  line.on('click',onClick); cableLines.push(line);
+  line.on('click',onClick); line.on('contextmenu',onCtx); cableLines.push(line);
   // length readout at the wire midpoint (needs ppm; follows the drawn path, curves included)
   let lenLbl=null;
-  if(ppm){
+  if(ppm&&showLengths){
     lenLbl=L.marker(pathMidpoint(path),{icon:lenIcon(fmtM(pathPixLen(path)/ppm)),pane:'tentlabels',interactive:false,keyboard:false}).addTo(map);
     cableLines.push(lenLbl);
   }
@@ -2123,11 +2229,10 @@ function drawCable(c,dom){
     const bg=(dom==='water')?'#2b8cff':cableColor(c);
     const html='<div class="cdot'+(p.k==='c'?' crv':'')+'" style="width:'+d+'px;height:'+d+'px;background:'+bg+'"></div>';
     const mk=L.marker([p.y,p.x],{icon:L.divIcon({className:'node-div',html,iconSize:[d,d],iconAnchor:[d/2,d/2]}),pane:'dots',draggable:true,keyboard:false}).addTo(map);
-    mk.on('click',ev=>L.DomEvent.stopPropagation(ev));
+    mk.on('click',ev=>{ L.DomEvent.stopPropagation(ev); openDotModal(c,p); });         // bend/curve/koppling/remove
     mk.on('drag',()=>{ const q=mk.getLatLng(); p.x=q.lng; p.y=q.lat; liveUpdate(); });   // move only — never rebuild layers mid-drag
     mk.on('dragend',()=>{ saveNet(); redrawCables(); if(dom==='el')renderLegend(); else renderVattenLegend(); });
-    mk.on('dblclick',ev=>{ L.DomEvent.stopPropagation(ev); toggleDot(c,p); });
-    mk.on('contextmenu',ev=>{ L.DomEvent.stopPropagation(ev);
+    mk.on('contextmenu',ev=>{ L.DomEvent.stopPropagation(ev); if(ev.originalEvent)ev.originalEvent.preventDefault();   // quick remove
       c.pts=c.pts.filter(x=>x!==p); saveNet(); redrawCables(); if(dom==='el')renderLegend(); else renderVattenLegend(); });
     cableLines.push(mk);
   });
@@ -2149,18 +2254,12 @@ function addCableDot(c,latlng,asKopp){
   if(asKopp){ nodes.forEach(renderNode); renderVattenLegend();
     flashBanner('Koppling added — click it, then a tent or handfat, to branch a pipe from here.',false); }
 }
-/* double-click a dot: el toggles sharp/curve; water cycles bend > curve > koppling */
-function toggleDot(c,p){
-  if(p.k==='b'){ p.k='c'; }
-  else if(c.domain==='water'){                    // curve -> gray koppling junction
-    const n={id:'node_'+Date.now()+'_'+Math.floor(Math.random()*1000),domain:'water',kind:'koppling',rating:0,lat:p.y,lng:p.x};
-    nodes.push(n); c.pts[c.pts.indexOf(p)]={k:'n',nid:n.id};
-    saveNet(); redrawCables(); nodes.forEach(renderNode); renderVattenLegend();
-    flashBanner('Koppling: click it, then a tent or handfat, to branch a pipe from here. Double-click it to turn it back into a bend dot.',false);
-    return;
-  }
-  else { p.k='b'; }
-  saveNet(); redrawCables();
+/* turn a blue bend/curve dot into a gray koppling junction (water only) */
+function wpToKoppling(c,p){
+  const n={id:'node_'+Date.now()+'_'+Math.floor(Math.random()*1000),domain:'water',kind:'koppling',rating:0,lat:p.y,lng:p.x};
+  nodes.push(n); c.pts[c.pts.indexOf(p)]={k:'n',nid:n.id};
+  saveNet(); redrawCables(); nodes.forEach(renderNode); renderVattenLegend();
+  flashBanner('Koppling: click it, then a tent or handfat, to branch a pipe from here. Double-click it to turn it back into a bend dot.',false);
 }
 /* koppling back to a plain blue bend dot (only when nothing branches from it) */
 function kopplingToBend(id){
@@ -2359,7 +2458,9 @@ updateLegend();
 updateScaleReadout();
 setLetters(showLetters);
 setCabNames(showCabNames);
+setLengths(showLengths);
 renderList();
+histInit();          // baseline for Ctrl+Z (the pre-startup local state)
 document.querySelectorAll('#areaSeg button').forEach(b=>b.classList.toggle('on',b.dataset.area===area));  // reflect the persisted area
 applyMode();          // public map-only view by default; admin UI if previously unlocked
 if(!imgData) flashBanner('Base image could not be loaded — check the connection and refresh.',true);
