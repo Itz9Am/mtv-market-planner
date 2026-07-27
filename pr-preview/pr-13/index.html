@@ -30,6 +30,11 @@
   /* El tab sub-views: Overview (legend) | Cabinets (distribution tree) | Material (procurement list) */
   #elViewSeg{margin:8px 14px 0}
   #elViewSeg button{flex:1}
+  /* Material view: inventory entry forms */
+  #elMat .invform{display:flex;gap:6px;margin:6px 10px;align-items:center}
+  #elMat .invform select,#elMat .invform input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:7px 8px;border-radius:7px;font-size:12px}
+  #elMat .invform input[type=number]{max-width:64px}
+  #elMat .invform button{white-space:nowrap}
   #elTree{padding:6px 10px 16px}
   #elTree .etkids{margin:0 0 0 13px;border-left:1px dashed var(--line);padding-left:9px}
   #elTree .etnode{display:flex;align-items:center;gap:8px;padding:7px 9px;margin:5px 0;background:var(--panel2);border:1px solid var(--line);border-radius:9px;cursor:pointer}
@@ -391,7 +396,7 @@
 <script>
 "use strict";
 const TENTS = [{"id": 1685, "name": "Mazar Resturang", "placering": "", "nya": 1, "color": "#F9CB9C", "electricity": "380v 16A", "water": false, "length": 3.0, "width": 3.0, "stand": 1}, {"id": 1722, "name": "Snorres Taverna", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "380v 32A", "water": false, "length": 8.0, "width": 3.0, "stand": 1}, {"id": 1937, "name": "Vartan Rulle", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "380v 32A", "water": true, "length": 20.0, "width": 6.0, "stand": 0}, {"id": 1942, "name": "Smash burgare", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "380v 16A", "water": false, "length": 6.0, "width": 5.0, "stand": 0}, {"id": 1944, "name": "Serwa Eatery", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "220v 6A", "water": true, "length": 15.0, "width": 3.0, "stand": 0}, {"id": 1972, "name": "Glada Galten och Pannkakasbuffé", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "380v 32A", "water": false, "length": 9.0, "width": 6.0, "stand": 0}, {"id": 19721, "name": "Pannkakasbuffé", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "none", "water": false, "length": 9.0, "width": 11.0, "stand": 0}, {"id": 2018, "name": "Franska Crepes", "placering": "MAT", "nya": 1, "color": "#F9CB9C", "electricity": "220v 6A", "water": true, "length": 3.5, "width": 4.0, "stand": 0}, {"id": 2031, "name": "Fattiga Riddare", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "none", "water": false, "length": 2.0, "width": 3.0, "stand": 2}, {"id": 1636, "name": "WinterKotte", "placering": "M", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 4.0, "stand": 2}, {"id": 1640, "name": "Camarda fh ab", "placering": "MBH2", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 3.0, "stand": 0}, {"id": 1641, "name": "Knape", "placering": "MG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 6.0, "stand": 0}, {"id": 1644, "name": "STENGÅRDEN", "placering": "STV3", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 9.0, "stand": 0}, {"id": 1680, "name": "Jen's Nocturnal Crafts", "placering": "M62", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 2.0, "stand": 1}, {"id": 1681, "name": "Ben och sten", "placering": "M12", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0, "stand": 1}, {"id": 1684, "name": "Studio Fagerstedt - Tettes keramik", "placering": "STV2", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 4.0, "stand": 0}, {"id": 1689, "name": "Östergarns Honung", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0, "stand": 0}, {"id": 1701, "name": "Min Kräm Medailleu", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 7.0, "width": 2.0, "stand": 0}, {"id": 1702, "name": "Medeltida fantasy", "placering": "M6", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": null, "width": null, "stand": 1}, {"id": 1703, "name": "Black Emporium", "placering": "ST", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0, "stand": 0}, {"id": 1704, "name": "KarlOskar hendel", "placering": "MG7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 4.0, "stand": 0}, {"id": 1705, "name": "SIDENGÅRDEN", "placering": "STH3", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 8.5, "width": 5.5, "stand": 0}, {"id": 1706, "name": "Bard & Jester", "placering": "SG1", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 4.0, "stand": 0}, {"id": 1716, "name": "Lyktmakarn", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 5.0, "width": 2.0, "stand": 0}, {"id": 1717, "name": "Frost Rose", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": 5.0, "width": 4.5, "stand": 0}, {"id": 1718, "name": "Hellas Delikatesser", "placering": "MG2", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 6.0, "stand": 0}, {"id": 1725, "name": "The Amuletery", "placering": "MBV2", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 4.0, "stand": 0}, {"id": 1726, "name": "Eva Axelsdotter", "placering": "MBV6", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 2.0, "stand": 0}, {"id": 1727, "name": "Ananda Naturmode", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 7.0, "width": 5.0, "stand": 0}, {"id": 1731, "name": "LepizsánBags", "placering": "MBH5", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 6.0, "stand": 0}, {"id": 1735, "name": "Ull_Design_Visby", "placering": "MG", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 1.5, "width": 1.0, "stand": 0}, {"id": 1736, "name": "KABEJO design", "placering": "M8", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 4.0, "stand": 1}, {"id": 1737, "name": "Bjarka Craft of Nature", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 3.0, "stand": 0}, {"id": 1738, "name": "Frank's forge", "placering": "", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 4.0, "stand": 0}, {"id": 1748, "name": "GudaGott", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 3.0, "stand": 2}, {"id": 1755, "name": "Åminne Honung och Jästeri", "placering": "MBH8", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 3.5, "width": 3.5, "stand": 0}, {"id": 1756, "name": "Adams Järnsmide", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": 5.0, "width": 3.0, "stand": 0}, {"id": 1761, "name": "Ullrum", "placering": "MBH4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0, "stand": 0}, {"id": 1762, "name": "Eikthyrnir", "placering": "STH7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 8.0, "width": 6.0, "stand": 0}, {"id": 1767, "name": "Tunnbrödsbageri Hedhagen", "placering": "STV6", "nya": 0, "color": "#B6D7A8", "electricity": "380v 16A", "water": false, "length": null, "width": null, "stand": 0}, {"id": 1768, "name": "Nordlys Vikingaområde", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": null, "width": null, "stand": 0}, {"id": 1784, "name": "Författare Edla Lowbrink", "placering": "M31", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": null, "width": null, "stand": 0}, {"id": 1811, "name": "Anton Linder", "placering": "MG7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 5.0, "stand": 0}, {"id": 1840, "name": "Clurigt", "placering": "Strandgärdet", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 21.0, "width": 9.0, "stand": 0}, {"id": 1860, "name": "Fjelldal Trade", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 10.0, "stand": 0}, {"id": 1864, "name": "M.P. Bagpipes", "placering": "MG5", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 10.0, "width": 6.0, "stand": 0}, {"id": 1890, "name": "Keramik Studio Thane", "placering": "MG7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.0, "width": 4.0, "stand": 0}, {"id": "1902-1", "name": "Historiska Rum (1/2)", "placering": "STH6", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 12.0, "width": 8.0, "stand": 0}, {"id": "1902-2", "name": "Historiska Rum (2/2)", "placering": "STH6", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.0, "width": 3.0, "stand": 0}, {"id": 1919, "name": "Lövberg Ostar", "placering": "M", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 3.0, "stand": 0}, {"id": "1920-1", "name": "MGA markedsbod (1/2)", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.5, "width": 4.0, "stand": 0}, {"id": "1920-2", "name": "MGA markedsbod (2/2)", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 5.0, "stand": 0}, {"id": 1921, "name": "Babysnake silver AB", "placering": "M4", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 2.0, "stand": 0}, {"id": 1932, "name": "Nektarkällan", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": 7.0, "width": 6.0, "stand": 0}, {"id": 1934, "name": "Formisadel", "placering": "MG6", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0, "stand": 0}, {"id": 1939, "name": "Medeltidsmode", "placering": "D3", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 9.0, "width": 9.0, "stand": 0}, {"id": 1940, "name": "Svenskt Mathantverk", "placering": "HGH1", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 3.0, "stand": 0}, {"id": "1945-1", "name": "Urda Hantverk (1/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 11.0, "width": 8.0, "stand": 0}, {"id": "1945-2", "name": "Urda Hantverk (2/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 12.0, "width": 9.0, "stand": 0}, {"id": "1945-3", "name": "Urda Hantverk (3/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0, "stand": 0}, {"id": "1945-4", "name": "Urda Hantverk (4/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 4.0, "stand": 0}, {"id": "1945-5", "name": "Urda Hantverk (5/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.0, "width": 4.0, "stand": 0}, {"id": "1945-6", "name": "Urda Hantverk (6/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0, "stand": 0}, {"id": 1947, "name": "Firma Lasergrafie", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 3.0, "stand": 0}, {"id": 1948, "name": "Mandelkompaniet", "placering": "HGH2", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 2.5, "stand": 0}, {"id": 1949, "name": "Use again", "placering": "MBV4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 5.0, "width": 4.0, "stand": 0}, {"id": 1951, "name": "EQWE21E", "placering": "", "nya": 1, "color": "#FF0000", "electricity": "", "water": false, "length": null, "width": null, "stand": 0}, {"id": 1952, "name": "Historisk Tekstilformidling", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": 10.0, "width": 10.0, "stand": 0}, {"id": 1960, "name": "Gute Glass", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 3.0, "stand": 1}, {"id": "1962-1", "name": "Estland (1/3)", "placering": "M9", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 3.0, "stand": 0}, {"id": "1962-2", "name": "Estland (2/3)", "placering": "M9", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 3.0, "stand": 0}, {"id": "1962-3", "name": "Estland (3/3)", "placering": "M9", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 3.0, "stand": 0}, {"id": 1964, "name": "Sorby Bi & Trädgård", "placering": "M32", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 3.0, "stand": 0}, {"id": 1969, "name": "The Healing Light", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 2.0, "stand": 1}, {"id": 1971, "name": "omshantisilver.se", "placering": "MBV0", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 4.0, "stand": 0}, {"id": 1973, "name": "Bohemia Gård", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": null, "width": null, "stand": 0}, {"id": 1974, "name": "Maria Galmin", "placering": "B3", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 9.0, "width": 1.0, "stand": 0}, {"id": 1977, "name": "Bruno Engström", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0, "stand": 0}, {"id": 1978, "name": "Rawisboll", "placering": "Fikatorget", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": 1981, "name": "Vår Gård", "placering": "MBV7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 2.0, "stand": 0}, {"id": 1983, "name": "Läderateljè", "placering": "ST", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 7.0, "width": 3.0, "stand": 0}, {"id": 1987, "name": "Fb craft willo s.r.l", "placering": "", "nya": 1, "color": "#FF0000", "electricity": "none", "water": false, "length": null, "width": null, "stand": 0}, {"id": 1988, "name": "SIA ROBIJS", "placering": "M22", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.0, "width": 2.0, "stand": 0}, {"id": 1989, "name": "Amna", "placering": "", "nya": 1, "color": "#FF0000", "electricity": "", "water": false, "length": null, "width": null, "stand": 0}, {"id": 1992, "name": "Svenskaya", "placering": "MBH0", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.5, "width": 6.5, "stand": 0}, {"id": 1993, "name": "Ullkontoret", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 2.0, "stand": 0}, {"id": "1994-1", "name": "Korps - Ravencraft AB (1/3)", "placering": "SG1,2", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 12.0, "width": 6.0, "stand": 0}, {"id": "1994-2", "name": "Korps - Ravencraft AB (2/3)", "placering": "SG1,2", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 10.0, "width": 5.0, "stand": 0}, {"id": "1994-3", "name": "Korps - Ravencraft AB (3/3)", "placering": "SG1,2", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.5, "width": 4.5, "stand": 0}, {"id": 1995, "name": "Tunsberghus Buemakeri", "placering": "STH9", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 4.0, "stand": 0}, {"id": 1996, "name": "Vagabundus", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 4.0, "stand": 0}, {"id": 1997, "name": "Nordahls Medeltidskläder", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 6.0, "stand": 0}, {"id": 1998, "name": "Saffranspannkaka", "placering": "HGH3", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 3.0, "stand": 0}, {"id": 2006, "name": "Marketenderei Tausendschön", "placering": "STV1", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 6.0, "stand": 0}, {"id": 2007, "name": "Kråkans diverse", "placering": "M4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0, "stand": 2}, {"id": 2008, "name": "Kraftkällan", "placering": "", "nya": 0, "color": "#FF0000", "electricity": "none", "water": false, "length": null, "width": null, "stand": 0}, {"id": 2011, "name": "LunarPlexus Gotland AB", "placering": "Storgatan bredvid Trollcraft", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 10.0, "width": 6.0, "stand": 0}, {"id": 2019, "name": "Candy Nuts", "placering": "MG Innanför murfallet", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": 2020, "name": "Bara Lite", "placering": "M", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 2.0, "stand": 1}, {"id": 2023, "name": "Fornalv Hantverk", "placering": "M", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 2.0, "stand": 0}, {"id": 2024, "name": "Lord.Cairnmark", "placering": "", "nya": 1, "color": "#FF0000", "electricity": "none", "water": false, "length": null, "width": null, "stand": 0}, {"id": 2025, "name": "Tall Tales - Äventyrsbutik", "placering": "MG", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.0, "width": 3.0, "stand": 2}, {"id": 2028, "name": "Lilcarou", "placering": "", "nya": 1, "color": "#FF0000", "electricity": "", "water": false, "length": null, "width": null, "stand": 0}, {"id": 2044, "name": "Krohns krukmakeri", "placering": "STH4", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 10.0, "width": 5.0, "stand": 0}, {"id": 2045, "name": "Orsa Stenhuggeri & Healing", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0, "stand": 1}, {"id": 2062, "name": "Get Natural", "placering": "MBH1", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 8.0, "width": 3.0, "stand": 0}, {"id": 2071, "name": "Dausiens Holzkunst", "placering": "Gräsplätt", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 8.0, "width": 3.0, "stand": 0}, {"id": "2079-1", "name": "Henrik Kofod Olesen (1/2)", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 3.0, "width": 2.0, "stand": 0}, {"id": "2079-2", "name": "Henrik Kofod Olesen (2/2)", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 3.0, "width": 2.0, "stand": 0}, {"id": 2082, "name": "PatriArc", "placering": "STH1", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 3.0, "stand": 0}, {"id": 2085, "name": "Topaze Smycken", "placering": "B1", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 2.0, "stand": 0}, {"id": 2087, "name": "Friends dinner ab", "placering": "STV7", "nya": 0, "color": "#B6D7A8", "electricity": "380v 16A", "water": false, "length": 3.0, "width": 4.0, "stand": 0}, {"id": 2089, "name": "GUNGNIR LTD.", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 6.0, "stand": 0}, {"id": 2091, "name": "Knut - Bagskytte för barn", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": null, "width": null, "stand": 0}, {"id": "2098-1", "name": "Köket i Hammarklanen (1/2)", "placering": "", "nya": 0, "color": "#B6D7A8", "electricity": "380v 16A", "water": false, "length": 2.0, "width": 3.0, "stand": 0}, {"id": "2098-2", "name": "Köket i Hammarklanen (2/2)", "placering": "", "nya": 0, "color": "#B6D7A8", "electricity": "380v 16A", "water": false, "length": 3.0, "width": 4.0, "stand": 0}, {"id": 2101, "name": "Bracelets by wild", "placering": "ST2?", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.5, "width": 3.0, "stand": 0}, {"id": 2105, "name": "FRUKT & MIX", "placering": "Fikatorget", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0, "stand": 0}, {"id": 2106, "name": "Silver Hantverk", "placering": "", "nya": 0, "color": "#FF0000", "electricity": "", "water": false, "length": null, "width": null, "stand": 0}, {"id": 2113, "name": "Nomad Art - bows and accessoires", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0, "stand": 0}, {"id": 2116, "name": "Ofer Ohayon, Tiara Visby", "placering": "MG1", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 2.0, "stand": 0}, {"id": 2118, "name": "Glassvagnen", "placering": "", "nya": 0, "color": "#FF0000", "electricity": "380v 32A", "water": false, "length": null, "width": null, "stand": 0}, {"id": 2119, "name": "Artzy", "placering": "MG7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 2.0, "stand": 0}, {"id": 2122, "name": "Petrykivka", "placering": "M85", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": null, "width": null, "stand": 0}, {"id": 2123, "name": "Geo Design - O.Santi Jewelry", "placering": "M", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0, "stand": 0}, {"id": 2124, "name": "Massage Leif", "placering": "D1", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 3.0, "stand": 0}, {"id": "x_vita_vargens_smedja", "name": "Vita Vargens Smedja", "placering": "M1", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": "x_pilbagskurs", "name": "Pilbågskurs", "placering": "Gräsplätt", "nya": 0, "color": "#B6D7A8", "electricity": "", "water": false, "length": 5.0, "width": 5.0, "stand": 0}, {"id": "x_gycklaranget", "name": "Gycklaränget", "placering": "Gräsplätt", "nya": 0, "color": "#B6D7A8", "electricity": "", "water": false, "length": 5.0, "width": 5.0, "stand": 0}, {"id": "x_gycklarboden", "name": "Gycklarboden", "placering": "Gräsplätt", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": "x_marknadsboden", "name": "Marknadsboden", "placering": "MBH", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": "x_internet_office", "name": "Internet office", "placering": "Mat", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": "x_barforrad", "name": "Barförråd", "placering": "Mat", "nya": 0, "color": "#999999", "electricity": "", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": "x_medeltidsveckans_taverna", "name": "Medeltidsveckans Taverna", "placering": "Mat", "nya": 0, "color": "#999999", "electricity": "380v 16A", "water": true, "length": 2.0, "width": 2.0, "stand": 0}, {"id": "x_biljettkassa", "name": "Biljettkassa", "placering": "VC", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": "x_biljettutlamning", "name": "Biljettutlämning", "placering": "VC", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": "x_proknektbod", "name": "Proknektbod", "placering": "Mat", "nya": 0, "color": "#999999", "electricity": "380v 16A", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": "x_medeltidsveckans_butik", "name": "Medeltidsveckans butik", "placering": "VC", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": "x_soltak_fikatorget", "name": "Soltak Fikatorget", "placering": "Fikatorget", "nya": 0, "color": "#FFF2CC", "electricity": "", "water": false, "length": 6.0, "width": 6.0, "stand": 0}, {"id": "x_baldakin", "name": "Baldakin", "placering": "Mat", "nya": 0, "color": "#FFF2CC", "electricity": "", "water": false, "length": 6.0, "width": 6.0, "stand": 0}, {"id": "x_baldakin_2", "name": "Baldakin", "placering": "Mat", "nya": 0, "color": "#FFF2CC", "electricity": "", "water": false, "length": 6.0, "width": 6.0, "stand": 0}, {"id": "x_oltalt", "name": "Öltält", "placering": "Mat", "nya": 0, "color": "#FFF2CC", "electricity": "", "water": false, "length": 7.0, "width": 14.0, "stand": 0}, {"id": "x_sagoangen", "name": "Sagoängen", "placering": "Sagoängen", "nya": 0, "color": "#EAD1DC", "electricity": "", "water": false, "length": 10.0, "width": 10.0, "stand": 0}, {"id": "x_starke_viking", "name": "Starke Viking", "placering": "ST", "nya": 0, "color": "#EAD1DC", "electricity": "", "water": false, "length": 15.0, "width": 15.0, "stand": 0}, {"id": "x_starke_viking_camp", "name": "Starke Viking Camp", "placering": "Sagoängen", "nya": 0, "color": "#EAD1DC", "electricity": "", "water": false, "length": 10.0, "width": 10.0, "stand": 0}, {"id": "x_proknekt_scen", "name": "Proknekt Scen", "placering": "Mat", "nya": 0, "color": "#EAD1DC", "electricity": "", "water": false, "length": null, "width": null, "stand": 0}, {"id": "x_starke_viking_saft", "name": "Starke Viking Saft", "placering": "ST", "nya": 0, "color": "#B6D7A8", "electricity": "", "water": false, "length": 4.0, "width": 2.0, "stand": 0}, {"id": "x_gute_rosteri", "name": "Gute Rosteri", "placering": "Mat", "nya": 0, "color": "#B6D7A8", "electricity": "380v 16A", "water": true, "length": 4.0, "width": 4.0, "stand": 0}, {"id": "x_gute_rosteri_2", "name": "Gute Rosteri", "placering": "Fikatorget", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": "x_gute_rosteri_korv", "name": "Gute Rosteri korv", "placering": "Mat", "nya": 0, "color": "#B6D7A8", "electricity": "", "water": false, "length": 2.0, "width": 2.0, "stand": 0}, {"id": 2098, "name": "Köket i Hammarklanen", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "380v 16A", "water": false, "length": 2.0, "width": 3.0, "stand": 0}, {"id": "custom_1784707424255", "name": "Proknekt scenen", "placering": "MAT", "nya": 0, "color": "#583400", "electricity": "none", "water": false, "length": 4.0, "width": 4.0, "stand": 0}];
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1',sizes:'mtvi_sizes_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1',sizes:'mtvi_sizes_v1',inv:'mtvi_inv_v1',invDirty:'mtvi_invdirty_v1'};
 /* Two independent plans ("areas"), each with its own tents, wiring, scale, view and base
    image. The plan-state keys below are namespaced per area in localStorage; the default
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
@@ -1465,6 +1470,7 @@ async function runAutoSave(){
 async function autoLoadStartup(){
   const cfg=sheetCfg();
   if(!cfg.spreadsheetId) return;
+  if(lsGet(LS.invDirty,0)) runInvSave(); else loadInventory();   // inventory rides its own tab; fire-and-forget
   if(lsGet(LS.dirty,0)){ setSync('pending'); queueSheetSave(); return; }
   if(!haveToken() && !cfg.apiKey){ try{ await getToken(false); }catch(e){ setSync('signin'); return; } }
   setSync('loading');
@@ -1503,6 +1509,7 @@ async function remoteReload(){
     const M=currentAreaObjs(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
     applySheetState(P,N,C,M,true);                 // keepView: don't yank the user's pan/zoom
     GS.lastSavedAt=M.savedAt||null; lsSet(LS.dirty,0); setSync('saved');
+    loadInventory();                               // fire-and-forget; inventory saves don't bump meta.savedAt
     return M;
   } finally { SYNC.loading=false; }
 }
@@ -1527,6 +1534,59 @@ async function pollRemote(){
 let pollTimer=null;
 function startPolling(){ if(!pollTimer) pollTimer=setInterval(pollRemote,15000); }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRemote(); });   // catch up on refocus
+
+/* --- inventory (what we own): GLOBAL, synced via its own `inventory` Sheet tab ---
+   Deliberately OUTSIDE the main four-tab batch: the tab may not exist yet, and one
+   missing range fails a whole batchGet/batchUpdate — so inventory reads and writes
+   are separate, lenient requests whose errors can never break the plan sync. The
+   tab is auto-created (addSheet) on the first save that finds it missing.
+   INV={cables:[{otype,len,count}],centrals:[{kind,rating,count}]} — one row each. */
+let INV=lsGet(LS.inv,{cables:[],centrals:[]});
+const INV_HEADERS=['kind','type','len','count'];
+const INV_RANGE='inventory!A1:D', INV_CLEAR='inventory!A2:D';
+function invRows(){
+  return [INV_HEADERS]
+    .concat(INV.cables.map(c=>['cable',c.otype,c.len,c.count]))
+    .concat(INV.centrals.map(c=>[c.kind,c.rating,'',c.count]));
+}
+function invFromRows(values){
+  const out={cables:[],centrals:[]};
+  rowsToObjects(values,INV_HEADERS).forEach(o=>{
+    const cnt=gnum(o.count)||0; if(cnt<=0) return;
+    if(o.kind==='cable'){ const len=gnum(o.len); if(len>0&&!isBlank(o.type)) out.cables.push({otype:String(o.type),len,count:cnt}); }
+    else if(o.kind==='source'||o.kind==='elskap'){ const r=gnum(o.type); if(r) out.centrals.push({kind:o.kind,rating:r,count:cnt}); }
+  });
+  return out;
+}
+async function loadInventory(){
+  if(!sheetCfg().spreadsheetId) return;
+  try{
+    const vr=await sheetBatchGet([INV_RANGE]);
+    if(!lsGet(LS.invDirty,0)){   // local unsynced inventory edits win, like LS.dirty
+      INV=invFromRows((vr[0]&&vr[0].values)||[]); lsSet(LS.inv,INV);
+      if(currentTab==='el') renderElMat();
+    }
+  }catch(e){/* tab doesn't exist yet, or transient — the local inventory stands */}
+}
+let invTimer=null;
+function queueInvSave(){
+  lsSet(LS.inv,INV); lsSet(LS.invDirty,1);
+  clearTimeout(invTimer); invTimer=setTimeout(runInvSave,2000);
+}
+async function runInvSave(){
+  if(!sheetCfg().spreadsheetId) return;
+  try{ if(!haveToken()) await getToken(false); }   // silent only — never a popup
+  catch(e){ return; }                              // stays local-dirty; retried on next edit / sign-in
+  try{
+    try{ await sheetApi('/values:batchClear',{ranges:[INV_CLEAR]}); }
+    catch(e){
+      if(!/Unable to parse range|not found/i.test(e.message||'')) throw e;
+      await sheetApi(':batchUpdate',{requests:[{addSheet:{properties:{title:'inventory'}}}]});   // first save: create the tab
+    }
+    await sheetApi('/values:batchUpdate',{valueInputOption:'RAW',data:[{range:INV_RANGE,values:invRows()}]});
+    lsSet(LS.invDirty,0);
+  }catch(e){/* keep the dirty flag; retried on the next inventory edit or startup */}
+}
 
 /* --- sign-in (config is hard-coded; no settings UI). The sync indicator is the
    only Sheet control: click it to sign in, which the browser allows because it's a
@@ -1566,6 +1626,10 @@ function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
    220V light blue — otypeColor keeps that mapping if it's ever wanted back). A per-cable
    c.color override, the overload red/amber bands and the gold highlight still win. */
 const NET_GRAY='#9aa0ab';
+/* Gray = ALREADY IN PLACE at the site; a central/cable that was GIVEN a colour is NEW
+   and counts as material to source (user rule 2026-07). Explicitly recolouring back
+   to NET_GRAY also marks it as existing. */
+function isNewMat(col){ return !isBlank(col) && String(col).toLowerCase()!==NET_GRAY; }
 function otypeColor(ot){ if(ot==='220V')return '#9FC5E8'; return ratingColor(parseInt(ot)||0); }
 function cableColor(c){ if(c.color)return c.color; if(c.domain==='water')return '#2b8cff'; return NET_GRAY; }
 /* ---- cable geometry: waypoints (bend/curve dots), smoothing, lengths ----
@@ -2031,65 +2095,189 @@ function renderElTree(){
   }
 }
 
-/* The Material view: a procurement list for the active area's el network.
-   FIRST CUT — the user will specify what it should contain in detail; extend here.
-   Currently: centrals grouped by kind + rating (with their designations), then cable
-   per socket type — run count, total metres, and every individual run
-   (designation → destination · length, longest first). Clicking a run pans to it. */
+/* --- material allocation: fit the owned cable pieces onto the NEW runs ---
+   Heuristic, longest run first: best-fit single piece (smallest that covers), else a
+   chain — largest pieces first, finished by the smallest piece that completes it. If
+   the pool can't reach a run's length at all, that run is RENTED whole (the owned
+   pieces stay in the pool for the remaining runs). Rent suggestions decompose the
+   need, rounded up to 5 m, into standard lengths so no rented metre is wasted.
+   Pure — node-tested (see CLAUDE.md). */
+const RENT_LENS=[5,10,25,50];
+function rentPiecesFor(need){
+  let n=Math.ceil(need/5)*5; const out=[];
+  while(n>=50){ out.push(50); n-=50; }
+  if(n>=25){ out.push(25); n-=25; }
+  while(n>=10){ out.push(10); n-=10; }
+  if(n>0) out.push(5);
+  return out;
+}
+function allocateCable(runs,pieces){
+  const pool=pieces.slice().sort((a,b)=>a-b), alloc=[];
+  runs.slice().sort((a,b)=>b.need-a.need).forEach(r=>{
+    const need=Math.ceil(r.need);
+    const i=pool.findIndex(l=>l>=need);                    // pool is ascending → best fit
+    if(i>=0){ alloc.push({run:r,own:[pool[i]],rent:[]}); pool.splice(i,1); return; }
+    const tmp=pool.slice(), take=[]; let sum=0;            // chain: big first, tight finish
+    while(sum<need&&tmp.length){
+      const f=tmp.findIndex(l=>l>=need-sum);
+      if(f>=0){ take.push(tmp[f]); sum+=tmp[f]; tmp.splice(f,1); }
+      else { const big=tmp.pop(); take.push(big); sum+=big; }
+    }
+    if(sum>=need){ take.forEach(l=>pool.splice(pool.indexOf(l),1)); alloc.push({run:r,own:take,rent:[]}); }
+    else alloc.push({run:r,own:[],rent:rentPiecesFor(need)});   // can't cover → rent this run whole
+  });
+  return {alloc,left:pool};
+}
+
+/* The Material view: what NEW material the plan needs and how to source it.
+   Gray (the default) = already in place at the site, so only centrals and cables that
+   were GIVEN a colour count (isNewMat). The owned inventory (editable at the bottom,
+   synced via the `inventory` Sheet tab) is allocated onto the new runs; the shortfall
+   is summed under "To rent". Allocation is per ACTIVE AREA against the whole global
+   inventory — with new material in two areas at once the same piece could be counted
+   twice; acceptable for now (the network lives on Marknad). */
 function renderElMat(){
   const el=document.getElementById('elMat'); if(!el) return; el.innerHTML='';
   const elNodes=nodes.filter(n=>n.domain==='el'), elc=cables.filter(c=>c.domain==='el');
-  if(!elNodes.length&&!elc.length){
-    const d=document.createElement('div'); d.className='hint';
-    d.textContent='Nothing to list yet — add sources, cabinets and cables and the material list appears here.';
-    el.appendChild(d); return;
-  }
+  const matNodes=elNodes.filter(n=>isNewMat(n.color)), matRuns=elc.filter(c=>isNewMat(c.color));
+  const grayN=elNodes.length-matNodes.length, grayC=elc.length-matRuns.length;
+  const h0=document.createElement('div'); h0.className='hint';
+  h0.textContent='Gray = already in place. Only centrals and cables given a colour count as new material'
+    +((grayN||grayC)?(' — skipping '+grayN+' gray central(s) and '+grayC+' gray cable(s).'):'.');
+  el.appendChild(h0);
   const EN=elNames();
-  /* centrals, grouped by kind + rating */
-  const t1=document.createElement('div'); t1.className='legsub'; t1.textContent='Centrals ('+elNodes.length+')'; el.appendChild(t1);
-  const grp={};
-  elNodes.forEach(n=>{ const k=n.kind+'|'+n.rating; (grp[k]=grp[k]||[]).push(n); });
-  Object.keys(grp).sort((a,b)=>{
-    const [ka,ra]=a.split('|'), [kb,rb]=b.split('|');
-    if(ka!==kb) return ka==='source'?-1:1;      // sources first, then cabinets
-    return (+rb)-(+ra);                          // big ratings first
-  }).forEach(k=>{
-    const [kind,r]=k.split('|'), list=grp[k];
-    const row=document.createElement('div'); row.className='legrow';
-    row.innerHTML='<div class="sw" style="background:'+(kind==='source'?'#0e2033':'#181b22')+';border:2px solid '+NET_GRAY+';'+(kind==='source'?'border-radius:50%':'')+'"></div>'
-      +'<div class="lname">'+r+' A '+(kind==='source'?'source':'cabinet')
-      +'<div style="font-size:10px;color:var(--muted);font-weight:400">'+esc(list.map(n=>EN[n.id]||'?').join(' · '))+'</div></div>'
-      +'<div class="lcount">'+list.length+'&#215;</div>';
-    el.appendChild(row);
-  });
-  /* cable per socket type: run count, total metres, individual runs */
-  const t2=document.createElement('div'); t2.className='legsub'; t2.textContent='Cable ('+elc.length+' run'+(elc.length===1?'':'s')+')'; el.appendChild(t2);
-  if(!elc.length){
-    const d=document.createElement('div'); d.className='hint'; d.textContent='No cables yet.'; el.appendChild(d);
-  }else if(!ppm){
-    const d=document.createElement('div'); d.className='hint'; d.textContent='Set the scale (ppm) to calculate cable lengths.'; el.appendChild(d);
-  }else{
-    let tot=0;
-    ['125A','63A','32A','16A','220V','?'].forEach(k=>{
-      const runs=elc.filter(c=>(c.otype||'?')===k); if(!runs.length) return;
-      const rows=runs.map(c=>({c,m:cableLenM(c)||0})).sort((a,b)=>b.m-a.m);
-      const sum=rows.reduce((s,x)=>s+x.m,0); tot+=sum;
+  const rent={}, rentOrder=[];                     // label -> count, insertion-ordered
+  const addRent=(label,n)=>{ if(!(n>0))return; if(!(label in rent))rentOrder.push(label); rent[label]=(rent[label]||0)+n; };
+  const usedPieces={};                             // 'otype|len' -> pieces used, for the inventory rows
+  /* new centrals vs the centrals we own */
+  if(matNodes.length){
+    const t1=document.createElement('div'); t1.className='legsub'; t1.textContent='New centrals ('+matNodes.length+')'; el.appendChild(t1);
+    const grp={};
+    matNodes.forEach(n=>{ const k=n.kind+'|'+n.rating; (grp[k]=grp[k]||[]).push(n); });
+    Object.keys(grp).sort((a,b)=>{
+      const A=a.split('|'), B=b.split('|');
+      if(A[0]!==B[0]) return A[0]==='source'?-1:1;
+      return (+B[1])-(+A[1]);
+    }).forEach(k=>{
+      const p=k.split('|'), kind=p[0], r=+p[1], list=grp[k];
+      const kl=kind==='source'?'source':'cabinet';
+      const have=INV.centrals.filter(c=>c.kind===kind&&c.rating===r).reduce((s,c)=>s+c.count,0);
+      const short=Math.max(0,list.length-have);
+      addRent(r+' A '+kl,short);
+      const row=document.createElement('div'); row.className='legrow';
+      row.innerHTML='<div class="sw" style="background:'+(kind==='source'?'#0e2033':'#181b22')+';border:2px solid '+NET_GRAY+';'+(kind==='source'?'border-radius:50%':'')+'"></div>'
+        +'<div class="lname">'+r+' A '+kl
+        +'<div style="font-size:10px;color:var(--muted);font-weight:400">'+esc(list.map(n=>EN[n.id]||'?').join(' · '))+'</div></div>'
+        +'<div class="lcount">need '+list.length+' · have '+Math.min(have,list.length)
+        +(short?' · <b style="color:var(--danger)">rent '+short+'</b>':'')+'</div>';
+      el.appendChild(row);
+    });
+  }
+  /* new cable runs, allocated onto the owned pieces */
+  if(matRuns.length){
+    const t2=document.createElement('div'); t2.className='legsub'; t2.textContent='New cable ('+matRuns.length+' run'+(matRuns.length===1?'':'s')+')'; el.appendChild(t2);
+    if(!ppm){ const d=document.createElement('div'); d.className='hint'; d.textContent='Set the scale (ppm) to calculate cable lengths.'; el.appendChild(d); }
+    else ['125A','63A','32A','16A','220V','?'].forEach(k=>{
+      const runs=matRuns.filter(c=>(c.otype||'?')===k); if(!runs.length) return;
+      const needs=runs.map(c=>({c,need:Math.ceil(cableLenM(c)||0)}));
+      const pieces=[]; INV.cables.forEach(p=>{ if(p.otype===k) for(let i=0;i<p.count;i++) pieces.push(p.len); });
+      const A=allocateCable(needs,pieces);
+      const totNeed=needs.reduce((s,x)=>s+x.need,0);
       const hd=document.createElement('div'); hd.className='legrow';
-      hd.innerHTML='<div class="sw" style="background:'+NET_GRAY+'"></div><div class="lname"><b>'+esc(k)+' cable</b></div><div class="lcount">'+runs.length+'&#215; · '+fmtM(sum)+'</div>';
+      hd.innerHTML='<div class="sw" style="background:'+NET_GRAY+'"></div><div class="lname"><b>'+esc(k)+' cable</b></div><div class="lcount">'+needs.length+' run(s) · '+totNeed+' m</div>';
       el.appendChild(hd);
-      rows.forEach(x=>{
+      A.alloc.forEach(a=>{
+        a.own.forEach(l=>{ const key=k+'|'+l; usedPieces[key]=(usedPieces[key]||0)+1; });
+        a.rent.forEach(l=>addRent(l+' m '+k+' cable',1));
         let dn;
-        if(x.c.dstKind==='tent'){ const t=placed.find(p=>String(p.ref.id)===String(x.c.dst)); dn=t?refOf(t).name:String(x.c.dst); }
-        else dn=EN[x.c.dst]||'?';
+        if(a.run.c.dstKind==='tent'){ const t=placed.find(p=>String(p.ref.id)===String(a.run.c.dst)); dn=t?refOf(t).name:String(a.run.c.dst); }
+        else dn=EN[a.run.c.dst]||'?';
+        const got=(a.own.length?a.own:a.rent).reduce((s,l)=>s+l,0);
+        const use=a.own.length?('own '+a.own.join('+')+' m'+(got>a.run.need?' ('+(got-a.run.need)+' m over)':''))
+                              :('rent '+a.rent.join('+')+' m');
         const row=document.createElement('div'); row.className='legrow'; row.style.cursor='pointer'; row.title='Click to find it on the plan';
-        row.innerHTML='<div class="sw" style="background:transparent"></div><div class="lname" style="font-weight:400">'+esc(EN[x.c.src]||'?')+' &rarr; '+esc(dn)+'</div><div class="lcount">'+fmtM(x.m)+'</div>';
-        row.onclick=()=>{ const A=cableAnchors(x.c); if(A) map.panTo(pathMidpoint(pathFromAnchors(A))); };
+        row.innerHTML='<div class="sw" style="background:transparent"></div>'
+          +'<div class="lname" style="font-weight:400">'+esc(EN[a.run.c.src]||'?')+' &rarr; '+esc(dn)
+          +'<div style="font-size:10px;color:var(--muted);font-weight:400">need '+a.run.need+' m &rarr; '+esc(use)+'</div></div>'
+          +'<div class="lcount"'+(a.rent.length?' style="color:var(--danger)"':'')+'>'+got+' m</div>';
+        row.onclick=()=>{ const an=cableAnchors(a.run.c); if(an) map.panTo(pathMidpoint(pathFromAnchors(an))); };
         el.appendChild(row);
       });
     });
+  }
+  if(!matNodes.length&&!matRuns.length){
+    const d=document.createElement('div'); d.className='hint';
+    d.textContent='Nothing marked as new yet. Give a central a colour (double-click it) or a cable a colour (Wire tool on, double-click the wire) and it is counted here.';
+    el.appendChild(d);
+  }
+  /* to rent: the merged shortfall */
+  const t3=document.createElement('div'); t3.className='legsub'; t3.textContent='To rent'; el.appendChild(t3);
+  if(!rentOrder.length){
+    const d=document.createElement('div'); d.className='hint'; d.textContent='Nothing — the inventory covers all new material.'; el.appendChild(d);
+  }else rentOrder.forEach(label=>{
     const row=document.createElement('div'); row.className='legrow';
-    row.innerHTML='<div class="sw" style="background:transparent"></div><div class="lname"><b>Total cable</b></div><div class="lcount"><b>'+fmtM(tot)+'</b></div>';
+    row.innerHTML='<div class="sw" style="background:transparent"></div><div class="lname" style="color:var(--danger)">'+rent[label]+' &#215; '+esc(label)+'</div>';
     el.appendChild(row);
+  });
+  /* inventory editor (what we have) */
+  const t4=document.createElement('div'); t4.className='legsub'; t4.textContent='Inventory — what we have'; el.appendChild(t4);
+  const OT_ORDER=['125A','63A','32A','16A','220V'];
+  const invRemove=(arr,item)=>{ const i=arr.indexOf(item); if(i>=0)arr.splice(i,1); queueInvSave(); renderElMat(); };
+  const mkRow=(label,sub,onRemove)=>{
+    const row=document.createElement('div'); row.className='legrow';
+    const nm=document.createElement('div'); nm.className='lname';
+    nm.innerHTML=esc(label)+(sub?'<div style="font-size:10px;color:var(--muted);font-weight:400">'+esc(sub)+'</div>':'');
+    row.appendChild(nm);
+    if(ADMIN){
+      const x=document.createElement('button'); x.textContent='✕'; x.title='Remove from inventory';
+      x.style.cssText='padding:2px 8px;font-size:11px'; x.onclick=onRemove; row.appendChild(x);
+    }
+    return row;
+  };
+  INV.cables.slice().sort((a,b)=>{ const d=OT_ORDER.indexOf(a.otype)-OT_ORDER.indexOf(b.otype); return d||b.len-a.len; })
+    .forEach(p=>{
+      const used=Math.min(usedPieces[p.otype+'|'+p.len]||0,p.count);
+      el.appendChild(mkRow(p.count+' × '+p.len+' m '+p.otype+' cable',
+        used?('used '+used+' · spare '+(p.count-used)):'unused',
+        ()=>invRemove(INV.cables,p)));
+    });
+  INV.centrals.slice().sort((a,b)=>(a.kind===b.kind?b.rating-a.rating:(a.kind==='source'?-1:1)))
+    .forEach(p=>{
+      el.appendChild(mkRow(p.count+' × '+p.rating+' A '+(p.kind==='source'?'source':'cabinet'),'',
+        ()=>invRemove(INV.centrals,p)));
+    });
+  if(!INV.cables.length&&!INV.centrals.length){
+    const d=document.createElement('div'); d.className='hint'; d.textContent='Empty — everything new lands under "To rent". Add the cable and centrals you own below.'; el.appendChild(d);
+  }
+  if(ADMIN){
+    const mkSel=opts=>{ const s=document.createElement('select');
+      opts.forEach(o=>{ const e=document.createElement('option'); e.value=o[0]; e.textContent=o[1]; s.appendChild(e); }); return s; };
+    const mkNum=(ph,val)=>{ const i=document.createElement('input'); i.type='number'; i.min='1'; i.placeholder=ph; if(val)i.value=val; return i; };
+    // cable form: type · length · count
+    const cf=document.createElement('div'); cf.className='invform';
+    const cSel=mkSel([['16A','16A'],['32A','32A'],['63A','63A'],['125A','125A'],['220V','220V']]);
+    const cLen=mkNum('m'), cCnt=mkNum('count',1);
+    const cBtn=document.createElement('button'); cBtn.textContent='Add cable';
+    cBtn.onclick=()=>{ const len=parseFloat(String(cLen.value).replace(',','.')), cnt=parseInt(cCnt.value,10)||1;
+      if(!(len>0)) return;
+      const ex=INV.cables.find(p=>p.otype===cSel.value&&p.len===len);
+      if(ex) ex.count+=cnt; else INV.cables.push({otype:cSel.value,len,count:cnt});
+      queueInvSave(); renderElMat(); };
+    [cSel,cLen,cCnt,cBtn].forEach(x=>cf.appendChild(x)); el.appendChild(cf);
+    // central form: kind · rating · count
+    const nf=document.createElement('div'); nf.className='invform';
+    const nKind=mkSel([['elskap','cabinet'],['source','source']]);
+    const nRat=mkSel([['16','16 A'],['32','32 A'],['63','63 A'],['125','125 A']]);
+    const nCnt=mkNum('count',1);
+    const nBtn=document.createElement('button'); nBtn.textContent='Add central';
+    nBtn.onclick=()=>{ const cnt=parseInt(nCnt.value,10)||1, r=parseInt(nRat.value,10);
+      const ex=INV.centrals.find(p=>p.kind===nKind.value&&p.rating===r);
+      if(ex) ex.count+=cnt; else INV.centrals.push({kind:nKind.value,rating:r,count:cnt});
+      queueInvSave(); renderElMat(); };
+    [nKind,nRat,nCnt,nBtn].forEach(x=>nf.appendChild(x)); el.appendChild(nf);
+    const hs=document.createElement('div'); hs.className='hint';
+    hs.textContent='The inventory is shared across the areas and synced via the "inventory" tab in the Sheet (created automatically on the first save).';
+    el.appendChild(hs);
   }
 }
 
