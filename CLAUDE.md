@@ -178,19 +178,22 @@ never read `t.ref` directly.
 
 ## Electrical model (El tab)
 
-The user corrected this twice. Get it right.
+The user has corrected this three times (most recently 2026-07, reversing the
+single-phase-per-tent model). Get it right.
 
 - A source or cabinet is rated **per phase**. A 63 A cabinet supplies 63 A on each of
   L1/L2/L3 — 189 A in total.
-- **Every tent is fed from a single phase.** On connect, the tent is assigned to the
-  least-loaded phase (`phaseLoads`). So two 32 A tents on a 63 A cabinet land on L1 and
-  L2 and are *not* overloaded, and three 125 A tents fit a 125 A cabinet. Do **not**
-  model `380v` loads as drawing on all three phases; that was the earlier, rejected
-  behaviour.
-- Cabinet→cabinet feeds *do* spread over all three phases, since the downstream
-  cabinet redistributes its own loads.
-- Overload = any single phase above the rating. It is **flagged, not blocked** (red
-  node, dashed red cable) so the user can see the problem while planning.
+- **A 3-phase tent (`380v` 16 A/32 A/63 A/125 A) draws its rated amps on ALL THREE
+  phases at once** — it counts against L1 AND L2 AND L3 of every node on its feed path
+  (cable `phase` stays 0 = all). Only **220 V tents are single-phase**; `rebalanceEl`
+  places each on the least-loaded phase along its whole feed path (LPT, on top of the
+  3-phase base load). The earlier one-phase-per-tent model undercounted 3-phase loads
+  and was rejected.
+- Cabinet→cabinet feeds carry the downstream cabinet's per-phase aggregate.
+- Overload = any single phase more than **3 A** above the rating (`OVERLOAD_TOL`) —
+  the user's rule: 2× 32 A on a 63 A cabinet is 64 A per phase, 1 A over, and that is
+  fine. It is **flagged, not blocked** (red node, dashed red cable) so the user can
+  see the problem while planning.
 
 Sockets are counted separately from capacity. `outputs(n)` gives the physical
 complement; default for a cabinet is 6× 220V (9 at ≥125 A) plus **three** outlets of

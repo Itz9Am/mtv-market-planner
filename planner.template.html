@@ -932,7 +932,7 @@ function renderLegend(){
   const t2=document.createElement('div'); t2.className='legsub'; t2.textContent=`Power (${elnodes.length} source/cabinets)`; el.appendChild(t2);
   if(!elnodes.length){ const d=document.createElement('div'); d.className='hint'; d.textContent='Add a source or cabinet from the toolbar, click it, then click tents (or another cabinet) to run cables.'; el.appendChild(d); }
   elnodes.forEach(n=>{
-    const p=phaseLoads(n.id), peak=Math.max(p[0],p[1],p[2]), over=peak>nodeRatingAmp(n);
+    const p=phaseLoads(n.id), peak=Math.max(p[0],p[1],p[2]), over=isOver(peak,nodeRatingAmp(n));
     const free=(n.kind==='source'&&n.unl!==false)?'unlimited':Object.keys(complementMap(n)).map(k=>`${freeCount(n,k)}×${k}`).join(' ');
     const row=document.createElement('div'); row.className='legrow';
     row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${over?'#ff6b6b':'var(--muted)'}">${peak}/${nodeRatingAmp(n)} A</div>`;
@@ -1382,11 +1382,14 @@ function socketKey(el,amp){
   const std=[16,32,63,125].filter(a=>a>=amp);
   return (std.length?std[0]:125)+'A';
 }
-/* A tent is fed from a single phase, so a 3-phase unit carries 3 x its rating in total
-   (e.g. 63A cabinet = 63A on L1 + 63A on L2 + 63A on L3). */
+/* A 3-phase CEE tent (380/400V 16A/32A/63A/125A) draws its rated amps on ALL THREE
+   phases at once — it counts against L1 AND L2 AND L3 of every node on its feed path.
+   Only a 220V tent is single-phase (assigned to the least-loaded phase). The earlier
+   one-phase-per-tent model undercounted 3-phase loads and was rejected by the user. */
 function tentReq(el){ el=(el||'').toLowerCase().trim(); if(!el||el==='none')return null;
   const amp=ampOf(el)||6;
-  return {phase:1,amp,key:socketKey(el,amp)}; }
+  const key=socketKey(el,amp);
+  return {phase:key==='220V'?1:3,amp,key}; }
 
 // el node output complement (three-phase cabinets)
 function outputs(n){
@@ -1481,16 +1484,23 @@ function phaseLoads(id,seen){ seen=seen||new Set(); const out=[0,0,0]; if(seen.h
   return out;
 }
 function peakLoad(id){ const p=phaseLoads(id); return Math.max(p[0],p[1],p[2]); }
-function overloaded(n){ return n.domain==='el' && peakLoad(n.id)>nodeRatingAmp(n); }
-/* Assign every tent to a phase (L1/L2/L3) so the load is balanced at EVERY node on its feed
-   path, not just its own cabinet. Phases stay aligned up a feed chain (a tent on L1 draws L1
-   at its cabinet AND every cabinet/source above it), so balancing each cabinet in isolation
-   fails on chains: e.g. a source feeding many cabinets that each hold a single tent — every
-   lone tent defaults to L1 and they all pile onto the source's L1. Here we walk tents biggest
-   first (LPT) and put each on the phase that keeps the worst UTILISATION (load/rating) along
-   its whole path to the source lowest — sparing a near-limit cabinet even when a big source
-   could absorb more. Utilisation is quantised so near-ties fall back to the lowest absolute
-   peak, which also evens out a high-capacity source. Returns true if any tent's phase changed. */
+/* A phase may run up to 3 A over the rating before it is flagged (user rule: e.g.
+   2x32A on a 63A cabinet = 64A per phase, 1A over, is fine — breakers don't trip
+   on that and the plugs are never all at full draw at once). */
+const OVERLOAD_TOL=3;
+function isOver(peak,rating){ return peak>rating+OVERLOAD_TOL; }
+function overloaded(n){ return n.domain==='el' && isOver(peakLoad(n.id),nodeRatingAmp(n)); }
+/* Phase assignment. A 3-phase tent (any CEE otype) draws on ALL THREE phases — its
+   cable keeps phase 0 ("all") and there is nothing to balance. Only the 220V tents
+   are single-phase; they are balanced on top of the 3-phase base load so the load is
+   even at EVERY node on their feed path, not just their own cabinet. Phases stay
+   aligned up a feed chain (a tent on L1 draws L1 at its cabinet AND every cabinet/
+   source above it), so balancing each cabinet in isolation fails on chains. We walk
+   the 220V tents biggest first (LPT) and put each on the phase that keeps the worst
+   UTILISATION (load/rating) along its whole path to the source lowest — sparing a
+   near-limit cabinet even when a big source could absorb more. Utilisation is
+   quantised so near-ties fall back to the lowest absolute peak, which also evens out
+   a high-capacity source. Returns true if any cable's phase changed. */
 function rebalanceEl(){
   const load={};                         // load[nodeId] = [L1,L2,L3] accumulated so far
   const paths={};                        // cache: nodeId -> [self, parent, …, root]
@@ -1502,8 +1512,12 @@ function rebalanceEl(){
     return (paths[id]=p);
   }
   let changed=false;
-  cables.filter(c=>c.domain==='el' && c.dstKind==='tent')
-    .map(c=>({c,amp:tentAmp(c.dst)})).sort((a,b)=>b.amp-a.amp)
+  const tc=cables.filter(c=>c.domain==='el' && c.dstKind==='tent').map(c=>({c,amp:tentAmp(c.dst)}));
+  tc.filter(x=>x.c.otype!=='220V').forEach(({c,amp})=>{   // 3-phase base load, all phases
+    for(const nid of pathOf(c.src)){ load[nid][0]+=amp; load[nid][1]+=amp; load[nid][2]+=amp; }
+    if(c.phase!==0){ c.phase=0; changed=true; }
+  });
+  tc.filter(x=>x.c.otype==='220V').sort((a,b)=>b.amp-a.amp)
     .forEach(({c,amp})=>{
       const path=pathOf(c.src);
       let best=0, bestU=Infinity, bestA=Infinity;   // min worst-utilisation, tie-break on abs peak
@@ -1675,7 +1689,7 @@ function renderElTree(){
   cables.forEach(c=>{ if(c.domain==='el'&&c.dstKind==='node') (kids[c.src]=kids[c.src]||[]).push(c.dst); });
   const seen=new Set();
   function nodeRow(n){
-    const pl=phaseLoads(n.id), r=nodeRatingAmp(n), peak=Math.max(pl[0],pl[1],pl[2]), over=peak>r;
+    const pl=phaseLoads(n.id), r=nodeRatingAmp(n), peak=Math.max(pl[0],pl[1],pl[2]), over=isOver(peak,r);
     const free=(n.kind==='source'&&n.unl!==false)?'unlimited outputs':Object.keys(complementMap(n)).map(k=>freeCount(n,k)+'×'+k).join(' ')+' free';
     const row=document.createElement('div'); row.className='etnode'; row.title='Click to find it on the plan';
     if(over) row.style.borderColor='#ff6b6b';
@@ -1796,7 +1810,7 @@ function renderNode(n){
   if(n.domain!==curDomain()) return;
   let title,sub,cls,brdr,over=false;
   if(n.domain==='el'){
-    const pl=phaseLoads(n.id), load=Math.max(pl[0],pl[1],pl[2]); over=load>nodeRatingAmp(n);
+    const pl=phaseLoads(n.id), load=Math.max(pl[0],pl[1],pl[2]); over=isOver(load,nodeRatingAmp(n));
     title=n.kind==='source'?(n.rating+'A IN'):(n.rating+'A'); sub=pl[0]+'/'+pl[1]+'/'+pl[2];
     cls='node'+(n.kind==='source'?' source':''); brdr=ratingColor(nodeRatingAmp(n));
   }else{
@@ -1879,8 +1893,8 @@ function connect(srcId,dst){
   const phase=nc.phase;
   saveNet(); redrawCables(); nodes.forEach(renderNode);
   const pl=phaseLoads(srcId), peak=Math.max(pl[0],pl[1],pl[2]);
-  if(peak>nodeRatingAmp(src)) flashBanner('Connected '+label+' — '+nodeName(src)+' overloaded (L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A, max '+peak+'/'+src.rating+').',true);
-  else flashBanner('Connected '+label+' via '+key+(phase?(' on L'+phase):'')+'. Load L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A.',false);
+  if(isOver(peak,nodeRatingAmp(src))) flashBanner('Connected '+label+' — '+nodeName(src)+' overloaded (L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A, max '+peak+'/'+src.rating+').',true);
+  else flashBanner('Connected '+label+' via '+key+(phase?(' on L'+phase):' on L1+L2+L3')+'. Load L1 '+pl[0]+' / L2 '+pl[1]+' / L3 '+pl[2]+' A.',false);
   renderLegend();
 }
 function redrawCables(){
