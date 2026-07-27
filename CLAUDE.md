@@ -189,6 +189,10 @@ single-phase-per-tent model). Get it right.
   places each on the least-loaded phase along its whole feed path (LPT, on top of the
   3-phase base load). The earlier one-phase-per-tent model undercounted 3-phase loads
   and was rejected.
+- **Every 220 V tent counts as 16 A** on its one phase (`tentReq` clamps, `tentAmp`
+  goes through `tentReq`): a 220 V hookup is a 16 A schuko circuit, and the workbook's
+  `220v 6A` is 16 A mentally divided over three phases — an undercount the user asked
+  to correct in the app rather than in the Excel.
 - Cabinet→cabinet feeds carry the downstream cabinet's per-phase aggregate.
 - Overload = any single phase more than **3 A** above the rating (`OVERLOAD_TOL`) —
   the user's rule: 2× 32 A on a 63 A cabinet is 64 A per phase, 1 A over, and that is
