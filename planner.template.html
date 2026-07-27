@@ -106,6 +106,14 @@
   .node.source{background:#0e2033;border-radius:50%}
   .node .er{font-size:12px;font-weight:800;color:#fff;line-height:1}
   .node .eu{font-size:9px;font-weight:600;margin-top:1px}
+  /* cable bend/curve dots (wire mode): square = sharp bend, round = curve */
+  .cdot{border-radius:2px;border:2px solid #10131a;box-shadow:0 1px 3px rgba(0,0,0,.6);cursor:grab}
+  .cdot.crv{border-radius:50%}
+  /* water koppling: a gray junction dot on a pipe that other pipes branch from */
+  .kopp{width:14px;height:14px;border-radius:50%;background:#9aa0ab;border:2px solid #10131a;box-shadow:0 0 0 2px rgba(255,255,255,.3);cursor:pointer}
+  .kopp.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px #ff2ec4}
+  /* cable length readout at the wire's midpoint (fixed pixel size, like tent labels) */
+  .cablen{position:absolute;transform:translate(-50%,-50%);font-size:10px;font-weight:600;color:#cfd3dc;background:rgba(10,12,18,.82);border:1px solid var(--line);border-radius:5px;padding:0 4px;line-height:14px;white-space:nowrap;pointer-events:none}
   .node.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px #ff2ec4}
   .node.hl{box-shadow:0 0 0 3px #ffd400,0 0 12px rgba(255,212,0,.6)}
   .node.sel.hl{box-shadow:0 0 0 2px #fff,0 0 0 5px #ffd400}
@@ -178,7 +186,7 @@
     </div>
     <div id="tentList"></div>
     <div id="elUI" style="display:none">
-      <div class="hint">Electrical view. Add a <b>Source</b> (a popup sets its amps and outputs) and cabinets from the toolbar. To wire, turn on the <b>Wire</b> tool, click a source/cabinet, then click what it feeds. With Wire off, clicking just selects and highlights the supply chain. Cabinets are three-phase: single-phase 220V loads are balanced across L1/L2/L3, three-phase loads sit on all phases, and any phase over the rating is flagged red. Click a cable to remove it; select a node and press Delete.</div>
+      <div class="hint">Electrical view. Add a <b>Source</b> (a popup sets its amps and outputs) and cabinets from the toolbar. To wire, turn on the <b>Wire</b> tool, click a source/cabinet, then click what it feeds. With Wire off, clicking just selects and highlights the supply chain. Cabinets are three-phase: single-phase 220V loads are balanced across L1/L2/L3, three-phase loads sit on all phases, and any phase over the rating is flagged red. With Wire on, click a cable to add a dot you can drag to bend it (double-click the dot toggles a smooth curve, right-click removes it); with Wire off, click a cable to recolour or remove it. Cable lengths are shown at each wire's midpoint and totalled below. Select a node and press Delete to remove it.</div>
       <div class="seg" id="elViewSeg">
         <button data-v="overview" class="on">Overview</button>
         <button data-v="cabinets">Cabinets</button>
@@ -187,7 +195,7 @@
       <div id="elTree" style="display:none"></div>
     </div>
     <div id="vattenUI" style="display:none">
-      <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. Click a pipe to remove it; select a fixture and press Delete.</div>
+      <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. With Wire on, click a pipe to add a blue dot you can drag to bend it (double-click: bend, curve, then gray <b>koppling</b>); a gray koppling is a junction — click it and then a tent/handfat to branch a new pipe from that point. Right-click a dot or koppling to remove it. With Wire off, click a pipe to recolour or remove it; select a fixture and press Delete.</div>
       <div id="vattenLegend"></div>
     </div>
   </div>
@@ -416,6 +424,7 @@ function refreshHl(){ refreshAll(); nodes.forEach(renderNode); redrawCables(); }
 const map=L.map('map',{crs:L.CRS.Simple,minZoom:-6,maxZoom:8,zoomSnap:0.25,zoomDelta:0.5,scrollWheelZoom:true,attributionControl:false,boxZoom:false});
 map.setView([0,0],0);
 map.createPane('cables');     map.getPane('cables').style.zIndex='610';      // above tent boxes (markerPane 600)
+map.createPane('dots');       map.getPane('dots').style.zIndex='615';        // bend/curve dots, above cables
 map.createPane('tentlabels'); map.getPane('tentlabels').style.zIndex='620';  // above cables
 map.getPane('tentlabels').style.pointerEvents='none';
 map.createPane('nodes');      map.getPane('nodes').style.zIndex='630';       // cabinets on top
@@ -951,6 +960,24 @@ function renderLegend(){
     row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${loadColor(lv,'var(--muted)')}">${peak}/${nodeRatingAmp(n)} A</div>`;
     el.appendChild(row);
   });
+  /* cable lengths, per socket type — what the electricians need to order/pull */
+  const elc=cables.filter(c=>c.domain==='el');
+  if(elc.length){
+    const t3=document.createElement('div'); t3.className='legsub'; t3.textContent='Cable lengths ('+elc.length+' cables)'; el.appendChild(t3);
+    if(!ppm){ const d=document.createElement('div'); d.className='hint'; d.textContent='Set the scale (ppm) to calculate cable lengths.'; el.appendChild(d); }
+    else{
+      const byType={}; let tot=0;
+      elc.forEach(c=>{ const m=cableLenM(c); if(m==null)return; const k=c.otype||'?'; byType[k]=(byType[k]||0)+m; tot+=m; });
+      ['125A','63A','32A','16A','220V','?'].filter(k=>byType[k]).forEach(k=>{
+        const row=document.createElement('div'); row.className='legrow';
+        row.innerHTML='<div class="sw" style="background:'+(k==='?'?'#888':otypeColor(k))+'"></div><div class="lname">'+esc(k)+' cable</div><div class="lcount">'+fmtM(byType[k])+'</div>';
+        el.appendChild(row);
+      });
+      const row=document.createElement('div'); row.className='legrow';
+      row.innerHTML='<div class="sw" style="background:transparent"></div><div class="lname"><b>Total</b></div><div class="lcount"><b>'+fmtM(tot)+'</b></div>';
+      el.appendChild(row);
+    }
+  }
   const noPower=placed.filter(t=>needsPower(t)&&!hasPower(t));
   unconnectedSection(el,'Without power',noPower,tr=>elLabel(tr.electricity),'Every placed tent that needs power is connected.');
   const waiting=library.filter(x=>!placedAnywhere(x.id)&&!removed.has(String(x.id))&&tentReq(applyEdits(x).electricity)).length;
@@ -972,11 +999,15 @@ function renderLegend(){
 const SHEET_HEADERS={
   placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape','area','elskap'],
   nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','color','area'],
-  cables:['src','dst','dstKind','domain','otype','phase','color','area'],
+  cables:['src','dst','dstKind','domain','otype','phase','color','area','pts'],
   meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy','area']
 };
-const SHEET_RANGES={placements:'placements!A1:O',nodes:'nodes!A1:N',cables:'cables!A1:H',meta:'meta!A1:H'};
-const SHEET_CLEAR=['placements!A2:O','nodes!A2:N','cables!A2:H','meta!A2:H'];
+/* `pts` (cable waypoints) is a trailing column AFTER `area`, same reasoning as `elskap`:
+   rows are parsed positionally and other areas' rows re-emit verbatim, so it must never
+   shift the earlier columns under an old client. Not JSON — a compact "x y k;x y k" list
+   (k: b=bend c=curve, or "n <nodeId>" for a koppling junction riding on the pipe). */
+const SHEET_RANGES={placements:'placements!A1:O',nodes:'nodes!A1:N',cables:'cables!A1:I',meta:'meta!A1:H'};
+const SHEET_CLEAR=['placements!A2:O','nodes!A2:N','cables!A2:I','meta!A2:H'];
 /* raw values (incl. header) of ALL areas from the last read — lets a write preserve other
    areas' rows. Persisted globally so a save before this session's first read still can't
    clobber the other area. */
@@ -1055,9 +1086,28 @@ function cableFromRow(o){
   if(!isBlank(o.otype)) c.otype=o.otype;
   const ph=gnum(o.phase); if(ph!=null) c.phase=ph;
   if(!isBlank(o.color)) c.color=String(o.color);   // custom wire colour; blank => default by rating
+  const pts=ptsFromStr(o.pts); if(pts.length) c.pts=pts;
   return c;
 }
 function cableToRow(c){ return [c.src,c.dst,c.dstKind,c.domain,isBlank(c.otype)?'':c.otype,c.phase!=null?c.phase:'',c.color||'']; }
+/* cable waypoints <-> the `pts` cell. One entry per dot, ';'-separated:
+   "x y b" sharp bend · "x y c" curve point · "n <nodeId>" koppling junction (water) —
+   a koppling's position lives on its node row, the cable only references its id. */
+function ptsToStr(pts){
+  return (pts||[]).map(p=>p.k==='n'?('n '+p.nid)
+    :(Math.round(p.x*10)/10+' '+Math.round(p.y*10)/10+' '+(p.k==='c'?'c':'b'))).join(';');
+}
+function ptsFromStr(s){
+  if(isBlank(s)) return [];
+  const out=[];
+  String(s).split(';').forEach(part=>{
+    const t=part.trim().split(/\s+/); if(!t[0])return;
+    if(t[0]==='n'){ if(t[1]) out.push({k:'n',nid:t[1]}); return; }
+    const x=Number(t[0]), y=Number(t[1]);
+    if(Number.isFinite(x)&&Number.isFinite(y)) out.push({x,y,k:t[2]==='c'?'c':'b'});
+  });
+  return out;
+}
 /* Rebuild a custom-object library entry from its inline placements-row definition. */
 function customFromRow(o){
   const c={id:String(o.tentId),name:String(o.name),placering:isBlank(o.placering)?'':String(o.placering),
@@ -1192,7 +1242,7 @@ function sheetData(savedAt,savedBy){
   return [
     {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>placementRow(t).concat([A,feedCabName(t.ref.id,EN)]))).concat(otherAreaRows('placements'))},
     {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(n=>nodeToRow(n).concat([A]))).concat(otherAreaRows('nodes'))},
-    {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(c=>cableToRow(c).concat([A]))).concat(otherAreaRows('cables'))},
+    {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(c=>cableToRow(c).concat([A,ptsToStr(c.pts)]))).concat(otherAreaRows('cables'))},
     {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy).concat([A])].concat(otherAreaRows('meta'))}
   ];
 }
@@ -1384,6 +1434,60 @@ function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
    63A/125A red, 220V light blue. A per-cable c.color overrides it. */
 function otypeColor(ot){ if(ot==='220V')return '#9FC5E8'; return ratingColor(parseInt(ot)||0); }
 function cableColor(c){ if(c.color)return c.color; if(c.domain==='water')return '#2b8cff'; return otypeColor(c.otype); }
+/* ---- cable geometry: waypoints (bend/curve dots), smoothing, lengths ----
+   A cable's anchors are [source, …c.pts…, destination]. A 'b' dot is a sharp corner,
+   a 'c' dot pulls a smooth Catmull-Rom curve through it, an 'n' dot rides on a water
+   koppling node (its position IS the node's). Sharp dots and the two ends break the
+   wire into sections, so curves and hard corners coexist on the same wire. */
+function cableAnchors(c){
+  const s=nodes.find(n=>n.id===c.src); if(!s)return null;
+  let b=null; if(c.dstKind==='tent') b=tentPos(c.dst); else { const dn=nodes.find(n=>n.id===c.dst); if(dn)b=[dn.lat,dn.lng]; }
+  if(!b)return null;
+  const mid=(c.pts||[]).map(p=>{
+    if(p.k==='n'){ const kn=nodes.find(n=>n.id===p.nid); return kn?{ll:[kn.lat,kn.lng],curve:false,p}:null; }
+    return {ll:[p.y,p.x],curve:p.k==='c',p};
+  }).filter(Boolean);
+  return [{ll:[s.lat,s.lng],curve:false}].concat(mid,[{ll:b,curve:false}]);
+}
+function crPoint(p0,p1,p2,p3,t){ const t2=t*t,t3=t2*t;
+  const f=i=>0.5*((2*p1[i])+(-p0[i]+p2[i])*t+(2*p0[i]-5*p1[i]+4*p2[i]-p3[i])*t2+(-p0[i]+3*p1[i]-3*p2[i]+p3[i])*t3);
+  return [f(0),f(1)];
+}
+function catmullRom(pts){                         // pts: [[lat,lng],…] >=2, first/last are hit exactly
+  const out=[pts[0]];
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[Math.max(0,i-1)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(pts.length-1,i+2)];
+    for(let s=1;s<=12;s++) out.push(crPoint(p0,p1,p2,p3,s/12));
+  }
+  return out;
+}
+function pathFromAnchors(A){
+  const out=[A[0].ll]; let i=0;
+  while(i<A.length-1){
+    let j=i+1; while(j<A.length-1 && A[j].curve) j++;   // run of curve dots up to the next hard anchor
+    if(j===i+1) out.push(A[j].ll);
+    else { const seg=catmullRom(A.slice(i,j+1).map(a=>a.ll)); for(let k=1;k<seg.length;k++) out.push(seg[k]); }
+    i=j;
+  }
+  return out;
+}
+function pathPixLen(path){ let l=0; for(let i=0;i<path.length-1;i++) l+=Math.hypot(path[i+1][0]-path[i][0],path[i+1][1]-path[i][1]); return l; }
+function pathMidpoint(path){
+  const half=pathPixLen(path)/2; let acc=0;
+  for(let i=0;i<path.length-1;i++){ const a=path[i],b=path[i+1],d=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    if(acc+d>=half) { const t=d?(half-acc)/d:0; return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]; }
+    acc+=d; }
+  return path[path.length-1];
+}
+function distToSeg(ll,a,b){                       // point (LatLng) to segment ([lat,lng] pair), image px
+  const px=ll.lng,py=ll.lat,ax=a[1],ay=a[0],bx=b[1],by=b[0];
+  const dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy;
+  let t=l2?((px-ax)*dx+(py-ay)*dy)/l2:0; t=Math.max(0,Math.min(1,t));
+  return Math.hypot(px-(ax+dx*t),py-(ay+dy*t));
+}
+function cableLenM(c){ if(!ppm)return null; const A=cableAnchors(c); if(!A)return null; return pathPixLen(pathFromAnchors(A))/ppm; }
+function fmtM(m){ return (m>=9.95?Math.round(m):Math.round(m*10)/10)+' m'; }
+function lenIcon(txt){ return L.divIcon({className:'node-div',html:'<div class="cablen">'+txt+'</div>',iconSize:[0,0],iconAnchor:[0,0]}); }
 function tentPos(id){ const t=placed.find(x=>x.ref.id===id); return t?[t.lat,t.lng]:null; }
 function saveNet(){ lsSet(LS.nodes,nodes); lsSet(LS.cables,cables); queueSheetSave(); }
 function curDomain(){ return currentTab==='el'?'el':currentTab==='vatten'?'water':null; }
@@ -1448,7 +1552,9 @@ function pickOutput(n,req){
   }
   return freeCount(n,k)>0?k:null;
 }
-function inputOf(id){ const c=cables.find(x=>x.dstKind==='node'&&x.dst===id); return c?c.src:null; }
+function inputOf(id){ const c=cables.find(x=>x.dstKind==='node'&&x.dst===id); if(c)return c.src;
+  // a water koppling has no input cable — it is fed by the pipe it rides on
+  const h=cables.find(x=>(x.pts||[]).some(p=>p.k==='n'&&p.nid===id)); return h?h.src:null; }
 /* Reference designations per IEC 81346 / SEK Handbok 419, derived from the wiring and
    never stored: each source (serviscentral) is A1, A2 … in creation order; every cabinet
    fed from a unit is N1, N2 … in wiring order within its parent; the full designation
@@ -1556,7 +1662,7 @@ function rebalanceEl(){
     });
   return changed;
 }
-function nodeName(n){ if(n.domain==='water') return n.kind==='brunn'?'brunn':'handfat';
+function nodeName(n){ if(n.domain==='water') return n.kind==='brunn'?'brunn':n.kind==='koppling'?'koppling':'handfat';
   const base=n.kind==='source'?('source ('+n.rating+'A in)'):(n.rating+'A cabinet');
   const nm=elNames()[n.id];
   return nm?(nm+' '+base):base; }
@@ -1673,7 +1779,7 @@ function openCabModal(c){
 function closeCab(){ cabBg.style.display='none'; cabEditing=null; }
 document.getElementById('cabCancel').onclick=closeCab;
 document.getElementById('cabRemove').onclick=()=>{ const c=cabEditing; closeCab();
-  if(c){ cables=cables.filter(x=>x!==c); saveNet(); redrawCables(); nodes.forEach(renderNode); renderLegend(); renderVattenLegend(); } };
+  if(c){ removeCableCascade(c); saveNet(); redrawCables(); nodes.forEach(renderNode); renderLegend(); renderVattenLegend(); } };
 document.getElementById('cabSave').onclick=()=>{ const c=cabEditing; closeCab();
   if(c){ if(cabColorCustom) c.color=document.getElementById('cabColor').value; else delete c.color;
          saveNet(); redrawCables(); } };
@@ -1688,8 +1794,11 @@ function setWire(on){
   document.getElementById('wireVa').classList.toggle('on',on);
   mapWrap.classList.toggle('wiring',on);
   if(!on){ setConnectSource(null); banner.style.display='none'; }
-  else flashBanner('Wire tool on: click a source/cabinet, then click what it feeds. Click Wire again to stop.',true);
+  else flashBanner(curDomain()==='water'
+    ?'Wire tool on: click a brunn or koppling, then what it feeds. Click a pipe to drop a bend dot (Alt-click: gray koppling) — drag it, double-click cycles bend/curve/koppling, right-click removes. Click Wire again to stop.'
+    :'Wire tool on: click a source/cabinet, then click what it feeds. Click a wire to drop a bend dot — drag it, double-click toggles curve, right-click removes. Click Wire again to stop.',true);
   nodes.forEach(renderNode);
+  redrawCables();   // bend/curve dots only exist while the wire tool is on
 }
 function setLetters(on){ showLetters=on; lsSet(LS.letters,on);
   document.getElementById('lettersBtn').classList.toggle('on',on); refreshAll(); }
@@ -1837,8 +1946,32 @@ function addNode(spec,lat,lng){
   if(spec.color) n.color=spec.color;
   nodes.push(n); saveNet(); renderNode(n); setConnectSource(n.id);
 }
+/* A water koppling renders as a small gray junction dot, a bit wider than the pipe —
+   not as a cabinet box. Click selects it as a wire source (branch a pipe from it),
+   double-click turns it back into a plain bend dot, right-click deletes it (with its
+   branches). It stays draggable in wire mode — dragging it bends the host pipe. */
+function renderKoppling(n){
+  const html='<div class="kopp"></div>';
+  let m=nodeMarkers[n.id];
+  if(!m){
+    const icon=L.divIcon({className:'node-div',html,iconSize:[18,18],iconAnchor:[9,9]});
+    m=L.marker([n.lat,n.lng],{icon,draggable:true,pane:'nodes',keyboard:false,title:'koppling'}).addTo(map);
+    m._html=html;
+    m.on('click',ev=>{L.DomEvent.stopPropagation(ev); if(armNode)return;
+      const sel=connectSource!==n.id; setConnectSource(sel?n.id:null); });
+    m.on('dblclick',ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN) kopplingToBend(n.id);});
+    m.on('contextmenu',ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN) removeNode(n.id);});
+    m.on('drag',()=>{const p=m.getLatLng();n.lat=p.lat;n.lng=p.lng;redrawCables();});
+    m.on('dragend',saveNet);
+    nodeMarkers[n.id]=m;
+  } else { m.setLatLng([n.lat,n.lng]); }
+  const el=m.getElement()&&m.getElement().querySelector('.kopp');
+  if(el) el.classList.toggle('sel',connectSource===n.id);
+  if(m.dragging){ ADMIN?m.dragging.enable():m.dragging.disable(); }
+}
 function renderNode(n){
   if(n.domain!==curDomain()) return;
+  if(n.kind==='koppling'){ renderKoppling(n); return; }
   let title,sub,cls,brdr,lv=0;
   if(n.domain==='el'){
     const pl=phaseLoads(n.id), load=Math.max(pl[0],pl[1],pl[2]); lv=loadLevel(load,nodeRatingAmp(n));
@@ -1899,6 +2032,7 @@ function connect(srcId,dst){
     }
     if(dst.kind!=='node')return; const dn=nodes.find(n=>n.id===dst.id); if(!dn||dn.domain!=='water')return;
     if(dn.kind==='brunn'){ flashBanner('A brunn is a source, not a target.',true); return; }
+    if(dn.kind==='koppling'){ flashBanner('A koppling is fed by the pipe it sits on — click it and wire FROM it instead.',true); return; }
     if(dst.id===srcId) return; if(createsCycle(srcId,dst.id)){ flashBanner('That would create a loop.',true); return; }
     cables=cables.filter(c=>!(c.dstKind==='node'&&c.dst===dst.id&&c.domain==='water'));
     cables.push({src:srcId,dst:dst.id,dstKind:'node',domain:'water'});
@@ -1931,33 +2065,133 @@ function connect(srcId,dst){
 }
 function redrawCables(){
   cableLines.forEach(l=>map.removeLayer(l)); cableLines=[];
-  const before=cables.length;
-  cables=cables.filter(c=> nodes.some(n=>n.id===c.src) && (c.dstKind==='tent'?placed.some(t=>t.ref.id===c.dst):nodes.some(n=>n.id===c.dst)));
+  const before=cables.length, beforeN=nodes.length;
+  /* iterate: dropping a dead cable orphans its kopplingar, dropping those kills their
+     branch pipes, which may carry kopplingar of their own — repeat until stable */
+  let pruned=true;
+  while(pruned){ pruned=false;
+    const n0=cables.length;
+    cables=cables.filter(c=> nodes.some(n=>n.id===c.src) && (c.dstKind==='tent'?placed.some(t=>t.ref.id===c.dst):nodes.some(n=>n.id===c.dst)));
+    if(cables.length!==n0) pruned=true;
+    cables.forEach(c=>{ if(c.pts) c.pts=c.pts.filter(p=>p.k!=='n'||nodes.some(n=>n.id===p.nid)); });   // drop dots whose koppling is gone
+    nodes=nodes.filter(n=>{ if(n.kind!=='koppling') return true;
+      if(cables.some(c=>(c.pts||[]).some(p=>p.k==='n'&&p.nid===n.id))) return true;
+      const m=nodeMarkers[n.id]; if(m){map.removeLayer(m);delete nodeMarkers[n.id];}
+      pruned=true; return false; });                                                                  // a koppling cannot outlive its host pipe
+  }
   rebalanceEl();                 // keep cabinet phases balanced for display — never saves on its own
-  if(cables.length!==before) saveNet();
+  if(cables.length!==before||nodes.length!==beforeN) saveNet();
   const dom=curDomain(); if(!dom) return;
-  cables.filter(c=>c.domain===dom).forEach(c=>{
-    const s=nodes.find(n=>n.id===c.src); if(!s)return; const a=[s.lat,s.lng];
-    let b=null; if(c.dstKind==='tent') b=tentPos(c.dst); else { const dn=nodes.find(n=>n.id===c.dst); if(dn)b=[dn.lat,dn.lng]; }
-    if(!b)return;
-    let weight=(dom==='water')?3.5:(c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5)), dash=null;
-    let color=cableColor(c);                      // default by rating (32A orange, 16A yellow…), or c.color override
-    const lv=(dom!=='water')?loadLevel(peakLoad(s.id),nodeRatingAmp(s)):0;
-    if(lv===2){ color='#ff0000'; dash='6,5'; }     // red band: VIVID red dashed — clearly hotter than the 63A/125A wire colour (#ff6b6b)
-    else if(lv===1){ dash='10,6'; }                // amber band: keep the wire colour, dashed = worth a glance
-    const isHl=hl.cables.has(c);
-    if(isHl){ color='#ffd400'; weight=weight+2.5; }
-    const openCab=ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN) openCabModal(c);};
-    // black casing underneath gives every wire a clean outline
-    const casing=L.polyline([a,b],{pane:'cables',color:'#000',weight:weight+3,opacity:isHl?1:0.9,dashArray:dash}).addTo(map);
-    casing.on('click',openCab); cableLines.push(casing);
-    const line=L.polyline([a,b],{pane:'cables',color,weight,opacity:1,dashArray:dash}).addTo(map);
-    line.on('click',openCab); cableLines.push(line);
+  cables.filter(c=>c.domain===dom).forEach(c=>drawCable(c,dom));
+}
+function drawCable(c,dom){
+  const s=nodes.find(n=>n.id===c.src); if(!s)return;
+  const A=cableAnchors(c); if(!A)return;
+  let weight=(dom==='water')?3.5:(c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5)), dash=null;
+  let color=cableColor(c);                      // default by rating (32A orange, 16A yellow…), or c.color override
+  const lv=(dom!=='water')?loadLevel(peakLoad(s.id),nodeRatingAmp(s)):0;
+  if(lv===2){ color='#ff0000'; dash='6,5'; }     // red band: VIVID red dashed — clearly hotter than the 63A/125A wire colour (#ff6b6b)
+  else if(lv===1){ dash='10,6'; }                // amber band: keep the wire colour, dashed = worth a glance
+  const isHl=hl.cables.has(c);
+  if(isHl){ color='#ffd400'; weight=weight+2.5; }
+  /* Wire tool on: clicking the wire drops a draggable bend dot right there
+     (Alt-click on a water pipe drops a gray koppling junction instead).
+     Wire tool off: the old recolour/remove modal. */
+  const onClick=ev=>{L.DomEvent.stopPropagation(ev); if(!ADMIN)return;
+    if(wireMode){ addCableDot(c,ev.latlng, dom==='water'&&!!(ev.originalEvent&&ev.originalEvent.altKey)); return; }
+    openCabModal(c);};
+  const path=pathFromAnchors(A);
+  // black casing underneath gives every wire a clean outline
+  const casing=L.polyline(path,{pane:'cables',color:'#000',weight:weight+3,opacity:isHl?1:0.9,dashArray:dash}).addTo(map);
+  casing.on('click',onClick); cableLines.push(casing);
+  const line=L.polyline(path,{pane:'cables',color,weight,opacity:1,dashArray:dash}).addTo(map);
+  line.on('click',onClick); cableLines.push(line);
+  // length readout at the wire midpoint (needs ppm; follows the drawn path, curves included)
+  let lenLbl=null;
+  if(ppm){
+    lenLbl=L.marker(pathMidpoint(path),{icon:lenIcon(fmtM(pathPixLen(path)/ppm)),pane:'tentlabels',interactive:false,keyboard:false}).addTo(map);
+    cableLines.push(lenLbl);
+  }
+  if(!(wireMode&&ADMIN)) return;
+  // bend/curve dots — square = sharp, round = curve; koppling dots render as nodes instead
+  const liveUpdate=()=>{ const p2=pathFromAnchors(cableAnchors(c));
+    casing.setLatLngs(p2); line.setLatLngs(p2);
+    if(lenLbl){ lenLbl.setLatLng(pathMidpoint(p2)); lenLbl.setIcon(lenIcon(fmtM(pathPixLen(p2)/ppm))); } };
+  (c.pts||[]).forEach(p=>{
+    if(p.k==='n') return;
+    const d=Math.max(9,Math.round(weight+3)+2);   // ~the cable's drawn diameter, floor for grabbability
+    const bg=(dom==='water')?'#2b8cff':cableColor(c);
+    const html='<div class="cdot'+(p.k==='c'?' crv':'')+'" style="width:'+d+'px;height:'+d+'px;background:'+bg+'"></div>';
+    const mk=L.marker([p.y,p.x],{icon:L.divIcon({className:'node-div',html,iconSize:[d,d],iconAnchor:[d/2,d/2]}),pane:'dots',draggable:true,keyboard:false}).addTo(map);
+    mk.on('click',ev=>L.DomEvent.stopPropagation(ev));
+    mk.on('drag',()=>{ const q=mk.getLatLng(); p.x=q.lng; p.y=q.lat; liveUpdate(); });   // move only — never rebuild layers mid-drag
+    mk.on('dragend',()=>{ saveNet(); redrawCables(); if(dom==='el')renderLegend(); else renderVattenLegend(); });
+    mk.on('dblclick',ev=>{ L.DomEvent.stopPropagation(ev); toggleDot(c,p); });
+    mk.on('contextmenu',ev=>{ L.DomEvent.stopPropagation(ev);
+      c.pts=c.pts.filter(x=>x!==p); saveNet(); redrawCables(); if(dom==='el')renderLegend(); else renderVattenLegend(); });
+    cableLines.push(mk);
   });
+}
+/* insert a new waypoint where the wire was clicked, between the two nearest anchors */
+function addCableDot(c,latlng,asKopp){
+  const A=cableAnchors(c); if(!A)return;
+  let best=0,bd=Infinity;
+  for(let i=0;i<A.length-1;i++){ const d=distToSeg(latlng,A[i].ll,A[i+1].ll); if(d<bd){bd=d;best=i;} }
+  c.pts=c.pts||[];
+  const after=A[best].p, idx=after?c.pts.indexOf(after)+1:0;
+  let wp;
+  if(asKopp){
+    const n={id:'node_'+Date.now()+'_'+Math.floor(Math.random()*1000),domain:'water',kind:'koppling',rating:0,lat:latlng.lat,lng:latlng.lng};
+    nodes.push(n); wp={k:'n',nid:n.id};
+  } else wp={x:latlng.lng,y:latlng.lat,k:'b'};
+  c.pts.splice(idx,0,wp);
+  saveNet(); redrawCables();
+  if(asKopp){ nodes.forEach(renderNode); renderVattenLegend();
+    flashBanner('Koppling added — click it, then a tent or handfat, to branch a pipe from here.',false); }
+}
+/* double-click a dot: el toggles sharp/curve; water cycles bend > curve > koppling */
+function toggleDot(c,p){
+  if(p.k==='b'){ p.k='c'; }
+  else if(c.domain==='water'){                    // curve -> gray koppling junction
+    const n={id:'node_'+Date.now()+'_'+Math.floor(Math.random()*1000),domain:'water',kind:'koppling',rating:0,lat:p.y,lng:p.x};
+    nodes.push(n); c.pts[c.pts.indexOf(p)]={k:'n',nid:n.id};
+    saveNet(); redrawCables(); nodes.forEach(renderNode); renderVattenLegend();
+    flashBanner('Koppling: click it, then a tent or handfat, to branch a pipe from here. Double-click it to turn it back into a bend dot.',false);
+    return;
+  }
+  else { p.k='b'; }
+  saveNet(); redrawCables();
+}
+/* koppling back to a plain blue bend dot (only when nothing branches from it) */
+function kopplingToBend(id){
+  const branches=cables.filter(c=>c.src===id||(c.dstKind==='node'&&c.dst===id));
+  if(branches.length){ flashBanner('This koppling still feeds '+branches.length+' pipe(s) — remove them first, or right-click to delete it with them.',true); return; }
+  const n=nodes.find(x=>x.id===id); if(!n)return;
+  const host=cables.find(c=>(c.pts||[]).some(p=>p.k==='n'&&p.nid===id));
+  if(host) host.pts[host.pts.findIndex(p=>p.k==='n'&&p.nid===id)]={x:n.lng,y:n.lat,k:'b'};
+  const m=nodeMarkers[id]; if(m){map.removeLayer(m);delete nodeMarkers[id];}
+  nodes=nodes.filter(x=>x.id!==id); if(connectSource===id)connectSource=null;
+  saveNet(); redrawCables(); renderVattenLegend();
+}
+/* Removing a pipe takes its koppling junctions with it, and everything they fed —
+   recursively, since a branch pipe can carry kopplingar of its own. */
+function removeCableCascade(c0){
+  const nIds=new Set(), cSet=new Set([c0]);
+  const onCable=c=>{ (c.pts||[]).forEach(p=>{
+    if(p.k!=='n'||nIds.has(p.nid)) return;
+    nIds.add(p.nid);
+    cables.forEach(x=>{ if(!cSet.has(x)&&(x.src===p.nid||(x.dstKind==='node'&&x.dst===p.nid))){ cSet.add(x); onCable(x); } });
+  }); };
+  onCable(c0);
+  cables=cables.filter(c=>!cSet.has(c));
+  nIds.forEach(id=>{ const m=nodeMarkers[id]; if(m){map.removeLayer(m);delete nodeMarkers[id];} });
+  nodes=nodes.filter(n=>!nIds.has(n.id));
 }
 function removeNode(id){
   const m=nodeMarkers[id]; if(m){map.removeLayer(m);delete nodeMarkers[id];}
-  nodes=nodes.filter(n=>n.id!==id); cables=cables.filter(c=>c.src!==id && !(c.dstKind==='node'&&c.dst===id));
+  cables.filter(c=>c.src===id||(c.dstKind==='node'&&c.dst===id)).forEach(c=>{ if(cables.includes(c)) removeCableCascade(c); });
+  nodes=nodes.filter(n=>n.id!==id);
+  cables.forEach(c=>{ if(c.pts) c.pts=c.pts.filter(p=>!(p.k==='n'&&p.nid===id)); });   // a deleted koppling leaves no ghost dot
   connectSource=null; banner.style.display='none'; saveNet(); redrawCables(); nodes.forEach(renderNode); renderLegend(); renderVattenLegend();
 }
 function showDomainLayers(){
@@ -1999,10 +2233,19 @@ function renderVattenLegend(){
     const outc=cables.filter(c=>c.src===n.id&&c.domain==='water').length;
     const fed=cables.some(c=>c.dst===n.id&&c.domain==='water');
     const row=document.createElement('div'); row.className='legrow';
-    row.innerHTML='<div class="sw" style="background:#0d2436;border:2px solid #2b8cff;'+(n.kind==='brunn'?'border-radius:50%':'')+'"></div>'
-      +'<div class="lname">'+(n.kind==='brunn'?'Brunn':'Handfat')+'<div style="font-size:10px;color:var(--muted);font-weight:400">'+(n.kind==='brunn'?(outc+' pipe(s) out'):(fed?'connected':'not connected'))+'</div></div>';
+    const kopp=n.kind==='koppling';
+    row.innerHTML='<div class="sw" style="background:'+(kopp?'#9aa0ab':'#0d2436')+';border:2px solid '+(kopp?'#9aa0ab':'#2b8cff')+';'+(n.kind!=='handfat'?'border-radius:50%':'')+'"></div>'
+      +'<div class="lname">'+(n.kind==='brunn'?'Brunn':kopp?'Koppling':'Handfat')+'<div style="font-size:10px;color:var(--muted);font-weight:400">'+((n.kind==='brunn'||kopp)?(outc+' pipe(s) out'):(fed?'connected':'not connected'))+'</div></div>';
     el.appendChild(row);
   });
+  /* total pipe length (follows the drawn paths, bends and curves included) */
+  const wc=cables.filter(c=>c.domain==='water');
+  if(wc.length&&ppm){
+    let tot=0; wc.forEach(c=>{ const m=cableLenM(c); if(m!=null)tot+=m; });
+    const row=document.createElement('div'); row.className='legrow';
+    row.innerHTML='<div class="sw" style="background:#2b8cff"></div><div class="lname">Pipe ('+wc.length+' run(s))</div><div class="lcount">'+fmtM(tot)+'</div>';
+    el.appendChild(row);
+  }
   const noWater=placed.filter(t=>needsWater(t)&&!hasWater(t));
   unconnectedSection(el,'Without water',noWater,()=>'needs a water connection','Every placed tent that needs water is connected.');
   const connected=placed.filter(t=>needsWater(t)&&hasWater(t));
