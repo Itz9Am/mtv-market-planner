@@ -592,7 +592,7 @@ function tentStyle(t){
   // marknadsstand (organiser-rented market stall): darker brown border, a bit heavier
   const base=ref.stand?'#5b3a1a':'rgba(0,0,0,.65)';
   const st={color: sel?'#ffffff':(hlt?'#ffd400':(wat?'#2b8cff':base)),
-            weight: sel?3:((hlt||wat)?3:(ref.stand?2.5:1.5)), fillColor:fill, fillOpacity:.85};
+            weight: sel?3:((hlt||wat)?3:(ref.stand?4:1.5)), fillColor:fill, fillOpacity:.85};
   if(ref.shape==='balheart') st.fillRule='nonzero';   // a near-touching bale pair must never XOR transparent under evenodd
   return st;
 }
@@ -646,7 +646,7 @@ function renderTentMarker(t){
     if(!t.poly){ ensureDefs(); t.poly=L.polygon(corners,tentStyle(t)).addTo(map); attachPolyHandlers(t); }
     else { t.poly.setLatLngs(corners); t.poly.setStyle(tentStyle(t)); }
     if(ref.nya && currentTab!=='el' && hasSize(ref)){
-      if(!t.nyaPoly){ ensureDefs(); t.nyaPoly=L.polygon(corners,{className:'nya-fill',stroke:true,color:'#ff1493',weight:2.5,opacity:1,fillOpacity:1,interactive:false}).addTo(map); }
+      if(!t.nyaPoly){ ensureDefs(); t.nyaPoly=L.polygon(corners,{className:'nya-fill',stroke:false,fillOpacity:1,interactive:false}).addTo(map); }
       else t.nyaPoly.setLatLngs(corners);
     }else if(t.nyaPoly){ map.removeLayer(t.nyaPoly); t.nyaPoly=null; }
     return;
@@ -661,7 +661,7 @@ function renderTentMarker(t){
   const color=isEl?elColor(ref.electricity):ref.color;
   const stripes=(!isEl && ref.nya)?'<div class="stripes"></div>':'';
   const wring=(currentTab==='vatten'&&ref.water)?';box-shadow:0 0 0 2px #2b8cff':(hl.tents.has(t.ref.id)?';box-shadow:0 0 0 3px #ffd400':'');
-  const standB=ref.stand?';border:2px solid #5b3a1a':'';
+  const standB=ref.stand?';border:3px solid #5b3a1a':'';
   const boxHtml=`<div class="tent-box ${t.uid===selectedUid?'sel':''}" style="width:${w}px;height:${h}px;background:${color};transform:rotate(${t.rot}deg)${wring}${standB}">${stripes}</div>`;
   const boxIcon=L.divIcon({className:'tent-div',html:boxHtml,iconSize:[w,h],iconAnchor:[w/2,h/2]});
   if(!t.marker){
