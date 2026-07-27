@@ -206,7 +206,9 @@ type (CEE plugs are rating-specific) — when that type is exhausted the connect
 refused, **never** moved to a larger free outlet (the earlier fallback let a cabinet
 with one 16 A outlet accept two 16 A cables via its 32 A outlet; the user rejected
 that). Sources default to unlimited outlets (capacity-limited only) but can be given
-explicit counts.
+explicit counts. The source/cabinet modal hides three-phase outlet rows above the
+entered rating (live, `srcClampOuts`) and the save handler zeroes them — a unit never
+has outlets bigger than its incoming feed.
 
 Graph: `nodes[] = {id, domain:'el'|'water', kind:'source'|'elskap'|'brunn'|'handfat',
 rating, lat, lng, unl?, outs?, color?}` and `cables[] = {src, dst, dstKind:'tent'|'node',
