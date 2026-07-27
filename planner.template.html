@@ -81,6 +81,7 @@
   .tent-cap{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;pointer-events:none;text-align:center;line-height:1.12;white-space:nowrap}
   .tent-cap .ln{display:inline-block;font-size:11px;font-weight:700;color:#fff;background:rgba(15,17,22,.74);padding:0 4px;border-radius:4px}
   .tent-cap .ltr{display:block;font-size:11px;font-weight:800;color:#ffe08a;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000;letter-spacing:.5px;margin-top:1px}
+  .tent-cap .sz{display:block;font-size:10px;font-weight:700;color:#d7dce8;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000;margin-top:1px}
   #tentCtl{position:absolute;z-index:1200;display:none;gap:4px;background:rgba(20,22,30,.95);padding:5px;border-radius:22px;border:1px solid var(--line);transform:translate(-50%,-100%);box-shadow:0 4px 14px rgba(0,0,0,.5)}
   #tentCtl button{width:34px;height:34px;border-radius:50%;padding:0;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;font-variant-emoji:text}
   #tentCtl button.del{border-color:var(--danger);color:var(--danger)}
@@ -258,6 +259,7 @@
       </div>
       <div class="grp" id="placeringControls">
         <button id="lettersBtn" class="wirebtn on" title="Show or hide the Placering letters on tents">Letters</button>
+        <button id="sizesBtn" class="wirebtn on" title="Show or hide the tent sizes (metres) on the map">Sizes</button>
         <button id="measureBtn" class="wirebtn" title="Calibrate the scale: click two points a known distance apart, then type the metres">Measure</button>
       </div>
       <div class="grp" id="elControls" style="display:none">
@@ -384,7 +386,7 @@
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1',sizes:'mtvi_sizes_v1'};
 /* Two independent plans ("areas"), each with its own tents, wiring, scale, view and base
    image. The plan-state keys below are namespaced per area in localStorage; the default
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
@@ -418,6 +420,7 @@ let customTents=lsGet(LS.custom,[]);
 let edits=lsGet(LS.edits,{});
 let removed=new Set(lsGet(LS.removed,[]));
 let showLetters=lsGet(LS.letters,true);
+let showSizes=lsGet(LS.sizes,true);   // tent dimensions on the map labels; global like `letters`
 let showCabNames=lsGet(LS.cabnames,true);   // cabinet designations (A1, A1N1 …) on the map; global like `letters`
 let showLengths=lsGet(LS.lengths,true);     // metre labels on wires/pipes; global like `letters`
 function saveRemoved(){ lsSet(LS.removed,[...removed]); histMark(); }               // per-id field overrides
@@ -586,8 +589,10 @@ function tentStyle(t){
   }
   const isEl=currentTab==='el';
   const fill=isEl?elColor(ref.electricity):ref.color;
-  const st={color: sel?'#ffffff':(hlt?'#ffd400':(wat?'#2b8cff':'rgba(0,0,0,.65)')),
-            weight: sel?3:((hlt||wat)?3:1.5), fillColor:fill, fillOpacity:.85};
+  // marknadsstand (organiser-rented market stall): darker brown border, a bit heavier
+  const base=ref.stand?'#5b3a1a':'rgba(0,0,0,.65)';
+  const st={color: sel?'#ffffff':(hlt?'#ffd400':(wat?'#2b8cff':base)),
+            weight: sel?3:((hlt||wat)?3:(ref.stand?2.5:1.5)), fillColor:fill, fillOpacity:.85};
   if(ref.shape==='balheart') st.fillRule='nonzero';   // a near-touching bale pair must never XOR transparent under evenodd
   return st;
 }
@@ -595,7 +600,8 @@ function capHtmlFor(t){
   const ref=refOf(t);
   const sub=currentTab==='el'?elLabel(ref.electricity):(showLetters?ref.placering:'');
   const letters=sub?`<span class="ltr">${esc(sub)}</span>`:'';
-  return `<div class="tent-cap"><span class="ln">${esc(ref.name)}</span>${letters}</div>`;
+  const size=(showSizes&&hasSize(ref))?`<span class="sz">${esc(fmtSize(ref))}</span>`:'';
+  return `<div class="tent-cap"><span class="ln">${esc(ref.name)}</span>${letters}${size}</div>`;
 }
 function tentClick(t,e){
   L.DomEvent.stopPropagation(e);
@@ -655,7 +661,8 @@ function renderTentMarker(t){
   const color=isEl?elColor(ref.electricity):ref.color;
   const stripes=(!isEl && ref.nya)?'<div class="stripes"></div>':'';
   const wring=(currentTab==='vatten'&&ref.water)?';box-shadow:0 0 0 2px #2b8cff':(hl.tents.has(t.ref.id)?';box-shadow:0 0 0 3px #ffd400':'');
-  const boxHtml=`<div class="tent-box ${t.uid===selectedUid?'sel':''}" style="width:${w}px;height:${h}px;background:${color};transform:rotate(${t.rot}deg)${wring}">${stripes}</div>`;
+  const standB=ref.stand?';border:2px solid #5b3a1a':'';
+  const boxHtml=`<div class="tent-box ${t.uid===selectedUid?'sel':''}" style="width:${w}px;height:${h}px;background:${color};transform:rotate(${t.rot}deg)${wring}${standB}">${stripes}</div>`;
   const boxIcon=L.divIcon({className:'tent-div',html:boxHtml,iconSize:[w,h],iconAnchor:[w/2,h/2]});
   if(!t.marker){
     t.marker=L.marker([t.lat,t.lng],{icon:boxIcon,draggable:true,autoPan:true}).addTo(map);
@@ -1928,6 +1935,10 @@ function setWire(on){
 function setLetters(on){ showLetters=on; lsSet(LS.letters,on);
   document.getElementById('lettersBtn').classList.toggle('on',on); refreshAll(); }
 document.getElementById('lettersBtn').onclick=()=>setLetters(!showLetters);
+/* tent sizes on the map — same pattern as the Letters toggle */
+function setSizes(on){ showSizes=on; lsSet(LS.sizes,on);
+  document.getElementById('sizesBtn').classList.toggle('on',on); refreshAll(); }
+document.getElementById('sizesBtn').onclick=()=>setSizes(!showSizes);
 /* cabinet designations on the map — same pattern as the Letters toggle */
 function setCabNames(on){ showCabNames=on; lsSet(LS.cabnames,on);
   document.getElementById('cabNamesBtn').classList.toggle('on',on);
@@ -2493,6 +2504,7 @@ loadPlaced();
 updateLegend();
 updateScaleReadout();
 setLetters(showLetters);
+setSizes(showSizes);
 setCabNames(showCabNames);
 setLengths(showLengths);
 renderList();

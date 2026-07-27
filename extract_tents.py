@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Extract the tent library from the Marknadsutstallare workbook into data/tents.json
+"""Extract the tent library from the Marknadsutstallare workbook into tents.json
 
-    python3 scripts/extract_tents.py "Marknadsutstallare_2026-2.xlsx"
+    python3 extract_tents.py "Marknadsutstallare_2026-2.xlsx"
 
-Reads the sheet "Utplaceringsdokument". Header is on ROW 2; data starts ROW 3.
-Column map (1-indexed) as of the 2026-2 export:
+Reads the sheet "Utplaceringsdokument" (or, failing that, any sheet whose name
+contains it — newer exports call it "Selected columns - Utplaceringsdokument").
+Header is on ROW 2; data starts ROW 3.
+Column map (1-indexed) as of the 2026-2 export — re-resolved against the header
+row by name at runtime, so an inserted column shifts nothing:
 
      1 id (also carries the CATEGORY COLOUR as a cell fill)
      2 Kommentar                 (sensitive - never export)
@@ -18,6 +21,9 @@ Column map (1-indexed) as of the 2026-2 export:
     10 Width                     metres (first structure only)
     11 electricity               '', 'none', '220v 6A', '380v 16A', '380v 32A'
     12 water                     'water' when the stand needs a supply
+    ?? marknadsstand             truthy = organiser-rented market stall -> darker
+                                 brown border in the app (found by header, any
+                                 header containing "marknadsst")
     13+ food_and_drink_vendor, special_requests, public_description,
         arrival_date/time, underlayments, ...   (sensitive - never export)
 
@@ -41,10 +47,49 @@ from collections import Counter
 from openpyxl import load_workbook
 
 SHEET = "Utplaceringsdokument"
+HEADER_ROW = 2
 FIRST_DATA_ROW = 3
 COL = dict(id=1, nya=3, placering=4, name=6, tents=8, length=9, width=10,
            electricity=11, water=12)
+# header text (lowercased) per COL key; id stays column 1 (its FILL is the colour)
+HEADERS = dict(nya="nya", placering="placering", name="applicationname",
+               tents="tents", length="length", width="width",
+               electricity="electricity", water="water")
 DEFAULT_COLOUR = "#B6D7A8"
+
+
+def pick_sheet(wb):
+    if SHEET in wb.sheetnames:
+        return wb[SHEET]
+    # xlsx truncates sheet titles to 31 chars, so match on a prefix of the name
+    for name in wb.sheetnames:
+        if "utplacering" in name.lower():
+            return wb[name]
+    raise SystemExit(f"no sheet matching '{SHEET}' in {wb.sheetnames}")
+
+
+def resolve_cols(ws):
+    """Re-anchor COL on the actual header row; fall back to the 2026-2 positions."""
+    hdr = {}
+    for c in range(1, ws.max_column + 1):
+        v = ws.cell(row=HEADER_ROW, column=c).value
+        if v not in (None, ""):
+            hdr.setdefault(str(v).strip().lower(), c)
+    col = dict(COL)
+    for key, name in HEADERS.items():
+        if name in hdr:
+            col[key] = hdr[name]
+    col["stand"] = next((c for h, c in hdr.items() if "marknadsst" in h), None)
+    if col["stand"] is None:
+        print("WARNING: no 'marknadsstand' column found - stand=0 for every row",
+              file=sys.stderr)
+    return col
+
+
+def truthy(v):
+    if v in (None, "", 0, False):
+        return False
+    return str(v).strip().lower() not in ("0", "no", "none", "nej", "false")
 
 
 def fill_hex(cell):
@@ -88,12 +133,13 @@ def slug(s):
 
 
 def extract(path):
-    ws = load_workbook(path)[SHEET]
+    ws = pick_sheet(load_workbook(path))
+    col = resolve_cols(ws)
     seen, out, expanded, noid = Counter(), [], 0, 0
 
     for r in range(FIRST_DATA_ROW, ws.max_row + 1):
-        idv = ws.cell(row=r, column=COL["id"]).value
-        name = ws.cell(row=r, column=COL["name"]).value
+        idv = ws.cell(row=r, column=col["id"]).value
+        name = ws.cell(row=r, column=col["name"]).value
         if not name or not str(name).strip():
             continue
         nm = str(name).strip()
@@ -108,7 +154,7 @@ def extract(path):
             rid = int(idv) if isinstance(idv, (int, float)) else idv
 
         def cell(key):
-            v = ws.cell(row=r, column=COL[key]).value
+            v = ws.cell(row=r, column=col[key]).value
             return str(v).strip() if v not in (None, "") else ""
 
         water = cell("water")
@@ -116,15 +162,17 @@ def extract(path):
             "id": rid,
             "name": nm,
             "placering": cell("placering"),
-            "nya": 1 if ws.cell(row=r, column=COL["nya"]).value in (1, 1.0, "1") else 0,
-            "color": fill_hex(ws.cell(row=r, column=COL["id"])) or DEFAULT_COLOUR,
+            "nya": 1 if ws.cell(row=r, column=col["nya"]).value in (1, 1.0, "1") else 0,
+            "color": fill_hex(ws.cell(row=r, column=col["id"])) or DEFAULT_COLOUR,
             "electricity": cell("electricity"),
             "water": bool(water) and water.lower() not in ("no", "none", "0"),
+            "stand": 1 if col["stand"] and truthy(
+                ws.cell(row=r, column=col["stand"]).value) else 0,
         }
 
-        L = ws.cell(row=r, column=COL["length"]).value
-        W = ws.cell(row=r, column=COL["width"]).value
-        arr = parse_arr(ws.cell(row=r, column=COL["tents"]).value)
+        L = ws.cell(row=r, column=col["length"]).value
+        W = ws.cell(row=r, column=col["width"]).value
+        arr = parse_arr(ws.cell(row=r, column=col["tents"]).value)
 
         if len(arr) > 1:                      # vendor with several structures
             expanded += 1
@@ -152,7 +200,7 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         return 1
-    root = pathlib.Path(__file__).resolve().parent.parent
+    root = pathlib.Path(__file__).resolve().parent
     out, expanded, noid = extract(sys.argv[1])
 
     dupes = [k for k, v in Counter(t["id"] for t in out).items() if v > 1]
@@ -160,13 +208,14 @@ def main():
         print(f"ERROR: duplicate ids {dupes}", file=sys.stderr)
         return 1
 
-    dest = root / "data" / "tents.json"
+    dest = root / "tents.json"
     dest.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     print(f"{len(out)} entries -> {dest.relative_to(root)}")
     print(f"  multi-structure vendors expanded: {expanded}")
     print(f"  rows given synthetic ids: {noid}")
     print(f"  with size: {sum(1 for t in out if t['length'] and t['width'])}")
     print(f"  needing water: {sum(1 for t in out if t['water'])}")
+    print(f"  marknadsstand: {sum(1 for t in out if t.get('stand'))}")
     print(f"  colours: {dict(Counter(t['color'] for t in out))}")
     return 0
 

@@ -102,7 +102,8 @@ structures and custom objects). 150 entries currently.
   "length": 20, "width": 6,// METRES, null when the sheet has no size
   "color": "#F9CB9C",      // from the column-A cell FILL = category
   "electricity": "380v 16A",
-  "water": true
+  "water": true,
+  "stand": 0               // 1 = organiser-rented marknadsstånd -> darker brown border
 }
 ```
 
@@ -320,7 +321,8 @@ branches from it); deleting a pipe cascades through its kopplingar and their bra
 - **No emoji anywhere.** Monochrome glyphs (`↺ ↻ ✕`) only. `build.py` warns.
 - Footprints are always true-to-scale; the earlier fixed-size toggle was removed.
 - Names are always drawn, even when unreadably small. Placement letters can be hidden
-  via the **Letters** toggle.
+  via the **Letters** toggle; tent sizes (metres) show on the label under a **Sizes**
+  toggle of the same kind (`LS.sizes`, global).
 - Tent list sorts by colour with **red last**, then by `placering`, then name.
 
 ## Public view vs admin view
