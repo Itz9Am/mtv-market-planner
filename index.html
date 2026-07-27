@@ -114,6 +114,14 @@
   .node.source{background:#0e2033;border-radius:50%}
   .node .er{font-size:12px;font-weight:800;color:#fff;line-height:1}
   .node .eu{font-size:9px;font-weight:600;margin-top:1px}
+  /* cable bend/curve dots (wire mode): square = sharp bend, round = curve */
+  .cdot{border-radius:2px;border:2px solid #10131a;box-shadow:0 1px 3px rgba(0,0,0,.6);cursor:grab}
+  .cdot.crv{border-radius:50%}
+  /* water koppling: a gray junction dot on a pipe that other pipes branch from */
+  .kopp{width:14px;height:14px;border-radius:50%;background:#9aa0ab;border:2px solid #10131a;box-shadow:0 0 0 2px rgba(255,255,255,.3);cursor:pointer}
+  .kopp.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px #ff2ec4}
+  /* cable length readout at the wire's midpoint (fixed pixel size, like tent labels) */
+  .cablen{position:absolute;transform:translate(-50%,-50%);font-size:10px;font-weight:600;color:#cfd3dc;background:rgba(10,12,18,.82);border:1px solid var(--line);border-radius:5px;padding:0 4px;line-height:14px;white-space:nowrap;pointer-events:none}
   .node.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px #ff2ec4}
   .node.hl{box-shadow:0 0 0 3px #ffd400,0 0 12px rgba(255,212,0,.6)}
   .node.sel.hl{box-shadow:0 0 0 2px #fff,0 0 0 5px #ffd400}
@@ -186,7 +194,7 @@
     </div>
     <div id="tentList"></div>
     <div id="elUI" style="display:none">
-      <div class="hint">Electrical view. Add a <b>Source</b> (a popup sets its amps and outputs) and cabinets from the toolbar. To wire, turn on the <b>Wire</b> tool, click a source/cabinet, then click what it feeds. With Wire off, clicking just selects and highlights the supply chain. Cabinets are three-phase: single-phase 220V loads are balanced across L1/L2/L3, three-phase loads sit on all phases, and any phase over the rating is flagged red. Click a cable to remove it; select a node and press Delete.</div>
+      <div class="hint">Electrical view. Add a <b>Source</b> (a popup sets its amps and outputs) and cabinets from the toolbar. To wire, turn on the <b>Wire</b> tool, click a source/cabinet, then click what it feeds. With Wire off, clicking just selects and highlights the supply chain. Cabinets are three-phase: single-phase 220V loads are balanced across L1/L2/L3, three-phase loads sit on all phases, and any phase over the rating is flagged red. With Wire on: click a cable to add a dot you can drag to bend it; <b>double-click the dot</b> to switch sharp/curve, right-click it to remove; <b>double-click the cable</b> (or right-click) to recolour or remove the whole wire. Cable lengths show at each wire's midpoint (Lengths toggle) and are totalled below. Ctrl+Z undoes, Ctrl+Shift+Z redoes. Select a node and press Delete to remove it.</div>
       <div class="seg" id="elViewSeg">
         <button data-v="overview" class="on">Overview</button>
         <button data-v="cabinets">Cabinets</button>
@@ -195,7 +203,7 @@
       <div id="elTree" style="display:none"></div>
     </div>
     <div id="vattenUI" style="display:none">
-      <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. Click a pipe to remove it; select a fixture and press Delete.</div>
+      <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. With Wire on: click a pipe to add a blue dot you can drag to bend it; <b>double-click the dot</b> to switch sharp/curve, right-click it to make it a gray <b>koppling</b> or remove it. A koppling is a junction: click it and then a tent/handfat to branch a new pipe from that point (right-click removes it with its branches). <b>Double-click the pipe</b> (or right-click) to recolour or remove it. Ctrl+Z undoes, Ctrl+Shift+Z redoes. Select a fixture and press Delete.</div>
       <div id="vattenLegend"></div>
     </div>
   </div>
@@ -261,11 +269,13 @@
         <button class="ela" data-r="16">16A</button>
         <button class="ela" data-custom="1">Custom</button>
         <button id="cabNamesBtn" class="wirebtn on" title="Show or hide the cabinet designations (A1, A1N1 &hellip;) on the map">Names</button>
+        <button id="lenBtnEl" class="wirebtn on" title="Show or hide the cable lengths (metres) on the wires">Lengths</button>
         <button id="wireEl" class="wirebtn">Wire</button>
       </div>
       <div class="grp" id="vattenControls" style="display:none">
         <button class="wta" data-w="brunn">Brunn</button>
         <button class="wta" data-w="handfat">Handfat</button>
+        <button id="lenBtnVa" class="wirebtn on" title="Show or hide the pipe lengths (metres)">Lengths</button>
         <button id="wireVa" class="wirebtn">Wire</button>
       </div>
     </div>
@@ -358,10 +368,23 @@
   </div>
 </div>
 
+<div class="modal-bg" id="dotBg">
+  <div class="modal">
+    <h3>Wire dot</h3>
+    <p>A <b>square</b> dot is a sharp bend, a <b>round</b> dot pulls a smooth curve through it. On a water pipe a gray <b>koppling</b> is a junction that other pipes can branch from. Drag the dot on the map to move it; double-click it to switch sharp/curve without opening this window.</p>
+    <div class="actions" style="justify-content:flex-start">
+      <button id="dotBend">Sharp bend</button>
+      <button id="dotCurve">Curve</button>
+      <button id="dotKopp">Koppling</button>
+    </div>
+    <div class="actions"><button id="dotRemove" style="color:var(--danger)">Remove dot</button><button id="dotCancel">Cancel</button></div>
+  </div>
+</div>
+
 <script>
 "use strict";
 const TENTS = [{"id": 1685, "name": "Mazar Resturang", "placering": "", "nya": 1, "color": "#F9CB9C", "electricity": "380v 16A", "water": false, "length": 3.0, "width": 3.0}, {"id": 1722, "name": "Snorres Taverna", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "380v 32A", "water": false, "length": 8.0, "width": 3.0}, {"id": 1937, "name": "Vartan Rulle", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "380v 32A", "water": true, "length": 20.0, "width": 6.0}, {"id": 1942, "name": "Smash burgare", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "380v 16A", "water": false, "length": 6.0, "width": 5.0}, {"id": 1944, "name": "Serwa Eatery", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "220v 6A", "water": true, "length": 15.0, "width": 3.0}, {"id": 1972, "name": "Glada Galten och Pannkakasbuffé", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "380v 32A", "water": false, "length": 9.0, "width": 6.0}, {"id": 19721, "name": "Pannkakasbuffé", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "none", "water": false, "length": 9.0, "width": 11.0}, {"id": 2018, "name": "Franska Crepes", "placering": "MAT", "nya": 1, "color": "#F9CB9C", "electricity": "220v 6A", "water": true, "length": 3.5, "width": 4.0}, {"id": 2031, "name": "Fattiga Riddare", "placering": "MAT", "nya": 0, "color": "#F9CB9C", "electricity": "none", "water": false, "length": 2.0, "width": 3.0}, {"id": 1636, "name": "WinterKotte", "placering": "M", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 4.0}, {"id": 1640, "name": "Camarda fh ab", "placering": "MBH2", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 3.0}, {"id": 1641, "name": "Knape", "placering": "MG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 6.0}, {"id": 1644, "name": "STENGÅRDEN", "placering": "STV3", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 9.0}, {"id": 1680, "name": "Jen's Nocturnal Crafts", "placering": "M62", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 2.0}, {"id": 1681, "name": "Ben och sten", "placering": "M12", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0}, {"id": 1684, "name": "Studio Fagerstedt - Tettes keramik", "placering": "STV2", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 4.0}, {"id": 1689, "name": "Östergarns Honung", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0}, {"id": 1701, "name": "Min Kräm Medailleu", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 7.0, "width": 2.0}, {"id": 1702, "name": "Medeltida fantasy", "placering": "M6", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": null, "width": null}, {"id": 1703, "name": "Black Emporium", "placering": "ST", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0}, {"id": 1704, "name": "KarlOskar hendel", "placering": "MG7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 4.0}, {"id": 1705, "name": "SIDENGÅRDEN", "placering": "STH3", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 8.5, "width": 5.5}, {"id": 1706, "name": "Bard & Jester", "placering": "SG1", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 4.0}, {"id": 1716, "name": "Lyktmakarn", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 5.0, "width": 2.0}, {"id": 1717, "name": "Frost Rose", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": 5.0, "width": 4.5}, {"id": 1718, "name": "Hellas Delikatesser", "placering": "MG2", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 6.0}, {"id": 1725, "name": "The Amuletery", "placering": "MBV2", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 4.0}, {"id": 1726, "name": "Eva Axelsdotter", "placering": "MBV6", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 2.0}, {"id": 1727, "name": "Ananda Naturmode", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 7.0, "width": 5.0}, {"id": 1731, "name": "LepizsánBags", "placering": "MBH5", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 6.0}, {"id": 1735, "name": "Ull_Design_Visby", "placering": "MG", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 1.5, "width": 1.0}, {"id": 1736, "name": "KABEJO design", "placering": "M8", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 4.0}, {"id": 1737, "name": "Bjarka Craft of Nature", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 3.0}, {"id": 1738, "name": "Frank's forge", "placering": "", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 4.0}, {"id": 1748, "name": "GudaGott", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 3.0}, {"id": 1755, "name": "Åminne Honung och Jästeri", "placering": "MBH8", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 3.5, "width": 3.5}, {"id": 1756, "name": "Adams Järnsmide", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": 5.0, "width": 3.0}, {"id": 1761, "name": "Ullrum", "placering": "MBH4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0}, {"id": 1762, "name": "Eikthyrnir", "placering": "STH7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 8.0, "width": 6.0}, {"id": 1767, "name": "Tunnbrödsbageri Hedhagen", "placering": "STV6", "nya": 0, "color": "#B6D7A8", "electricity": "380v 16A", "water": false, "length": null, "width": null}, {"id": 1768, "name": "Nordlys Vikingaområde", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": null, "width": null}, {"id": 1784, "name": "Författare Edla Lowbrink", "placering": "M31", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": null, "width": null}, {"id": 1811, "name": "Anton Linder", "placering": "MG7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 5.0}, {"id": 1840, "name": "Clurigt", "placering": "Strandgärdet", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 21.0, "width": 9.0}, {"id": 1860, "name": "Fjelldal Trade", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 10.0}, {"id": 1864, "name": "M.P. Bagpipes", "placering": "MG5", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 10.0, "width": 6.0}, {"id": 1890, "name": "Keramik Studio Thane", "placering": "MG7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.0, "width": 4.0}, {"id": "1902-1", "name": "Historiska Rum (1/2)", "placering": "STH6", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 12.0, "width": 8.0}, {"id": "1902-2", "name": "Historiska Rum (2/2)", "placering": "STH6", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.0, "width": 3.0}, {"id": 1919, "name": "Lövberg Ostar", "placering": "M", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 3.0}, {"id": "1920-1", "name": "MGA markedsbod (1/2)", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.5, "width": 4.0}, {"id": "1920-2", "name": "MGA markedsbod (2/2)", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 5.0}, {"id": 1921, "name": "Babysnake silver AB", "placering": "M4", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 2.0}, {"id": 1932, "name": "Nektarkällan", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": 7.0, "width": 6.0}, {"id": 1934, "name": "Formisadel", "placering": "MG6", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0}, {"id": 1939, "name": "Medeltidsmode", "placering": "D3", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 9.0, "width": 9.0}, {"id": 1940, "name": "Svenskt Mathantverk", "placering": "HGH1", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 3.0}, {"id": "1945-1", "name": "Urda Hantverk (1/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 11.0, "width": 8.0}, {"id": "1945-2", "name": "Urda Hantverk (2/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 12.0, "width": 9.0}, {"id": "1945-3", "name": "Urda Hantverk (3/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0}, {"id": "1945-4", "name": "Urda Hantverk (4/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 4.0}, {"id": "1945-5", "name": "Urda Hantverk (5/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.0, "width": 4.0}, {"id": "1945-6", "name": "Urda Hantverk (6/6)", "placering": "SG3,4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0}, {"id": 1947, "name": "Firma Lasergrafie", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 3.0}, {"id": 1948, "name": "Mandelkompaniet", "placering": "HGH2", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 2.5}, {"id": 1949, "name": "Use again", "placering": "MBV4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 5.0, "width": 4.0}, {"id": 1951, "name": "EQWE21E", "placering": "", "nya": 1, "color": "#FF0000", "electricity": "", "water": false, "length": null, "width": null}, {"id": 1952, "name": "Historisk Tekstilformidling", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": 10.0, "width": 10.0}, {"id": 1960, "name": "Gute Glass", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 3.0}, {"id": "1962-1", "name": "Estland (1/3)", "placering": "M9", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 3.0}, {"id": "1962-2", "name": "Estland (2/3)", "placering": "M9", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 3.0}, {"id": "1962-3", "name": "Estland (3/3)", "placering": "M9", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 5.0, "width": 3.0}, {"id": 1964, "name": "Sorby Bi & Trädgård", "placering": "M32", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 3.0}, {"id": 1969, "name": "The Healing Light", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 2.0}, {"id": 1971, "name": "omshantisilver.se", "placering": "MBV0", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 4.0}, {"id": 1973, "name": "Bohemia Gård", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": null, "width": null}, {"id": 1974, "name": "Maria Galmin", "placering": "B3", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 9.0, "width": 1.0}, {"id": 1977, "name": "Bruno Engström", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0}, {"id": 1978, "name": "Rawisboll", "placering": "Fikatorget", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0}, {"id": 1981, "name": "Vår Gård", "placering": "MBV7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 2.0}, {"id": 1983, "name": "Läderateljè", "placering": "ST", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 7.0, "width": 3.0}, {"id": 1987, "name": "Fb craft willo s.r.l", "placering": "", "nya": 1, "color": "#FF0000", "electricity": "none", "water": false, "length": null, "width": null}, {"id": 1988, "name": "SIA ROBIJS", "placering": "M22", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.0, "width": 2.0}, {"id": 1989, "name": "Amna", "placering": "", "nya": 1, "color": "#FF0000", "electricity": "", "water": false, "length": null, "width": null}, {"id": 1992, "name": "Svenskaya", "placering": "MBH0", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.5, "width": 6.5}, {"id": 1993, "name": "Ullkontoret", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 2.0}, {"id": "1994-1", "name": "Korps - Ravencraft AB (1/3)", "placering": "SG1,2", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 12.0, "width": 6.0}, {"id": "1994-2", "name": "Korps - Ravencraft AB (2/3)", "placering": "SG1,2", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 10.0, "width": 5.0}, {"id": "1994-3", "name": "Korps - Ravencraft AB (3/3)", "placering": "SG1,2", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.5, "width": 4.5}, {"id": 1995, "name": "Tunsberghus Buemakeri", "placering": "STH9", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 4.0}, {"id": 1996, "name": "Vagabundus", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 4.0, "width": 4.0}, {"id": 1997, "name": "Nordahls Medeltidskläder", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 6.0}, {"id": 1998, "name": "Saffranspannkaka", "placering": "HGH3", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 3.0}, {"id": 2006, "name": "Marketenderei Tausendschön", "placering": "STV1", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 6.0}, {"id": 2007, "name": "Kråkans diverse", "placering": "M4", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0}, {"id": 2008, "name": "Kraftkällan", "placering": "", "nya": 0, "color": "#FF0000", "electricity": "none", "water": false, "length": null, "width": null}, {"id": 2011, "name": "LunarPlexus Gotland AB", "placering": "Storgatan bredvid Trollcraft", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 10.0, "width": 6.0}, {"id": 2019, "name": "Candy Nuts", "placering": "MG Innanför murfallet", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 2.0}, {"id": 2020, "name": "Bara Lite", "placering": "M", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 2.0}, {"id": 2023, "name": "Fornalv Hantverk", "placering": "M", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 2.0}, {"id": 2024, "name": "Lord.Cairnmark", "placering": "", "nya": 1, "color": "#FF0000", "electricity": "none", "water": false, "length": null, "width": null}, {"id": 2025, "name": "Tall Tales - Äventyrsbutik", "placering": "MG", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.0, "width": 3.0}, {"id": 2028, "name": "Lilcarou", "placering": "", "nya": 1, "color": "#FF0000", "electricity": "", "water": false, "length": null, "width": null}, {"id": 2044, "name": "Krohns krukmakeri", "placering": "STH4", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 10.0, "width": 5.0}, {"id": 2045, "name": "Orsa Stenhuggeri & Healing", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0}, {"id": 2062, "name": "Get Natural", "placering": "MBH1", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 8.0, "width": 3.0}, {"id": 2071, "name": "Dausiens Holzkunst", "placering": "Gräsplätt", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 8.0, "width": 3.0}, {"id": "2079-1", "name": "Henrik Kofod Olesen (1/2)", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 3.0, "width": 2.0}, {"id": "2079-2", "name": "Henrik Kofod Olesen (2/2)", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 3.0, "width": 2.0}, {"id": 2082, "name": "PatriArc", "placering": "STH1", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 6.0, "width": 3.0}, {"id": 2085, "name": "Topaze Smycken", "placering": "B1", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 2.0}, {"id": 2087, "name": "Friends dinner ab", "placering": "STV7", "nya": 0, "color": "#B6D7A8", "electricity": "380v 16A", "water": false, "length": 3.0, "width": 4.0}, {"id": 2089, "name": "GUNGNIR LTD.", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 6.0}, {"id": 2091, "name": "Knut - Bagskytte för barn", "placering": "Nordlys", "nya": 0, "color": "#C9DAF8", "electricity": "none", "water": false, "length": null, "width": null}, {"id": "2098-1", "name": "Köket i Hammarklanen (1/2)", "placering": "", "nya": 0, "color": "#B6D7A8", "electricity": "380v 16A", "water": false, "length": 2.0, "width": 3.0}, {"id": "2098-2", "name": "Köket i Hammarklanen (2/2)", "placering": "", "nya": 0, "color": "#B6D7A8", "electricity": "380v 16A", "water": false, "length": 3.0, "width": 4.0}, {"id": 2101, "name": "Bracelets by wild", "placering": "ST2?", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 4.5, "width": 3.0}, {"id": 2105, "name": "FRUKT & MIX", "placering": "Fikatorget", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0}, {"id": 2106, "name": "Silver Hantverk", "placering": "", "nya": 0, "color": "#FF0000", "electricity": "", "water": false, "length": null, "width": null}, {"id": 2113, "name": "Nomad Art - bows and accessoires", "placering": "PG", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 3.0}, {"id": 2116, "name": "Ofer Ohayon, Tiara Visby", "placering": "MG1", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 2.0}, {"id": 2118, "name": "Glassvagnen", "placering": "", "nya": 0, "color": "#FF0000", "electricity": "380v 32A", "water": false, "length": null, "width": null}, {"id": 2119, "name": "Artzy", "placering": "MG7", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 3.0, "width": 2.0}, {"id": 2122, "name": "Petrykivka", "placering": "M85", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": null, "width": null}, {"id": 2123, "name": "Geo Design - O.Santi Jewelry", "placering": "M", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 3.0}, {"id": 2124, "name": "Massage Leif", "placering": "D1", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 6.0, "width": 3.0}, {"id": "x_vita_vargens_smedja", "name": "Vita Vargens Smedja", "placering": "M1", "nya": 0, "color": "#B6D7A8", "electricity": "none", "water": false, "length": 2.0, "width": 2.0}, {"id": "x_pilbagskurs", "name": "Pilbågskurs", "placering": "Gräsplätt", "nya": 0, "color": "#B6D7A8", "electricity": "", "water": false, "length": 5.0, "width": 5.0}, {"id": "x_gycklaranget", "name": "Gycklaränget", "placering": "Gräsplätt", "nya": 0, "color": "#B6D7A8", "electricity": "", "water": false, "length": 5.0, "width": 5.0}, {"id": "x_gycklarboden", "name": "Gycklarboden", "placering": "Gräsplätt", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0}, {"id": "x_marknadsboden", "name": "Marknadsboden", "placering": "MBH", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0}, {"id": "x_internet_office", "name": "Internet office", "placering": "Mat", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0}, {"id": "x_barforrad", "name": "Barförråd", "placering": "Mat", "nya": 0, "color": "#999999", "electricity": "", "water": false, "length": 2.0, "width": 2.0}, {"id": "x_medeltidsveckans_taverna", "name": "Medeltidsveckans Taverna", "placering": "Mat", "nya": 0, "color": "#999999", "electricity": "380v 16A", "water": true, "length": 2.0, "width": 2.0}, {"id": "x_biljettkassa", "name": "Biljettkassa", "placering": "VC", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0}, {"id": "x_biljettutlamning", "name": "Biljettutlämning", "placering": "VC", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0}, {"id": "x_proknektbod", "name": "Proknektbod", "placering": "Mat", "nya": 0, "color": "#999999", "electricity": "380v 16A", "water": false, "length": 2.0, "width": 2.0}, {"id": "x_medeltidsveckans_butik", "name": "Medeltidsveckans butik", "placering": "VC", "nya": 0, "color": "#999999", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0}, {"id": "x_soltak_fikatorget", "name": "Soltak Fikatorget", "placering": "Fikatorget", "nya": 0, "color": "#FFF2CC", "electricity": "", "water": false, "length": 6.0, "width": 6.0}, {"id": "x_baldakin", "name": "Baldakin", "placering": "Mat", "nya": 0, "color": "#FFF2CC", "electricity": "", "water": false, "length": 6.0, "width": 6.0}, {"id": "x_baldakin_2", "name": "Baldakin", "placering": "Mat", "nya": 0, "color": "#FFF2CC", "electricity": "", "water": false, "length": 6.0, "width": 6.0}, {"id": "x_oltalt", "name": "Öltält", "placering": "Mat", "nya": 0, "color": "#FFF2CC", "electricity": "", "water": false, "length": 7.0, "width": 14.0}, {"id": "x_sagoangen", "name": "Sagoängen", "placering": "Sagoängen", "nya": 0, "color": "#EAD1DC", "electricity": "", "water": false, "length": 10.0, "width": 10.0}, {"id": "x_starke_viking", "name": "Starke Viking", "placering": "ST", "nya": 0, "color": "#EAD1DC", "electricity": "", "water": false, "length": 15.0, "width": 15.0}, {"id": "x_starke_viking_camp", "name": "Starke Viking Camp", "placering": "Sagoängen", "nya": 0, "color": "#EAD1DC", "electricity": "", "water": false, "length": 10.0, "width": 10.0}, {"id": "x_proknekt_scen", "name": "Proknekt Scen", "placering": "Mat", "nya": 0, "color": "#EAD1DC", "electricity": "", "water": false, "length": null, "width": null}, {"id": "x_starke_viking_saft", "name": "Starke Viking Saft", "placering": "ST", "nya": 0, "color": "#B6D7A8", "electricity": "", "water": false, "length": 4.0, "width": 2.0}, {"id": "x_gute_rosteri", "name": "Gute Rosteri", "placering": "Mat", "nya": 0, "color": "#B6D7A8", "electricity": "380v 16A", "water": true, "length": 4.0, "width": 4.0}, {"id": "x_gute_rosteri_2", "name": "Gute Rosteri", "placering": "Fikatorget", "nya": 0, "color": "#B6D7A8", "electricity": "220v 6A", "water": false, "length": 2.0, "width": 2.0}, {"id": "x_gute_rosteri_korv", "name": "Gute Rosteri korv", "placering": "Mat", "nya": 0, "color": "#B6D7A8", "electricity": "", "water": false, "length": 2.0, "width": 2.0}, {"id": 2098, "name": "Köket i Hammarklanen", "placering": "", "nya": 1, "color": "#B6D7A8", "electricity": "380v 16A", "water": false, "length": 2.0, "width": 3.0}, {"id": "custom_1784707424255", "name": "Proknekt scenen", "placering": "MAT", "nya": 0, "color": "#583400", "electricity": "none", "water": false, "length": 4.0, "width": 4.0}];
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1'};
 /* Two independent plans ("areas"), each with its own tents, wiring, scale, view and base
    image. The plan-state keys below are namespaced per area in localStorage; the default
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
@@ -396,7 +419,8 @@ let edits=lsGet(LS.edits,{});
 let removed=new Set(lsGet(LS.removed,[]));
 let showLetters=lsGet(LS.letters,true);
 let showCabNames=lsGet(LS.cabnames,true);   // cabinet designations (A1, A1N1 …) on the map; global like `letters`
-function saveRemoved(){ lsSet(LS.removed,[...removed]); }               // per-id field overrides
+let showLengths=lsGet(LS.lengths,true);     // metre labels on wires/pipes; global like `letters`
+function saveRemoved(){ lsSet(LS.removed,[...removed]); histMark(); }               // per-id field overrides
 let editingId=null;                         // which tent the modal is editing (null = add new)
 let editingShape=null;                      // the edited item's current shape; keeps the internal 'balheart' shape across a modal save (the select only offers rect/circle)
 function applyEdits(t){ const e=edits[t.id]; return e?Object.assign({},t,e):t; }
@@ -435,6 +459,7 @@ function refreshHl(){ refreshAll(); nodes.forEach(renderNode); redrawCables(); }
 const map=L.map('map',{crs:L.CRS.Simple,minZoom:-6,maxZoom:8,zoomSnap:0.25,zoomDelta:0.5,scrollWheelZoom:true,attributionControl:false,boxZoom:false});
 map.setView([0,0],0);
 map.createPane('cables');     map.getPane('cables').style.zIndex='610';      // above tent boxes (markerPane 600)
+map.createPane('dots');       map.getPane('dots').style.zIndex='615';        // bend/curve dots, above cables
 map.createPane('tentlabels'); map.getPane('tentlabels').style.zIndex='620';  // above cables
 map.getPane('tentlabels').style.pointerEvents='none';
 map.createPane('nodes');      map.getPane('nodes').style.zIndex='630';       // cabinets on top
@@ -647,7 +672,7 @@ function removeTentMarker(t){
   ['marker','label','poly','nyaPoly'].forEach(k=>{ if(t[k])map.removeLayer(t[k]); t[k]=null; });
 }
 function refreshAll(){ placed.forEach(renderTentMarker); positionCtl(); }
-function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); queueSheetSave(); }
+function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); queueSheetSave(); histMark(); }
 function loadPlaced(){ placed=[]; (lsGet(LS.placed,[])||[]).forEach(a=>{placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null});}); placedIds=new Set(placed.map(t=>t.ref.id)); refreshOtherPlaced(); }
 /* A tent is placed once across the whole event: `otherPlaced` holds ids placed in the
    OTHER area(s), read straight from their namespaced localStorage, so a vendor dropped on
@@ -725,6 +750,65 @@ document.getElementById('delBtn').onclick=()=>{
   saveNet(); redrawCables();
   deselect(); savePlaced(); renderList(document.getElementById('search').value);
 };
+/* ---------- undo / redo (Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y; Cmd on Mac) ----------
+   Snapshot-based: after every committed change (savePlaced / saveNet / saveRemoved /
+   list edits) the whole editable state — placements, nodes, cables, custom objects,
+   removed set, per-tent edits — is serialized onto a stack, and Ctrl+Z swaps the
+   previous snapshot back in through the same full-rebuild path a Sheet load uses.
+   Snapshots are taken on a 0 ms timer so ONE user action (which may run savePlaced
+   AND saveNet, e.g. deleting a wired tent) lands as ONE history entry. History is
+   per-session and reset whenever remote state is applied (startup pull, poll reload,
+   area switch) — undoing across someone else's save would silently clobber it. */
+const HIST={undo:[],redo:[],cur:null,max:60,timer:null,muted:false};
+function histState(){ return JSON.stringify({
+  placed:placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot||0})),
+  nodes:nodes,cables:cables,custom:customTents,removed:[...removed],edits:edits}); }
+function histInit(){ clearTimeout(HIST.timer); HIST.timer=null; HIST.undo=[]; HIST.redo=[]; HIST.cur=histState(); }
+function histFlush(){
+  clearTimeout(HIST.timer); HIST.timer=null;
+  if(HIST.cur==null){ HIST.cur=histState(); return; }
+  const s=histState(); if(s===HIST.cur) return;
+  HIST.undo.push(HIST.cur); if(HIST.undo.length>HIST.max) HIST.undo.shift();
+  HIST.redo=[]; HIST.cur=s;
+}
+function histMark(){ if(HIST.muted||SYNC.loading) return; clearTimeout(HIST.timer); HIST.timer=setTimeout(histFlush,0); }
+function histApply(s){
+  const st=JSON.parse(s);
+  HIST.muted=true;
+  try{
+    deselect(); connectSource=null; armNode=null; armedRef=null; clearHl(); banner.style.display='none';
+    placed.forEach(removeTentMarker);
+    placed=st.placed.map(a=>({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null}));
+    placedIds=new Set(placed.map(t=>t.ref.id));
+    nodes=st.nodes; cables=st.cables;
+    customTents=st.custom; removed=new Set(st.removed); edits=st.edits;
+    library=TENTS.concat(customTents);
+    lsSet(LS.custom,customTents); lsSet(LS.edits,edits); lsSet(LS.removed,[...removed]);
+    savePlaced(); saveNet();                       // persist locally + queue ONE sheet save
+    refreshAll(); renderList(document.getElementById('search').value);
+    showDomainLayers();                            // rebuilds node markers + cables for the current tab
+    if(currentTab==='el') renderLegend();
+    if(currentTab==='vatten') renderVattenLegend();
+  } finally { HIST.muted=false; }
+}
+function histStep(from,to,label){
+  histFlush();                                     // a change made a moment ago becomes undoable first
+  if(!from.length){ flashBanner('Nothing to '+label+'.',false); setTimeout(()=>banner.style.display='none',1200); return; }
+  to.push(HIST.cur); HIST.cur=from.pop();
+  histApply(HIST.cur);
+  flashBanner((label==='undo'?'Undo':'Redo')+' — '+(label==='undo'?HIST.undo.length:HIST.redo.length)+' more step(s) available.',false);
+  setTimeout(()=>banner.style.display='none',1400);
+}
+document.addEventListener('keydown',e=>{
+  if(!ADMIN||!(e.ctrlKey||e.metaKey))return;
+  const k=(e.key||'').toLowerCase(); if(k!=='z'&&k!=='y')return;
+  const tag=(e.target.tagName||'').toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select')return;
+  if(pointerDown)return;                           // never swap state out from under a live drag
+  e.preventDefault();
+  if(k==='y'||e.shiftKey) histStep(HIST.redo,HIST.undo,'redo');
+  else histStep(HIST.undo,HIST.redo,'undo');
+});
+
 /* Clipboard: cmd/ctrl+C copies the selection, cmd/ctrl+V pastes it, cmd/ctrl+D
    duplicates it in one step. Every pasted item becomes a NEW custom object (fresh
    custom_ id; the def is deep-copied through refOf, so per-item edits are baked
@@ -821,7 +905,7 @@ function removeFromList(m){
   if(isCustom){
     customTents=customTents.filter(c=>String(c.id)!==String(m.id));
     library=library.filter(c=>String(c.id)!==String(m.id));
-    lsSet(LS.custom,customTents);
+    lsSet(LS.custom,customTents); histMark();
   }else{
     removed.add(String(m.id)); saveRemoved();
   }
@@ -926,6 +1010,7 @@ document.getElementById('mSave').onclick=()=>{
   refreshAll(); redrawCables();
   if(currentTab==='el') renderLegend();
   queueSheetSave();   // push the edited def (library tent or custom object) so other browsers update
+  histMark();
 };
 
 /* The base image and scale (ppm) are fixed: the image is the committed
@@ -980,6 +1065,24 @@ function renderLegend(){
     row.innerHTML=`<div class="sw" style="background:${n.kind==='source'?'#0e2033':'#181b22'};border:2px solid ${ratingColor(nodeRatingAmp(n))};${n.kind==='source'?'border-radius:50%':''}"></div><div class="lname">${esc(EN[n.id]||'?')} · ${n.kind==='source'?n.rating+'A source':n.rating+'A cabinet'}<div style="font-size:10px;color:var(--muted);font-weight:400">L1 ${p[0]} · L2 ${p[1]} · L3 ${p[2]} A · free ${free}</div></div><div class="lcount" style="color:${loadColor(lv,'var(--muted)')}">${peak}/${nodeRatingAmp(n)} A</div>`;
     el.appendChild(row);
   });
+  /* cable lengths, per socket type — what the electricians need to order/pull */
+  const elc=cables.filter(c=>c.domain==='el');
+  if(elc.length){
+    const t3=document.createElement('div'); t3.className='legsub'; t3.textContent='Cable lengths ('+elc.length+' cables)'; el.appendChild(t3);
+    if(!ppm){ const d=document.createElement('div'); d.className='hint'; d.textContent='Set the scale (ppm) to calculate cable lengths.'; el.appendChild(d); }
+    else{
+      const byType={}; let tot=0;
+      elc.forEach(c=>{ const m=cableLenM(c); if(m==null)return; const k=c.otype||'?'; byType[k]=(byType[k]||0)+m; tot+=m; });
+      ['125A','63A','32A','16A','220V','?'].filter(k=>byType[k]).forEach(k=>{
+        const row=document.createElement('div'); row.className='legrow';
+        row.innerHTML='<div class="sw" style="background:'+(k==='?'?'#888':otypeColor(k))+'"></div><div class="lname">'+esc(k)+' cable</div><div class="lcount">'+fmtM(byType[k])+'</div>';
+        el.appendChild(row);
+      });
+      const row=document.createElement('div'); row.className='legrow';
+      row.innerHTML='<div class="sw" style="background:transparent"></div><div class="lname"><b>Total</b></div><div class="lcount"><b>'+fmtM(tot)+'</b></div>';
+      el.appendChild(row);
+    }
+  }
   const noPower=placed.filter(t=>needsPower(t)&&!hasPower(t));
   unconnectedSection(el,'Without power',noPower,tr=>elLabel(tr.electricity),'Every placed tent that needs power is connected.');
   const waiting=library.filter(x=>!placedAnywhere(x.id)&&!removed.has(String(x.id))&&tentReq(applyEdits(x).electricity)).length;
@@ -1001,11 +1104,15 @@ function renderLegend(){
 const SHEET_HEADERS={
   placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape','area','elskap'],
   nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','color','area'],
-  cables:['src','dst','dstKind','domain','otype','phase','color','area'],
+  cables:['src','dst','dstKind','domain','otype','phase','color','area','pts'],
   meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy','area']
 };
-const SHEET_RANGES={placements:'placements!A1:O',nodes:'nodes!A1:N',cables:'cables!A1:H',meta:'meta!A1:H'};
-const SHEET_CLEAR=['placements!A2:O','nodes!A2:N','cables!A2:H','meta!A2:H'];
+/* `pts` (cable waypoints) is a trailing column AFTER `area`, same reasoning as `elskap`:
+   rows are parsed positionally and other areas' rows re-emit verbatim, so it must never
+   shift the earlier columns under an old client. Not JSON — a compact "x y k;x y k" list
+   (k: b=bend c=curve, or "n <nodeId>" for a koppling junction riding on the pipe). */
+const SHEET_RANGES={placements:'placements!A1:O',nodes:'nodes!A1:N',cables:'cables!A1:I',meta:'meta!A1:H'};
+const SHEET_CLEAR=['placements!A2:O','nodes!A2:N','cables!A2:I','meta!A2:H'];
 /* raw values (incl. header) of ALL areas from the last read — lets a write preserve other
    areas' rows. Persisted globally so a save before this session's first read still can't
    clobber the other area. */
@@ -1084,9 +1191,28 @@ function cableFromRow(o){
   if(!isBlank(o.otype)) c.otype=o.otype;
   const ph=gnum(o.phase); if(ph!=null) c.phase=ph;
   if(!isBlank(o.color)) c.color=String(o.color);   // custom wire colour; blank => default by rating
+  const pts=ptsFromStr(o.pts); if(pts.length) c.pts=pts;
   return c;
 }
 function cableToRow(c){ return [c.src,c.dst,c.dstKind,c.domain,isBlank(c.otype)?'':c.otype,c.phase!=null?c.phase:'',c.color||'']; }
+/* cable waypoints <-> the `pts` cell. One entry per dot, ';'-separated:
+   "x y b" sharp bend · "x y c" curve point · "n <nodeId>" koppling junction (water) —
+   a koppling's position lives on its node row, the cable only references its id. */
+function ptsToStr(pts){
+  return (pts||[]).map(p=>p.k==='n'?('n '+p.nid)
+    :(Math.round(p.x*10)/10+' '+Math.round(p.y*10)/10+' '+(p.k==='c'?'c':'b'))).join(';');
+}
+function ptsFromStr(s){
+  if(isBlank(s)) return [];
+  const out=[];
+  String(s).split(';').forEach(part=>{
+    const t=part.trim().split(/\s+/); if(!t[0])return;
+    if(t[0]==='n'){ if(t[1]) out.push({k:'n',nid:t[1]}); return; }
+    const x=Number(t[0]), y=Number(t[1]);
+    if(Number.isFinite(x)&&Number.isFinite(y)) out.push({x,y,k:t[2]==='c'?'c':'b'});
+  });
+  return out;
+}
 /* Rebuild a custom-object library entry from its inline placements-row definition. */
 function customFromRow(o){
   const c={id:String(o.tentId),name:String(o.name),placering:isBlank(o.placering)?'':String(o.placering),
@@ -1221,7 +1347,7 @@ function sheetData(savedAt,savedBy){
   return [
     {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(placed.map(t=>placementRow(t).concat([A,feedCabName(t.ref.id,EN)]))).concat(otherAreaRows('placements'))},
     {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(nodes.map(n=>nodeToRow(n).concat([A]))).concat(otherAreaRows('nodes'))},
-    {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(c=>cableToRow(c).concat([A]))).concat(otherAreaRows('cables'))},
+    {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(cables.map(c=>cableToRow(c).concat([A,ptsToStr(c.pts)]))).concat(otherAreaRows('cables'))},
     {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy).concat([A])].concat(otherAreaRows('meta'))}
   ];
 }
@@ -1264,6 +1390,7 @@ function applySheetState(P,N,C,M,keepView){
   else if(imgUrl){ setImage(imgUrl, !!useView); }
   else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
   renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
+  histInit();   // remote state applied — undoing past this point would clobber someone else's save
   return didRebalance;
 }
 /* --- automatic sync: debounced save on every change, load on startup --- */
@@ -1413,8 +1540,62 @@ function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
    63A/125A red, 220V light blue. A per-cable c.color overrides it. */
 function otypeColor(ot){ if(ot==='220V')return '#9FC5E8'; return ratingColor(parseInt(ot)||0); }
 function cableColor(c){ if(c.color)return c.color; if(c.domain==='water')return '#2b8cff'; return otypeColor(c.otype); }
+/* ---- cable geometry: waypoints (bend/curve dots), smoothing, lengths ----
+   A cable's anchors are [source, …c.pts…, destination]. A 'b' dot is a sharp corner,
+   a 'c' dot pulls a smooth Catmull-Rom curve through it, an 'n' dot rides on a water
+   koppling node (its position IS the node's). Sharp dots and the two ends break the
+   wire into sections, so curves and hard corners coexist on the same wire. */
+function cableAnchors(c){
+  const s=nodes.find(n=>n.id===c.src); if(!s)return null;
+  let b=null; if(c.dstKind==='tent') b=tentPos(c.dst); else { const dn=nodes.find(n=>n.id===c.dst); if(dn)b=[dn.lat,dn.lng]; }
+  if(!b)return null;
+  const mid=(c.pts||[]).map(p=>{
+    if(p.k==='n'){ const kn=nodes.find(n=>n.id===p.nid); return kn?{ll:[kn.lat,kn.lng],curve:false,p}:null; }
+    return {ll:[p.y,p.x],curve:p.k==='c',p};
+  }).filter(Boolean);
+  return [{ll:[s.lat,s.lng],curve:false}].concat(mid,[{ll:b,curve:false}]);
+}
+function crPoint(p0,p1,p2,p3,t){ const t2=t*t,t3=t2*t;
+  const f=i=>0.5*((2*p1[i])+(-p0[i]+p2[i])*t+(2*p0[i]-5*p1[i]+4*p2[i]-p3[i])*t2+(-p0[i]+3*p1[i]-3*p2[i]+p3[i])*t3);
+  return [f(0),f(1)];
+}
+function catmullRom(pts){                         // pts: [[lat,lng],…] >=2, first/last are hit exactly
+  const out=[pts[0]];
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[Math.max(0,i-1)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(pts.length-1,i+2)];
+    for(let s=1;s<=12;s++) out.push(crPoint(p0,p1,p2,p3,s/12));
+  }
+  return out;
+}
+function pathFromAnchors(A){
+  const out=[A[0].ll]; let i=0;
+  while(i<A.length-1){
+    let j=i+1; while(j<A.length-1 && A[j].curve) j++;   // run of curve dots up to the next hard anchor
+    if(j===i+1) out.push(A[j].ll);
+    else { const seg=catmullRom(A.slice(i,j+1).map(a=>a.ll)); for(let k=1;k<seg.length;k++) out.push(seg[k]); }
+    i=j;
+  }
+  return out;
+}
+function pathPixLen(path){ let l=0; for(let i=0;i<path.length-1;i++) l+=Math.hypot(path[i+1][0]-path[i][0],path[i+1][1]-path[i][1]); return l; }
+function pathMidpoint(path){
+  const half=pathPixLen(path)/2; let acc=0;
+  for(let i=0;i<path.length-1;i++){ const a=path[i],b=path[i+1],d=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    if(acc+d>=half) { const t=d?(half-acc)/d:0; return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]; }
+    acc+=d; }
+  return path[path.length-1];
+}
+function distToSeg(ll,a,b){                       // point (LatLng) to segment ([lat,lng] pair), image px
+  const px=ll.lng,py=ll.lat,ax=a[1],ay=a[0],bx=b[1],by=b[0];
+  const dx=bx-ax,dy=by-ay,l2=dx*dx+dy*dy;
+  let t=l2?((px-ax)*dx+(py-ay)*dy)/l2:0; t=Math.max(0,Math.min(1,t));
+  return Math.hypot(px-(ax+dx*t),py-(ay+dy*t));
+}
+function cableLenM(c){ if(!ppm)return null; const A=cableAnchors(c); if(!A)return null; return pathPixLen(pathFromAnchors(A))/ppm; }
+function fmtM(m){ return (m>=9.95?Math.round(m):Math.round(m*10)/10)+' m'; }
+function lenIcon(txt){ return L.divIcon({className:'node-div',html:'<div class="cablen">'+txt+'</div>',iconSize:[0,0],iconAnchor:[0,0]}); }
 function tentPos(id){ const t=placed.find(x=>x.ref.id===id); return t?[t.lat,t.lng]:null; }
-function saveNet(){ lsSet(LS.nodes,nodes); lsSet(LS.cables,cables); queueSheetSave(); }
+function saveNet(){ lsSet(LS.nodes,nodes); lsSet(LS.cables,cables); queueSheetSave(); histMark(); }
 function curDomain(){ return currentTab==='el'?'el':currentTab==='vatten'?'water':null; }
 
 // a tent's demand from its sheet electricity: {phase:1|3, amp}
@@ -1477,7 +1658,9 @@ function pickOutput(n,req){
   }
   return freeCount(n,k)>0?k:null;
 }
-function inputOf(id){ const c=cables.find(x=>x.dstKind==='node'&&x.dst===id); return c?c.src:null; }
+function inputOf(id){ const c=cables.find(x=>x.dstKind==='node'&&x.dst===id); if(c)return c.src;
+  // a water koppling has no input cable — it is fed by the pipe it rides on
+  const h=cables.find(x=>(x.pts||[]).some(p=>p.k==='n'&&p.nid===id)); return h?h.src:null; }
 /* Reference designations per IEC 81346 / SEK Handbok 419, derived from the wiring and
    never stored: each source (serviscentral) is A1, A2 … in creation order; every cabinet
    fed from a unit is N1, N2 … in wiring order within its parent; the full designation
@@ -1585,7 +1768,7 @@ function rebalanceEl(){
     });
   return changed;
 }
-function nodeName(n){ if(n.domain==='water') return n.kind==='brunn'?'brunn':'handfat';
+function nodeName(n){ if(n.domain==='water') return n.kind==='brunn'?'brunn':n.kind==='koppling'?'koppling':'handfat';
   const base=n.kind==='source'?('source ('+n.rating+'A in)'):(n.rating+'A cabinet');
   const nm=elNames()[n.id];
   return nm?(nm+' '+base):base; }
@@ -1700,9 +1883,28 @@ function openCabModal(c){
   cabBg.style.display='flex';
 }
 function closeCab(){ cabBg.style.display='none'; cabEditing=null; }
+/* dot modal — clicking a dot in wire mode opens it: change bend/curve/koppling or remove.
+   (Right-click on the dot stays as a quick remove.) */
+let dotEditing=null;   // {c,p}
+const dotBg=document.getElementById('dotBg');
+function openDotModal(c,p){
+  dotEditing={c:c,p:p};
+  document.getElementById('dotKopp').style.display=(c.domain==='water')?'':'none';
+  document.getElementById('dotBend').classList.toggle('primary',p.k==='b');
+  document.getElementById('dotCurve').classList.toggle('primary',p.k==='c');
+  dotBg.style.display='flex';
+}
+function closeDot(){ dotBg.style.display='none'; const d=dotEditing; dotEditing=null; return d; }
+function dotRefresh(){ redrawCables(); if(curDomain()==='el')renderLegend(); else renderVattenLegend(); }
+document.getElementById('dotCancel').onclick=closeDot;
+document.getElementById('dotBend').onclick=()=>{ const d=closeDot(); if(!d)return; d.p.k='b'; saveNet(); dotRefresh(); };
+document.getElementById('dotCurve').onclick=()=>{ const d=closeDot(); if(!d)return; d.p.k='c'; saveNet(); dotRefresh(); };
+document.getElementById('dotKopp').onclick=()=>{ const d=closeDot(); if(!d||d.c.domain!=='water')return; wpToKoppling(d.c,d.p); };
+document.getElementById('dotRemove').onclick=()=>{ const d=closeDot(); if(!d)return;
+  d.c.pts=d.c.pts.filter(x=>x!==d.p); saveNet(); dotRefresh(); };
 document.getElementById('cabCancel').onclick=closeCab;
 document.getElementById('cabRemove').onclick=()=>{ const c=cabEditing; closeCab();
-  if(c){ cables=cables.filter(x=>x!==c); saveNet(); redrawCables(); nodes.forEach(renderNode); renderLegend(); renderVattenLegend(); } };
+  if(c){ removeCableCascade(c); saveNet(); redrawCables(); nodes.forEach(renderNode); renderLegend(); renderVattenLegend(); } };
 document.getElementById('cabSave').onclick=()=>{ const c=cabEditing; closeCab();
   if(c){ if(cabColorCustom) c.color=document.getElementById('cabColor').value; else delete c.color;
          saveNet(); redrawCables(); } };
@@ -1717,8 +1919,11 @@ function setWire(on){
   document.getElementById('wireVa').classList.toggle('on',on);
   mapWrap.classList.toggle('wiring',on);
   if(!on){ setConnectSource(null); banner.style.display='none'; }
-  else flashBanner('Wire tool on: click a source/cabinet, then click what it feeds. Click Wire again to stop.',true);
+  else flashBanner(curDomain()==='water'
+    ?'Wire tool on: click a brunn or koppling, then what it feeds. Click a pipe: drop a dot (Alt-click: gray koppling). Double-click a dot: sharp/curve. Right-click a dot: koppling/remove. Double-click the pipe: colour/remove. Click Wire again to stop.'
+    :'Wire tool on: click a source/cabinet, then what it feeds. Click a wire: drop a bend dot. Double-click a dot: sharp/curve. Right-click a dot: remove. Double-click the wire: colour/remove. Click Wire again to stop.',true);
   nodes.forEach(renderNode);
+  redrawCables();   // bend/curve dots only exist while the wire tool is on
 }
 function setLetters(on){ showLetters=on; lsSet(LS.letters,on);
   document.getElementById('lettersBtn').classList.toggle('on',on); refreshAll(); }
@@ -1728,6 +1933,13 @@ function setCabNames(on){ showCabNames=on; lsSet(LS.cabnames,on);
   document.getElementById('cabNamesBtn').classList.toggle('on',on);
   nodes.forEach(renderNode); }
 document.getElementById('cabNamesBtn').onclick=()=>setCabNames(!showCabNames);
+/* metre labels on wires/pipes — one shared state, a button in each of the El and Vatten groups */
+function setLengths(on){ showLengths=on; lsSet(LS.lengths,on);
+  document.getElementById('lenBtnEl').classList.toggle('on',on);
+  document.getElementById('lenBtnVa').classList.toggle('on',on);
+  redrawCables(); }
+document.getElementById('lenBtnEl').onclick=()=>setLengths(!showLengths);
+document.getElementById('lenBtnVa').onclick=()=>setLengths(!showLengths);
 /* El sidebar sub-views: Overview (legend) | Cabinets (distribution tree) */
 let elView='overview';
 function setElView(v){ elView=v;
@@ -1848,6 +2060,7 @@ function switchArea(a){
   area=a; try{ localStorage.setItem(LS.area,JSON.stringify(a)); }catch(e){}
   document.querySelectorAll('#areaSeg button').forEach(b=>b.classList.toggle('on',b.dataset.area===a));
   reloadAreaState();
+  histInit();                 // history is per-area: undo must never leak edits across areas
   renderList('');
   setImage(baseImg(),true);   // swaps to this area's committed base image, restores its saved view, re-renders
   showDomainLayers();
@@ -1866,8 +2079,32 @@ function addNode(spec,lat,lng){
   if(spec.color) n.color=spec.color;
   nodes.push(n); saveNet(); renderNode(n); setConnectSource(n.id);
 }
+/* A water koppling renders as a small gray junction dot, a bit wider than the pipe —
+   not as a cabinet box. Click selects it as a wire source (branch a pipe from it),
+   double-click turns it back into a plain bend dot, right-click deletes it (with its
+   branches). It stays draggable in wire mode — dragging it bends the host pipe. */
+function renderKoppling(n){
+  const html='<div class="kopp"></div>';
+  let m=nodeMarkers[n.id];
+  if(!m){
+    const icon=L.divIcon({className:'node-div',html,iconSize:[18,18],iconAnchor:[9,9]});
+    m=L.marker([n.lat,n.lng],{icon,draggable:true,pane:'nodes',keyboard:false,title:'koppling'}).addTo(map);
+    m._html=html;
+    m.on('click',ev=>{L.DomEvent.stopPropagation(ev); if(armNode)return;
+      const sel=connectSource!==n.id; setConnectSource(sel?n.id:null); });
+    m.on('dblclick',ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN) kopplingToBend(n.id);});
+    m.on('contextmenu',ev=>{L.DomEvent.stopPropagation(ev); if(ev.originalEvent)ev.originalEvent.preventDefault(); if(ADMIN) removeNode(n.id);});
+    m.on('drag',()=>{const p=m.getLatLng();n.lat=p.lat;n.lng=p.lng;redrawCables();});
+    m.on('dragend',saveNet);
+    nodeMarkers[n.id]=m;
+  } else { m.setLatLng([n.lat,n.lng]); }
+  const el=m.getElement()&&m.getElement().querySelector('.kopp');
+  if(el) el.classList.toggle('sel',connectSource===n.id);
+  if(m.dragging){ ADMIN?m.dragging.enable():m.dragging.disable(); }
+}
 function renderNode(n){
   if(n.domain!==curDomain()) return;
+  if(n.kind==='koppling'){ renderKoppling(n); return; }
   let title,sub,cls,brdr,lv=0;
   if(n.domain==='el'){
     const pl=phaseLoads(n.id), load=Math.max(pl[0],pl[1],pl[2]); lv=loadLevel(load,nodeRatingAmp(n));
@@ -1928,6 +2165,7 @@ function connect(srcId,dst){
     }
     if(dst.kind!=='node')return; const dn=nodes.find(n=>n.id===dst.id); if(!dn||dn.domain!=='water')return;
     if(dn.kind==='brunn'){ flashBanner('A brunn is a source, not a target.',true); return; }
+    if(dn.kind==='koppling'){ flashBanner('A koppling is fed by the pipe it sits on — click it and wire FROM it instead.',true); return; }
     if(dst.id===srcId) return; if(createsCycle(srcId,dst.id)){ flashBanner('That would create a loop.',true); return; }
     cables=cables.filter(c=>!(c.dstKind==='node'&&c.dst===dst.id&&c.domain==='water'));
     cables.push({src:srcId,dst:dst.id,dstKind:'node',domain:'water'});
@@ -1960,33 +2198,135 @@ function connect(srcId,dst){
 }
 function redrawCables(){
   cableLines.forEach(l=>map.removeLayer(l)); cableLines=[];
-  const before=cables.length;
-  cables=cables.filter(c=> nodes.some(n=>n.id===c.src) && (c.dstKind==='tent'?placed.some(t=>t.ref.id===c.dst):nodes.some(n=>n.id===c.dst)));
+  const before=cables.length, beforeN=nodes.length;
+  /* iterate: dropping a dead cable orphans its kopplingar, dropping those kills their
+     branch pipes, which may carry kopplingar of their own — repeat until stable */
+  let pruned=true;
+  while(pruned){ pruned=false;
+    const n0=cables.length;
+    cables=cables.filter(c=> nodes.some(n=>n.id===c.src) && (c.dstKind==='tent'?placed.some(t=>t.ref.id===c.dst):nodes.some(n=>n.id===c.dst)));
+    if(cables.length!==n0) pruned=true;
+    cables.forEach(c=>{ if(c.pts) c.pts=c.pts.filter(p=>p.k!=='n'||nodes.some(n=>n.id===p.nid)); });   // drop dots whose koppling is gone
+    nodes=nodes.filter(n=>{ if(n.kind!=='koppling') return true;
+      if(cables.some(c=>(c.pts||[]).some(p=>p.k==='n'&&p.nid===n.id))) return true;
+      const m=nodeMarkers[n.id]; if(m){map.removeLayer(m);delete nodeMarkers[n.id];}
+      pruned=true; return false; });                                                                  // a koppling cannot outlive its host pipe
+  }
   rebalanceEl();                 // keep cabinet phases balanced for display — never saves on its own
-  if(cables.length!==before) saveNet();
+  if(cables.length!==before||nodes.length!==beforeN) saveNet();
   const dom=curDomain(); if(!dom) return;
-  cables.filter(c=>c.domain===dom).forEach(c=>{
-    const s=nodes.find(n=>n.id===c.src); if(!s)return; const a=[s.lat,s.lng];
-    let b=null; if(c.dstKind==='tent') b=tentPos(c.dst); else { const dn=nodes.find(n=>n.id===c.dst); if(dn)b=[dn.lat,dn.lng]; }
-    if(!b)return;
-    let weight=(dom==='water')?3.5:(c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5)), dash=null;
-    let color=cableColor(c);                      // default by rating (32A orange, 16A yellow…), or c.color override
-    const lv=(dom!=='water')?loadLevel(peakLoad(s.id),nodeRatingAmp(s)):0;
-    if(lv===2){ color='#ff0000'; dash='6,5'; }     // red band: VIVID red dashed — clearly hotter than the 63A/125A wire colour (#ff6b6b)
-    else if(lv===1){ dash='10,6'; }                // amber band: keep the wire colour, dashed = worth a glance
-    const isHl=hl.cables.has(c);
-    if(isHl){ color='#ffd400'; weight=weight+2.5; }
-    const openCab=ev=>{L.DomEvent.stopPropagation(ev); if(ADMIN) openCabModal(c);};
-    // black casing underneath gives every wire a clean outline
-    const casing=L.polyline([a,b],{pane:'cables',color:'#000',weight:weight+3,opacity:isHl?1:0.9,dashArray:dash}).addTo(map);
-    casing.on('click',openCab); cableLines.push(casing);
-    const line=L.polyline([a,b],{pane:'cables',color,weight,opacity:1,dashArray:dash}).addTo(map);
-    line.on('click',openCab); cableLines.push(line);
+  cables.filter(c=>c.domain===dom).forEach(c=>drawCable(c,dom));
+}
+function drawCable(c,dom){
+  const s=nodes.find(n=>n.id===c.src); if(!s)return;
+  const A=cableAnchors(c); if(!A)return;
+  let weight=(dom==='water')?3.5:(c.dstKind==='node'?4:(c.otype==='220V'?2.5:3.5)), dash=null;
+  let color=cableColor(c);                      // default by rating (32A orange, 16A yellow…), or c.color override
+  const lv=(dom!=='water')?loadLevel(peakLoad(s.id),nodeRatingAmp(s)):0;
+  if(lv===2){ color='#ff0000'; dash='6,5'; }     // red band: VIVID red dashed — clearly hotter than the 63A/125A wire colour (#ff6b6b)
+  else if(lv===1){ dash='10,6'; }                // amber band: keep the wire colour, dashed = worth a glance
+  const isHl=hl.cables.has(c);
+  if(isHl){ color='#ffd400'; weight=weight+2.5; }
+  /* All wire editing lives in wire mode. Single click on the wire drops a draggable
+     bend dot (Alt-click on a water pipe: a gray koppling junction) — deferred ~0.3 s so
+     a DOUBLE-click can open the recolour/remove modal instead without spawning dots.
+     Right-click on the wire opens the same modal. With the Wire tool off a wire click
+     does nothing — no surprise popups while browsing. */
+  let dotTimer=null;
+  const onClick=ev=>{L.DomEvent.stopPropagation(ev); if(!ADMIN||!wireMode)return;
+    const ll=ev.latlng, alt=dom==='water'&&!!(ev.originalEvent&&ev.originalEvent.altKey);
+    clearTimeout(dotTimer);
+    dotTimer=setTimeout(()=>{ addCableDot(c,ll,alt); },280);};
+  const openWin=ev=>{L.DomEvent.stopPropagation(ev); clearTimeout(dotTimer);
+    if(ev.originalEvent&&ev.originalEvent.preventDefault)ev.originalEvent.preventDefault();
+    if(!ADMIN||!wireMode)return; openCabModal(c);};
+  const path=pathFromAnchors(A);
+  // black casing underneath gives every wire a clean outline
+  const casing=L.polyline(path,{pane:'cables',color:'#000',weight:weight+3,opacity:isHl?1:0.9,dashArray:dash}).addTo(map);
+  casing.on('click',onClick); casing.on('dblclick',openWin); casing.on('contextmenu',openWin); cableLines.push(casing);
+  const line=L.polyline(path,{pane:'cables',color,weight,opacity:1,dashArray:dash}).addTo(map);
+  line.on('click',onClick); line.on('dblclick',openWin); line.on('contextmenu',openWin); cableLines.push(line);
+  // length readout at the wire midpoint (needs ppm; follows the drawn path, curves included)
+  let lenLbl=null;
+  if(ppm&&showLengths){
+    lenLbl=L.marker(pathMidpoint(path),{icon:lenIcon(fmtM(pathPixLen(path)/ppm)),pane:'tentlabels',interactive:false,keyboard:false}).addTo(map);
+    cableLines.push(lenLbl);
+  }
+  if(!(wireMode&&ADMIN)) return;
+  // bend/curve dots — square = sharp, round = curve; koppling dots render as nodes instead
+  const liveUpdate=()=>{ const p2=pathFromAnchors(cableAnchors(c));
+    casing.setLatLngs(p2); line.setLatLngs(p2);
+    if(lenLbl){ lenLbl.setLatLng(pathMidpoint(p2)); lenLbl.setIcon(lenIcon(fmtM(pathPixLen(p2)/ppm))); } };
+  (c.pts||[]).forEach(p=>{
+    if(p.k==='n') return;
+    const d=Math.max(9,Math.round(weight+3)+2);   // ~the cable's drawn diameter, floor for grabbability
+    const bg=(dom==='water')?'#2b8cff':cableColor(c);
+    const html='<div class="cdot'+(p.k==='c'?' crv':'')+'" style="width:'+d+'px;height:'+d+'px;background:'+bg+'"></div>';
+    const mk=L.marker([p.y,p.x],{icon:L.divIcon({className:'node-div',html,iconSize:[d,d],iconAnchor:[d/2,d/2]}),pane:'dots',draggable:true,keyboard:false}).addTo(map);
+    mk.on('click',ev=>L.DomEvent.stopPropagation(ev));
+    mk.on('dblclick',ev=>{ L.DomEvent.stopPropagation(ev);                              // the fast toggle: sharp <-> curve
+      p.k=(p.k==='b')?'c':'b'; saveNet(); redrawCables(); });
+    mk.on('drag',()=>{ const q=mk.getLatLng(); p.x=q.lng; p.y=q.lat; liveUpdate(); });   // move only — never rebuild layers mid-drag
+    mk.on('dragend',()=>{ saveNet(); redrawCables(); if(dom==='el')renderLegend(); else renderVattenLegend(); });
+    mk.on('contextmenu',ev=>{ L.DomEvent.stopPropagation(ev); if(ev.originalEvent)ev.originalEvent.preventDefault();
+      openDotModal(c,p); });                                                            // bend/curve/koppling/remove
+    cableLines.push(mk);
   });
+}
+/* insert a new waypoint where the wire was clicked, between the two nearest anchors */
+function addCableDot(c,latlng,asKopp){
+  const A=cableAnchors(c); if(!A)return;
+  let best=0,bd=Infinity;
+  for(let i=0;i<A.length-1;i++){ const d=distToSeg(latlng,A[i].ll,A[i+1].ll); if(d<bd){bd=d;best=i;} }
+  c.pts=c.pts||[];
+  const after=A[best].p, idx=after?c.pts.indexOf(after)+1:0;
+  let wp;
+  if(asKopp){
+    const n={id:'node_'+Date.now()+'_'+Math.floor(Math.random()*1000),domain:'water',kind:'koppling',rating:0,lat:latlng.lat,lng:latlng.lng};
+    nodes.push(n); wp={k:'n',nid:n.id};
+  } else wp={x:latlng.lng,y:latlng.lat,k:'b'};
+  c.pts.splice(idx,0,wp);
+  saveNet(); redrawCables();
+  if(asKopp){ nodes.forEach(renderNode); renderVattenLegend();
+    flashBanner('Koppling added — click it, then a tent or handfat, to branch a pipe from here.',false); }
+}
+/* turn a blue bend/curve dot into a gray koppling junction (water only) */
+function wpToKoppling(c,p){
+  const n={id:'node_'+Date.now()+'_'+Math.floor(Math.random()*1000),domain:'water',kind:'koppling',rating:0,lat:p.y,lng:p.x};
+  nodes.push(n); c.pts[c.pts.indexOf(p)]={k:'n',nid:n.id};
+  saveNet(); redrawCables(); nodes.forEach(renderNode); renderVattenLegend();
+  flashBanner('Koppling: click it, then a tent or handfat, to branch a pipe from here. Double-click it to turn it back into a bend dot.',false);
+}
+/* koppling back to a plain blue bend dot (only when nothing branches from it) */
+function kopplingToBend(id){
+  const branches=cables.filter(c=>c.src===id||(c.dstKind==='node'&&c.dst===id));
+  if(branches.length){ flashBanner('This koppling still feeds '+branches.length+' pipe(s) — remove them first, or right-click to delete it with them.',true); return; }
+  const n=nodes.find(x=>x.id===id); if(!n)return;
+  const host=cables.find(c=>(c.pts||[]).some(p=>p.k==='n'&&p.nid===id));
+  if(host) host.pts[host.pts.findIndex(p=>p.k==='n'&&p.nid===id)]={x:n.lng,y:n.lat,k:'b'};
+  const m=nodeMarkers[id]; if(m){map.removeLayer(m);delete nodeMarkers[id];}
+  nodes=nodes.filter(x=>x.id!==id); if(connectSource===id)connectSource=null;
+  saveNet(); redrawCables(); renderVattenLegend();
+}
+/* Removing a pipe takes its koppling junctions with it, and everything they fed —
+   recursively, since a branch pipe can carry kopplingar of its own. */
+function removeCableCascade(c0){
+  const nIds=new Set(), cSet=new Set([c0]);
+  const onCable=c=>{ (c.pts||[]).forEach(p=>{
+    if(p.k!=='n'||nIds.has(p.nid)) return;
+    nIds.add(p.nid);
+    cables.forEach(x=>{ if(!cSet.has(x)&&(x.src===p.nid||(x.dstKind==='node'&&x.dst===p.nid))){ cSet.add(x); onCable(x); } });
+  }); };
+  onCable(c0);
+  cables=cables.filter(c=>!cSet.has(c));
+  nIds.forEach(id=>{ const m=nodeMarkers[id]; if(m){map.removeLayer(m);delete nodeMarkers[id];} });
+  nodes=nodes.filter(n=>!nIds.has(n.id));
 }
 function removeNode(id){
   const m=nodeMarkers[id]; if(m){map.removeLayer(m);delete nodeMarkers[id];}
-  nodes=nodes.filter(n=>n.id!==id); cables=cables.filter(c=>c.src!==id && !(c.dstKind==='node'&&c.dst===id));
+  cables.filter(c=>c.src===id||(c.dstKind==='node'&&c.dst===id)).forEach(c=>{ if(cables.includes(c)) removeCableCascade(c); });
+  nodes=nodes.filter(n=>n.id!==id);
+  cables.forEach(c=>{ if(c.pts) c.pts=c.pts.filter(p=>!(p.k==='n'&&p.nid===id)); });   // a deleted koppling leaves no ghost dot
   connectSource=null; banner.style.display='none'; saveNet(); redrawCables(); nodes.forEach(renderNode); renderLegend(); renderVattenLegend();
 }
 function showDomainLayers(){
@@ -2028,10 +2368,19 @@ function renderVattenLegend(){
     const outc=cables.filter(c=>c.src===n.id&&c.domain==='water').length;
     const fed=cables.some(c=>c.dst===n.id&&c.domain==='water');
     const row=document.createElement('div'); row.className='legrow';
-    row.innerHTML='<div class="sw" style="background:#0d2436;border:2px solid #2b8cff;'+(n.kind==='brunn'?'border-radius:50%':'')+'"></div>'
-      +'<div class="lname">'+(n.kind==='brunn'?'Brunn':'Handfat')+'<div style="font-size:10px;color:var(--muted);font-weight:400">'+(n.kind==='brunn'?(outc+' pipe(s) out'):(fed?'connected':'not connected'))+'</div></div>';
+    const kopp=n.kind==='koppling';
+    row.innerHTML='<div class="sw" style="background:'+(kopp?'#9aa0ab':'#0d2436')+';border:2px solid '+(kopp?'#9aa0ab':'#2b8cff')+';'+(n.kind!=='handfat'?'border-radius:50%':'')+'"></div>'
+      +'<div class="lname">'+(n.kind==='brunn'?'Brunn':kopp?'Koppling':'Handfat')+'<div style="font-size:10px;color:var(--muted);font-weight:400">'+((n.kind==='brunn'||kopp)?(outc+' pipe(s) out'):(fed?'connected':'not connected'))+'</div></div>';
     el.appendChild(row);
   });
+  /* total pipe length (follows the drawn paths, bends and curves included) */
+  const wc=cables.filter(c=>c.domain==='water');
+  if(wc.length&&ppm){
+    let tot=0; wc.forEach(c=>{ const m=cableLenM(c); if(m!=null)tot+=m; });
+    const row=document.createElement('div'); row.className='legrow';
+    row.innerHTML='<div class="sw" style="background:#2b8cff"></div><div class="lname">Pipe ('+wc.length+' run(s))</div><div class="lcount">'+fmtM(tot)+'</div>';
+    el.appendChild(row);
+  }
   const noWater=placed.filter(t=>needsWater(t)&&!hasWater(t));
   unconnectedSection(el,'Without water',noWater,()=>'needs a water connection','Every placed tent that needs water is connected.');
   const connected=placed.filter(t=>needsWater(t)&&hasWater(t));
@@ -2145,7 +2494,9 @@ updateLegend();
 updateScaleReadout();
 setLetters(showLetters);
 setCabNames(showCabNames);
+setLengths(showLengths);
 renderList();
+histInit();          // baseline for Ctrl+Z (the pre-startup local state)
 document.querySelectorAll('#areaSeg button').forEach(b=>b.classList.toggle('on',b.dataset.area===area));  // reflect the persisted area
 applyMode();          // public map-only view by default; admin UI if previously unlocked
 if(!imgData) flashBanner('Base image could not be loaded — check the connection and refresh.',true);
