@@ -194,10 +194,12 @@ single-phase-per-tent model). Get it right.
   `220v 6A` is 16 A mentally divided over three phases — an undercount the user asked
   to correct in the app rather than in the Excel.
 - Cabinet→cabinet feeds carry the downstream cabinet's per-phase aggregate.
-- Overload = any single phase more than **3 A** above the rating (`OVERLOAD_TOL`) —
-  the user's rule: 2× 32 A on a 63 A cabinet is 64 A per phase, 1 A over, and that is
-  fine. It is **flagged, not blocked** (red node, dashed red cable) so the user can
-  see the problem while planning.
+- Load bands per phase vs rating (`loadLevel`, replaced the earlier flat +3 A rule):
+  **green** ≤100%; **amber** 100–130% (fine in practice — an MCB holds 113% of In
+  indefinitely per IEC 60898, a gG fuse 125% per IEC 60269, and real coincident draw
+  at a market is well under nameplate); **red** >130% (`OVER_RED`) — a busy hour can
+  trip the cabinet's main breaker. Flagged, never blocked: red = red node text/dashed
+  red cable, amber = amber text and the cable keeps its colour but goes dashed.
 
 Sockets are counted separately from capacity. `outputs(n)` gives the physical
 complement; default for a cabinet is 6× 220V (9 at ≥125 A) plus **three** outlets of
