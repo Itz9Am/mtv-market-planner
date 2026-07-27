@@ -260,10 +260,11 @@ un-editable (same failure mode as the tent-drag bug above).
 **All wire editing lives in wire mode** — with the Wire tool off, wire clicks are inert
 (no surprise popups while browsing/highlighting). With the **Wire tool on**: clicking a
 wire inserts a draggable **dot** at that spot (`c.pts`, ordered waypoints between source
-and destination); **clicking a dot opens the dot modal** (`openDotModal` — Sharp bend /
-Curve / Koppling (water) / Remove); right-click on the dot is a quick remove; and
-**right-clicking the wire** opens the recolour/remove modal (`openCabModal`). A dot is
-**square = sharp bend** or **round = curve**. Curve runs are drawn as a Catmull-Rom
+and destination) — deferred ~280 ms so a **double-click on the wire** opens the
+recolour/remove modal (`openCabModal`) instead of spawning dots (right-click does too).
+On a dot: **double-click toggles sharp ↔ curve** (the fast path the user asked to keep)
+and **right-click opens the dot modal** (`openDotModal` — Sharp bend / Curve / Koppling
+(water) / Remove). A dot is **square = sharp bend** or **round = curve**. Curve runs are drawn as a Catmull-Rom
 spline sampled between hard anchors (`pathFromAnchors`), so sharp corners and smooth
 curves coexist on one wire. Dots are only rendered in wire mode (admin); the bent/curved
 path always is. **Dragging a dot must never rebuild layers** — `liveUpdate` only

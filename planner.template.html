@@ -186,7 +186,7 @@
     </div>
     <div id="tentList"></div>
     <div id="elUI" style="display:none">
-      <div class="hint">Electrical view. Add a <b>Source</b> (a popup sets its amps and outputs) and cabinets from the toolbar. To wire, turn on the <b>Wire</b> tool, click a source/cabinet, then click what it feeds. With Wire off, clicking just selects and highlights the supply chain. Cabinets are three-phase: single-phase 220V loads are balanced across L1/L2/L3, three-phase loads sit on all phases, and any phase over the rating is flagged red. With Wire on: click a cable to add a dot you can drag to bend it (click the dot for curve/remove), and right-click the cable to recolour or remove it. Cable lengths show at each wire's midpoint (Lengths toggle) and are totalled below. Ctrl+Z undoes, Ctrl+Shift+Z redoes. Select a node and press Delete to remove it.</div>
+      <div class="hint">Electrical view. Add a <b>Source</b> (a popup sets its amps and outputs) and cabinets from the toolbar. To wire, turn on the <b>Wire</b> tool, click a source/cabinet, then click what it feeds. With Wire off, clicking just selects and highlights the supply chain. Cabinets are three-phase: single-phase 220V loads are balanced across L1/L2/L3, three-phase loads sit on all phases, and any phase over the rating is flagged red. With Wire on: click a cable to add a dot you can drag to bend it; <b>double-click the dot</b> to switch sharp/curve, right-click it to remove; <b>double-click the cable</b> (or right-click) to recolour or remove the whole wire. Cable lengths show at each wire's midpoint (Lengths toggle) and are totalled below. Ctrl+Z undoes, Ctrl+Shift+Z redoes. Select a node and press Delete to remove it.</div>
       <div class="seg" id="elViewSeg">
         <button data-v="overview" class="on">Overview</button>
         <button data-v="cabinets">Cabinets</button>
@@ -195,7 +195,7 @@
       <div id="elTree" style="display:none"></div>
     </div>
     <div id="vattenUI" style="display:none">
-      <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. With Wire on: click a pipe to add a blue dot you can drag to bend it — click the dot to make it a curve, a gray <b>koppling</b>, or remove it. A koppling is a junction: click it and then a tent/handfat to branch a new pipe from that point (right-click removes it with its branches). Right-click a pipe to recolour or remove it. Ctrl+Z undoes, Ctrl+Shift+Z redoes. Select a fixture and press Delete.</div>
+      <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. With Wire on: click a pipe to add a blue dot you can drag to bend it; <b>double-click the dot</b> to switch sharp/curve, right-click it to make it a gray <b>koppling</b> or remove it. A koppling is a junction: click it and then a tent/handfat to branch a new pipe from that point (right-click removes it with its branches). <b>Double-click the pipe</b> (or right-click) to recolour or remove it. Ctrl+Z undoes, Ctrl+Shift+Z redoes. Select a fixture and press Delete.</div>
       <div id="vattenLegend"></div>
     </div>
   </div>
@@ -352,7 +352,7 @@
 <div class="modal-bg" id="dotBg">
   <div class="modal">
     <h3>Wire dot</h3>
-    <p>A <b>square</b> dot is a sharp bend, a <b>round</b> dot pulls a smooth curve through it. On a water pipe a gray <b>koppling</b> is a junction that other pipes can branch from. Drag the dot on the map to move it.</p>
+    <p>A <b>square</b> dot is a sharp bend, a <b>round</b> dot pulls a smooth curve through it. On a water pipe a gray <b>koppling</b> is a junction that other pipes can branch from. Drag the dot on the map to move it; double-click it to switch sharp/curve without opening this window.</p>
     <div class="actions" style="justify-content:flex-start">
       <button id="dotBend">Sharp bend</button>
       <button id="dotCurve">Curve</button>
@@ -1891,8 +1891,8 @@ function setWire(on){
   mapWrap.classList.toggle('wiring',on);
   if(!on){ setConnectSource(null); banner.style.display='none'; }
   else flashBanner(curDomain()==='water'
-    ?'Wire tool on: click a brunn or koppling, then what it feeds. Click a pipe to drop a dot (Alt-click: gray koppling); click the dot to change or remove it; right-click the pipe to recolour or remove it. Click Wire again to stop.'
-    :'Wire tool on: click a source/cabinet, then click what it feeds. Click a wire to drop a bend dot; click the dot to make it a curve or remove it; right-click the wire to recolour or remove it. Click Wire again to stop.',true);
+    ?'Wire tool on: click a brunn or koppling, then what it feeds. Click a pipe: drop a dot (Alt-click: gray koppling). Double-click a dot: sharp/curve. Right-click a dot: koppling/remove. Double-click the pipe: colour/remove. Click Wire again to stop.'
+    :'Wire tool on: click a source/cabinet, then what it feeds. Click a wire: drop a bend dot. Double-click a dot: sharp/curve. Right-click a dot: remove. Double-click the wire: colour/remove. Click Wire again to stop.',true);
   nodes.forEach(renderNode);
   redrawCables();   // bend/curve dots only exist while the wire tool is on
 }
@@ -2198,20 +2198,25 @@ function drawCable(c,dom){
   else if(lv===1){ dash='10,6'; }                // amber band: keep the wire colour, dashed = worth a glance
   const isHl=hl.cables.has(c);
   if(isHl){ color='#ffd400'; weight=weight+2.5; }
-  /* All wire editing lives in wire mode: clicking the wire drops a draggable bend dot
-     right there (Alt-click on a water pipe drops a gray koppling junction instead), and
-     RIGHT-clicking the wire opens the recolour/remove modal. With the Wire tool off a
-     wire click does nothing — no surprise popups while browsing. */
+  /* All wire editing lives in wire mode. Single click on the wire drops a draggable
+     bend dot (Alt-click on a water pipe: a gray koppling junction) — deferred ~0.3 s so
+     a DOUBLE-click can open the recolour/remove modal instead without spawning dots.
+     Right-click on the wire opens the same modal. With the Wire tool off a wire click
+     does nothing — no surprise popups while browsing. */
+  let dotTimer=null;
   const onClick=ev=>{L.DomEvent.stopPropagation(ev); if(!ADMIN||!wireMode)return;
-    addCableDot(c,ev.latlng, dom==='water'&&!!(ev.originalEvent&&ev.originalEvent.altKey));};
-  const onCtx=ev=>{L.DomEvent.stopPropagation(ev); if(ev.originalEvent)ev.originalEvent.preventDefault();
+    const ll=ev.latlng, alt=dom==='water'&&!!(ev.originalEvent&&ev.originalEvent.altKey);
+    clearTimeout(dotTimer);
+    dotTimer=setTimeout(()=>{ addCableDot(c,ll,alt); },280);};
+  const openWin=ev=>{L.DomEvent.stopPropagation(ev); clearTimeout(dotTimer);
+    if(ev.originalEvent&&ev.originalEvent.preventDefault)ev.originalEvent.preventDefault();
     if(!ADMIN||!wireMode)return; openCabModal(c);};
   const path=pathFromAnchors(A);
   // black casing underneath gives every wire a clean outline
   const casing=L.polyline(path,{pane:'cables',color:'#000',weight:weight+3,opacity:isHl?1:0.9,dashArray:dash}).addTo(map);
-  casing.on('click',onClick); casing.on('contextmenu',onCtx); cableLines.push(casing);
+  casing.on('click',onClick); casing.on('dblclick',openWin); casing.on('contextmenu',openWin); cableLines.push(casing);
   const line=L.polyline(path,{pane:'cables',color,weight,opacity:1,dashArray:dash}).addTo(map);
-  line.on('click',onClick); line.on('contextmenu',onCtx); cableLines.push(line);
+  line.on('click',onClick); line.on('dblclick',openWin); line.on('contextmenu',openWin); cableLines.push(line);
   // length readout at the wire midpoint (needs ppm; follows the drawn path, curves included)
   let lenLbl=null;
   if(ppm&&showLengths){
@@ -2229,11 +2234,13 @@ function drawCable(c,dom){
     const bg=(dom==='water')?'#2b8cff':cableColor(c);
     const html='<div class="cdot'+(p.k==='c'?' crv':'')+'" style="width:'+d+'px;height:'+d+'px;background:'+bg+'"></div>';
     const mk=L.marker([p.y,p.x],{icon:L.divIcon({className:'node-div',html,iconSize:[d,d],iconAnchor:[d/2,d/2]}),pane:'dots',draggable:true,keyboard:false}).addTo(map);
-    mk.on('click',ev=>{ L.DomEvent.stopPropagation(ev); openDotModal(c,p); });         // bend/curve/koppling/remove
+    mk.on('click',ev=>L.DomEvent.stopPropagation(ev));
+    mk.on('dblclick',ev=>{ L.DomEvent.stopPropagation(ev);                              // the fast toggle: sharp <-> curve
+      p.k=(p.k==='b')?'c':'b'; saveNet(); redrawCables(); });
     mk.on('drag',()=>{ const q=mk.getLatLng(); p.x=q.lng; p.y=q.lat; liveUpdate(); });   // move only — never rebuild layers mid-drag
     mk.on('dragend',()=>{ saveNet(); redrawCables(); if(dom==='el')renderLegend(); else renderVattenLegend(); });
-    mk.on('contextmenu',ev=>{ L.DomEvent.stopPropagation(ev); if(ev.originalEvent)ev.originalEvent.preventDefault();   // quick remove
-      c.pts=c.pts.filter(x=>x!==p); saveNet(); redrawCables(); if(dom==='el')renderLegend(); else renderVattenLegend(); });
+    mk.on('contextmenu',ev=>{ L.DomEvent.stopPropagation(ev); if(ev.originalEvent)ev.originalEvent.preventDefault();
+      openDotModal(c,p); });                                                            // bend/curve/koppling/remove
     cableLines.push(mk);
   });
 }
