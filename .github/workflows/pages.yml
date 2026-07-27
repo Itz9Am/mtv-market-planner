@@ -11,6 +11,11 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, closed]
+  # Manual re-run from the Actions tab. Needed because the shared concurrency
+  # group keeps only the NEWEST queued run: a main deploy queued behind a PR
+  # preview gets silently replaced if another preview arrives, leaving the
+  # live site stale (happened 2026-07-27).
+  workflow_dispatch:
 
 permissions:
   contents: write        # push the built site to the gh-pages branch
@@ -47,7 +52,7 @@ jobs:
       # Live site: push _site to the root of gh-pages on every push to main.
       # keep_files preserves the pr-preview/ directory that PR builds write.
       - name: Deploy live site
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
