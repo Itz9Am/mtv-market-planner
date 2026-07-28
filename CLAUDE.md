@@ -240,9 +240,9 @@ and the `elskap` placements column (below).
 ### El sidebar: Material sub-view (+ inventory)
 
 Third seg option under El (`renderElMat()`, `#elMat`). Semantics the user set
-(2026-07): **gray = already in place at the site** (applied by hand), so everything
-NOT gray — default rating colours or a custom colour — counts as new material
-(`isNewMat` — any grayish colour is skipped; see the Colours section). Sections:
+(2026-07): **gray = already in place at the site**. Cables count as new material
+unless coloured gray (`isNewMat`); cabinets count only when coloured non-gray
+(`nodeIsNew` — new ones are born red). See the Colours section. Sections:
 
 - **New centrals**: coloured nodes grouped kind+rating, `need / have / rent` against
   the inventory.
@@ -268,19 +268,27 @@ once could double-book a piece (accepted; the network lives on Marknad).
 
 ### Colours (both optional, both persisted)
 
-**Defaults are the RATING colours; gray is applied BY HAND to mark existing** (the
-2026-07 gray-by-default experiment was rejected: "but the cables that were colored are
-now gray"). `cableColor()`: no override → `otypeColor` (32A orange, 16A yellow,
-63A/125A red, 220V light blue); `renderNode`'s border is `ratingColor`. An item with
-its default colours **counts as NEW material**. Load-band colouring (amber/red text,
-vivid red dashed wires) and the gold highlight still win visually.
+**Cables and cabinets have OPPOSITE defaults** (user, 2026-07 — refined three times,
+this is the final model):
+
+- **Cables: default = MINE = new material.** No override → `otypeColor` rating colour
+  (32A orange, 16A yellow, 63A/125A red, 220V light blue). Gray is applied by hand to
+  the runs between permanently installed cabinets ("those cables I colored gray").
+- **Cabinets: untouched = PERMANENT.** A cabinet with no colour draws a gray border
+  ("the cabinets that are permanent I left gray") and does NOT count as material;
+  the user colours their own cabinets **red**, so `addNode` stamps a brand-new elskap
+  with `NEW_RED='#831100'` ("the default is gray and should be red") and the new-
+  cabinet modal preselects it. `nodeIsNew(n)` = has a colour && not grayish. New
+  SOURCES are not stamped (a source is utility infrastructure; colour by hand if owned).
 
 **ANY gray shade counts as gray = already in place.** The user accidentally applied
 several grays (`#444444` on the trunk cables — the one they declared correct, "the one
 A1N1N1 has" — plus `#232323`), so `isGrayish()` (hex channel spread ≤ 30) decides: a
 grayish node/cable colour renders fully as `NET_GRAY='#444444'` (wire, node border AND
-middle) and does NOT count as new material (`isNewMat = blank || !grayish`). Stored
-values are left untouched — render/count-time normalisation, not a data migration.
+middle) and does NOT count as new material (cables: `isNewMat = blank || !grayish`).
+Stored values are left untouched — render/count-time normalisation, not a data
+migration. Load-band colouring (amber/red text, vivid red dashed wires) and the gold
+highlight still win visually.
 
 - **Node middle fill** (`n.color`): the source/cabinet modal has a colour picker for the
   *middle* only — the **border stays gray** (drawn as an inline `border-color`).
