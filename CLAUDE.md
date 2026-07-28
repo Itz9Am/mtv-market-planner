@@ -400,12 +400,15 @@ zoom control — the area toggle is deliberately a separate control from the Let
   loads unchanged. `letters`, `admin`, `area`, `custom`, `removed` stay global. All
   `lsGet`/`lsSet` go through `nsKey`; only two direct `localStorage` writes were pointed at
   `nsKey` by hand (`setImage`, and the `LS.area` write which is intentionally un-namespaced).
-- **Scale.** Marknad's `ppm` comes from its Sheet `meta`. Arena has a **fixed** `ppm` baked
-  into its `AREAS` entry (`ppm:4.39`, tuned against the aerial photo). `ppm = lsGet(LS.ppm,
-  areaDef().ppm)` seeds it, and the Sheet `meta` row overrides on load once Arena has synced.
-  The two-click measure tool was removed once `4.39` was confirmed — to re-tune, change the
-  constant (and clear a stale `mtvi_ppm_v1::arena` if one lingers) or restore the tool from
-  git history.
+- **Scale.** Marknad's `ppm` is now **baked into its `AREAS` entry** (`ppm:5.09`,
+  `ppmFixed:true` — measured 2026-07: at a trial `5.71` a map distance reading 33 m was
+  37 m in reality, so `5.71 × 33/37 = 5.09`; the older Sheet-tuned `4.3923` showed more
+  room than the market really has). `fixedPpm()` makes a
+  `ppmFixed` code constant win over BOTH the localStorage cache and the Sheet `meta` row
+  at every seed/load site — without the lock a constant change is silently overridden by
+  the synced meta on the next load. Re-tune = edit the `AREAS` entry, nothing to clear.
+  Arena (`ppm:4.39` default) and Camping (`ppm:3.0` default, measured to `3.459` with the
+  measure tool) stay un-locked: their Sheet `meta` still overrides the old way.
 - **Switching** (`switchArea`) tears down the current render, cancels any pending autosave
   (the `dirty` flag persists per-area, so nothing is lost), flips `area`, reloads every
   per-area global from localStorage (`reloadAreaState`), swaps the base image (which restores
