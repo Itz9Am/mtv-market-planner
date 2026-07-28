@@ -82,6 +82,9 @@
   .tent-cap .ln{display:inline-block;font-size:11px;font-weight:700;color:#fff;background:rgba(15,17,22,.74);padding:0 4px;border-radius:4px}
   .tent-cap .ltr{display:block;font-size:11px;font-weight:800;color:#ffe08a;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000;letter-spacing:.5px;margin-top:1px}
   .tent-cap .sz{display:block;font-size:10px;font-weight:700;color:#d7dce8;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000;margin-top:1px}
+  /* marknadsstand badge: fixed pixel size like the name, so it reads at ANY zoom
+     (the polygon border scales away when zoomed out) */
+  .tent-cap .stnd{display:inline-block;width:11px;height:11px;background:#8B4513;border:1.5px solid #fff;border-radius:3px;margin-right:4px;vertical-align:-1.5px;box-sizing:border-box}
   #tentCtl{position:absolute;z-index:1200;display:none;gap:4px;background:rgba(20,22,30,.95);padding:5px;border-radius:22px;border:1px solid var(--line);transform:translate(-50%,-100%);box-shadow:0 4px 14px rgba(0,0,0,.5)}
   #tentCtl button{width:34px;height:34px;border-radius:50%;padding:0;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;font-variant-emoji:text}
   #tentCtl button.del{border-color:var(--danger);color:var(--danger)}
@@ -598,7 +601,7 @@ function tentStyle(t){
   // marknadsstand (organiser-rented market stall): darker brown border, a bit heavier
   const base=ref.stand?'#8B4513':'rgba(0,0,0,.65)';
   const st={color: sel?'#ffffff':(hlt?'#ffd400':(wat?'#2b8cff':base)),
-            weight: sel?3:((hlt||wat)?3:(ref.stand?4:1.5)), fillColor:fill, fillOpacity:.85};
+            weight: sel?3:((hlt||wat)?3:(ref.stand?6:1.5)), fillColor:fill, fillOpacity:.85};
   if(ref.shape==='balheart') st.fillRule='nonzero';   // a near-touching bale pair must never XOR transparent under evenodd
   return st;
 }
@@ -607,7 +610,8 @@ function capHtmlFor(t){
   const sub=currentTab==='el'?elLabel(ref.electricity):(showLetters?ref.placering:'');
   const letters=sub?`<span class="ltr">${esc(sub)}</span>`:'';
   const size=(showSizes&&hasSize(ref))?`<span class="sz">${esc(fmtSize(ref))}</span>`:'';
-  return `<div class="tent-cap"><span class="ln">${esc(ref.name)}</span>${letters}${size}</div>`;
+  const stnd=ref.stand?'<span class="stnd"></span>':'';
+  return `<div class="tent-cap"><span class="ln">${stnd}${esc(ref.name)}</span>${letters}${size}</div>`;
 }
 function tentClick(t,e){
   L.DomEvent.stopPropagation(e);
