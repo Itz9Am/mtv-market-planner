@@ -11,3 +11,4 @@ _site/
 # python bytecode cache (e.g. from importing extract_tents.py)
 __pycache__/
 *.pyc
+version.json

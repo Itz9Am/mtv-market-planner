@@ -75,6 +75,14 @@ builds `planner.template.html` + `tents.json` into HTML and pushes it to the
 All deploys share one `concurrency` group with `cancel-in-progress: false` so
 parallel jobs never race on `gh-pages`.
 
+**Stale-tab refresh:** `build.py` bakes a content-hash `BUILD_ID` into the script and
+writes the same id to `version.json`, which `pages.yml` publishes next to the page.
+Every open tab polls `version.json` (5 min + on refocus, `checkForUpdate`): on a
+mismatch a hidden tab with nothing in flight (`reloadIsSafe`) reloads itself, an
+active tab shows a "Reload now" banner (waits for a pending save before reloading).
+A tab left open across a deploy was ingredient one of the 2026-07-28 wipe — this
+closes that hole. `version.json` is generated, git-ignored like the HTML.
+
 Both the live site and every preview share the **same origin**
 (`https://<owner>.github.io`), so a single **Authorized JavaScript origin** on the
 OAuth client covers all of them — paths don't matter for OAuth, only scheme+host.

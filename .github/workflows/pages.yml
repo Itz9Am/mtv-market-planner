@@ -45,6 +45,7 @@ jobs:
           python3 build.py
           mkdir -p _site
           cp marknad_tent_planner.html _site/index.html
+          cp version.json _site/
           cp marknad_base_clean.png _site/
           cp arena_base.png _site/
           cp camping_base.png _site/

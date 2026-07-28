@@ -41,6 +41,19 @@ def main() -> int:
             tag = hashlib.md5(p.read_bytes()).hexdigest()[:8]
             html = html.replace(f"'{img}'", f"'{img}?v={tag}'")
 
+    # Version stamp: a content hash of the built page, baked into the script as
+    # BUILD_ID and published alongside it as version.json. Open tabs poll
+    # version.json and refresh themselves when the id changes — so a tab left
+    # open across a deploy stops running stale code (the 2026-07-28 wipe needed
+    # a stale tab as its first ingredient).
+    build_id = hashlib.sha256(html.encode("utf-8")).hexdigest()[:12]
+    if "__BUILD_ID__" not in html:
+        print("ERROR: __BUILD_ID__ not found in template", file=sys.stderr)
+        return 1
+    html = html.replace("__BUILD_ID__", build_id)
+    (ROOT / "version.json").write_text(
+        json.dumps({"build": build_id}), encoding="utf-8")
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(html, encoding="utf-8")
 
