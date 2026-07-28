@@ -424,10 +424,9 @@ zoom control — the area toggle is deliberately a separate control from the Let
   awaits, and only clears `dirty`/updates `lastSavedAt` if `area` didn't flip mid-write.
   `pollRemote` reads the meta rows: if the **current** area's `savedAt` changed it reloads;
   if only **another** area changed it refreshes the snapshot (so the next save preserves it).
-  - **Stale-snapshot caveat:** two browsers editing *different* areas concurrently can still
-    clobber each other's area between polls (the writer re-emits the other area from a
-    possibly-stale snapshot). Same "last write wins, silently" spirit as concurrent
-    same-area edits; the 15 s poll narrows the window but doesn't close it.
+  - The old stale-snapshot cross-area clobber is closed: every save re-reads the whole
+    sheet first (see *Concurrent edits* below), so the other areas' re-emitted rows are
+    always fresh.
 - The base images are committed PNGs (`marknad_base_clean.png`, `arena_base.png`) and
   **both** are copied into `_site/` by `pages.yml`.
 
@@ -457,7 +456,9 @@ module lives under the `/* automatic sync */` and `/* Google Sheets sync */` ban
   (2.5 s) and coalesced so a burst of edits is one write. Guarded by `SYNC.loading` so
   applying a load doesn't echo back a save. Never triggers an auth popup.
 - `runAutoSave()` — silently refreshes the token (`getToken(false)`, `prompt:'none'`);
-  if that can't happen it shows *Sign in to sync* and leaves the change pending. Writes
+  if that can't happen it shows *Sign in to sync* and leaves the change pending. Reads
+  the whole sheet, **merges per entity** (see *Concurrent edits merge* under the
+  constraints below), applies the adopted remote side locally, then writes
   `values:batchClear` + `values:batchUpdate`. Retries with backoff, capped.
 - `autoLoadStartup()` — pulls the four tabs on startup / after sign-in, silently
   (API key or silent token, never a popup). **Unsynced local edits win**: if
@@ -506,6 +507,7 @@ nodes       id | domain | kind | rating | x | y | unl |
 cables      src | dst | dstKind | domain | otype | phase | color
             (+ trailing area | pts)
 meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy
+            (+ trailing area | basedOn — the write fence, see Concurrent edits)
 ```
 
 `pts` (cable waypoints) is a trailing column AFTER `area`, for the same positional-
@@ -596,12 +598,38 @@ to a snapshot; on Sheet load a missing id gets a minimal stub `ref`.
   currently loaded — a data-URL upload is never pushed to the sheet.
 - `tentId` must stay stable across re-imports. Numeric ids are safe; the synthetic
   `x_<slug>` ids for organiser structures change if a row is renamed.
-- Last write wins, **silently** — auto-save no longer runs the interactive
-  "overwrite?" confirm (it can't block on every keystroke). `meta.savedAt`/`savedBy`
-  and `GS.lastSavedAt` are still written/tracked, so a concurrency check can be
-  reinstated, but two admins editing the same Sheet at once will clobber each other.
+- **Concurrent edits merge — a save never blind-overwrites** (added 2026-07 after two
+  admins clobbered each other). `runAutoSave` re-reads the whole sheet, then does a
+  **per-entity three-way merge** (`mergeRows`, keyed: placement = `tentId`, node = `id`,
+  cable = `dstKind|dst|domain`) of local rows vs the last-synced **base**
+  (`mtvi_syncbase_v1`, per area) vs the fresh remote rows: an entity unchanged locally
+  adopts the remote version (edit, add or delete — and the adopted side is applied to
+  local state through `applySheetState` *before* the write, synchronously, so no user
+  edit can interleave); an entity changed locally keeps the local version. So
+  non-overlapping edits from two admins BOTH survive; only a genuine same-entity
+  conflict resolves last-write-wins. `rowSig` ignores the `area` column and the derived
+  `elskap` column (else a cable change elsewhere would make every fed tent look
+  "locally edited" and beat a real remote move) and trims trailing blanks (a read omits
+  them, a local emit pads them — conflating the two made every legacy row look edited).
+  - **Write fence:** each save records the remote `savedAt` it merged against in
+    `meta.basedOn`. If `pollRemote` sees a new `savedAt` whose `basedOn` is not our own
+    last write (an old-build tab, or a simultaneous-write race — the writer never read
+    our write), it does NOT adopt the clobbered state: it rewinds the merge base to
+    `prev` (the sheet as our last write saw it, so `diff(base,prev)` is exactly what we
+    changed) and queues a save that re-merges our edits on top. Old clients don't write
+    `basedOn`, so their saves always trigger the re-merge — that is what recovers from
+    them.
+  - **Merge trail:** every adopted row and every conflict is appended to a capped
+    global `localStorage` log (`mtvi_synclog_v1`, `{t,area,by,tab,key,action}`) —
+    `syncLog()` in the console prints it. This is how a "my edit disappeared" report is
+    traced. For anything lost before this existed, the Sheet's **File → Version
+    history** holds every overwritten state (each save is a revision).
+  - Residual race: two clients writing in the same few-second read→write window can
+    still bypass each other, but the fence detects it on the next poll and re-merges,
+    so edits converge instead of silently vanishing.
 - Sheets API quotas are ~300 req/min per project, 60/min per user; the 2.5 s debounce
-  plus coalescing keeps a burst of edits to one `batchClear`+`batchUpdate` pair, and the
+  plus coalescing keeps a burst of edits to one read + `batchClear`+`batchUpdate` (a
+  save is now 3 requests, still well inside quota), and the
   15 s live-reload poll is a single small `meta` read (~4/min). View (pan/zoom) changes
   deliberately do **not** trigger a save — the current view is captured on the next real
   edit — so idle panning doesn't burn quota.
