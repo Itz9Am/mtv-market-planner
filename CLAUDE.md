@@ -607,7 +607,11 @@ to a snapshot; on Sheet load a missing id gets a minimal stub `ref`.
   local state through `applySheetState` *before* the write, synchronously, so no user
   edit can interleave); an entity changed locally keeps the local version. So
   non-overlapping edits from two admins BOTH survive; only a genuine same-entity
-  conflict resolves last-write-wins. `rowSig` ignores the `area` column and the derived
+  conflict resolves last-write-wins. When no base was seeded yet (a browser upgraded
+  while it held unsynced edits — the dirty startup path skips the load), the persisted
+  last-read snapshot `mtvi_sheetall_v1` is the fallback base: writes never updated it
+  and reads always did, so it IS the state those edits were built on, and local
+  deletions propagate instead of being resurrected. `rowSig` ignores the `area` column and the derived
   `elskap` column (else a cable change elsewhere would make every fed tent look
   "locally edited" and beat a real remote move) and trims trailing blanks (a read omits
   them, a local emit pads them — conflating the two made every legacy row look edited).

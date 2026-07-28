@@ -1211,9 +1211,10 @@ function rowSig(tab,r){
   return JSON.stringify(out);
 }
 /* localRows: what this client would write. baseRows: this area's rows at the last
-   successful sync (null = unknown, e.g. first save after upgrade — then nothing remote
-   is ever dropped). remoteRows: the sheet right now. Returns the merged row set plus
-   whether anything remote was adopted (=> local state must be updated too). */
+   successful sync (runAutoSave falls back to the persisted last-read snapshot when no
+   base was seeded yet; a truly unknown base is null — then nothing remote is ever
+   dropped). remoteRows: the sheet right now. Returns the merged row set plus whether
+   anything remote was adopted (=> local state must be updated too). */
 function mergeRows(tab,localRows,baseRows,remoteRows){
   const mapOf=rows=>{ const m=new Map(); (rows||[]).forEach(r=>m.set(rowKey(tab,r),r)); return m; };
   const L=mapOf(localRows), B=baseRows?mapOf(baseRows):null, R=mapOf(remoteRows);
@@ -1571,6 +1572,18 @@ async function runAutoSave(){
   SYNC.inflight=true; SYNC.pending=false; setSync('saving');
   const savingArea=area;                                        // guard against an area flip mid-write
   const savedAt=new Date().toISOString(), savedBy=GS.email||'admin';
+  const st=baseGet(savingArea);
+  let baseRows=(st&&st.base)?st.base:null;
+  // No seeded base (first save from a browser upgraded while it had unsynced edits —
+  // autoLoadStartup skips the load when dirty): the persisted last-read snapshot is the
+  // state those edits were built on (writes never updated it, reads always did), so it
+  // is the correct base — local deletions propagate instead of being resurrected.
+  // Captured BEFORE the fresh read below overwrites sheetAll.
+  if(!baseRows && ((sheetAll.placements||[]).length||(sheetAll.nodes||[]).length||(sheetAll.cables||[]).length)){
+    baseRows={placements:areaRawRows(sheetAll.placements,'placements',savingArea),
+              nodes:areaRawRows(sheetAll.nodes,'nodes',savingArea),
+              cables:areaRawRows(sheetAll.cables,'cables',savingArea)};
+  }
   try{
     // 1. fresh read: a save MERGES with what is on the sheet, it never blind-overwrites.
     //    (Also makes the other areas' re-emitted rows fresh, closing the stale-snapshot
@@ -1583,7 +1596,6 @@ async function runAutoSave(){
                   cables:areaRawRows(vr[2]&&vr[2].values,'cables',savingArea)};
     const remoteMeta=currentAreaObjs(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
     // 2. three-way merge, synchronously (no user edit can interleave before the write)
-    const st=baseGet(savingArea), baseRows=(st&&st.base)?st.base:null;
     const local=localAreaRows(), merged={}, mergeLog=[]; let adoptedAny=false;
     ['placements','nodes','cables'].forEach(tab=>{
       const m=mergeRows(tab,local[tab],baseRows?baseRows[tab]:null,remote[tab]);
