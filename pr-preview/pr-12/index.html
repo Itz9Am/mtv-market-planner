@@ -394,7 +394,7 @@ const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:
    image. The plan-state keys below are namespaced per area in localStorage; the default
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
    `admin` and `area` itself stay global. */
-const AREAS=[{key:'marknad',label:'Marknad',img:'marknad_base_clean.png?v=68ee3f3b',ppm:5.71,ppmFixed:true},
+const AREAS=[{key:'marknad',label:'Marknad',img:'marknad_base_clean.png?v=68ee3f3b',ppm:5.09,ppmFixed:true},
              {key:'arena',label:'Arena',img:'arena_base.png?v=1a27777e',ppm:4.39},
              {key:'camping',label:'Camping',img:'camping_base.png?v=7d5a6f6c',ppm:3.0}];
 /* The tent LIST is shared across areas — `custom` (added objects) and `removed` are
@@ -1559,7 +1559,7 @@ document.getElementById('exitAdmin').onclick=exitAdminMode;
 /* ---------- Networks: El (source+cabinets, 3-phase) and Vatten (brunn/handfat) ---------- */
 function ampOf(s){ const m=/(\d+)\s*A/i.exec(s||''); return m?parseInt(m[1]):0; }
 function tentAmp(id){ const t=placed.find(x=>String(x.ref.id)===String(id)); if(!t)return 0;
-  const r=tentReq(refOf(t).electricity); return r?r.amp:0; }   // through tentReq so the 220V=16A rule applies to the load maths
+  const r=tentReq(refOf(t).electricity); return r?r.amp:0; }   // through tentReq so 220V tents count their stated amps
 function ratingColor(r){ return r>=63?'#ff6b6b':r>=32?'#ffb35c':'#ffe066'; }
 /* default wire colour = the rating colour of its output: 32A orange, 16A yellow,
    63A/125A red, 220V light blue. A per-cable c.color overrides it. */
@@ -1638,10 +1638,10 @@ function socketKey(el,amp){
 function tentReq(el){ el=(el||'').toLowerCase().trim(); if(!el||el==='none')return null;
   let amp=ampOf(el)||6;
   const key=socketKey(el,amp);
-  /* A 220V hookup is a 16A schuko circuit, and the whole 16A lands on ONE phase.
-     The workbook says "220v 6A" (16A mentally divided over three phases — an
-     undercount under the single-phase model), so count every 220V tent as 16A. */
-  if(key==='220V') amp=Math.max(amp,16);
+  /* A 220V tent draws its STATED amps on ONE phase: "220v 6A" counts 6A, "220v 16A"
+     counts 16A (a bare "220v" with no amps counts 6A). The earlier clamp that bumped
+     every 220V tent to 16A overcounted the 6A tents and was reversed 2026-07. The
+     socket stays a 220V schuko outlet either way. */
   return {phase:key==='220V'?1:3,amp,key}; }
 
 // el node output complement (three-phase cabinets)
@@ -1839,6 +1839,10 @@ document.querySelectorAll('#elControls .ela').forEach(b=>{
 let srcEditing=null, srcKind='source', srcColorCustom=false;
 const srcBg=document.getElementById('srcBg');
 function srcDefaultFill(kind){ return kind==='source'?'#0e2033':'#181b22'; }   // matches the CSS .node / .node.source bg
+/* every NEW cabinet starts with this middle fill (the dark red already used across the
+   plan, e.g. A1N5N2) — stored on the node at creation, so existing cabinets keep whatever
+   they have and "Reset to default" on an existing cabinet still clears to the CSS fill */
+const NEW_CAB_COLOR='#831100';
 function srcOutsVis(){ const unl=(srcKind==='source')&&document.getElementById('srcUnl').checked; document.getElementById('srcOuts').style.display=unl?'none':''; }
 document.getElementById('srcUnl').onchange=srcOutsVis;
 /* a unit never has three-phase outlets rated above its own incoming feed — hide those
@@ -1849,7 +1853,8 @@ function srcClampOuts(){
 }
 document.getElementById('srcAmp').oninput=srcClampOuts;
 document.getElementById('srcColor').oninput=()=>{ srcColorCustom=true; };
-document.getElementById('srcColorReset').onclick=()=>{ srcColorCustom=false; document.getElementById('srcColor').value=srcDefaultFill(srcKind); };
+document.getElementById('srcColorReset').onclick=()=>{ srcColorCustom=false;
+  document.getElementById('srcColor').value=(!srcEditing&&srcKind==='elskap')?NEW_CAB_COLOR:srcDefaultFill(srcKind); };
 function openSrcModal(nodeId,kind){
   srcEditing=nodeId;
   const n=nodeId?nodes.find(x=>x.id===nodeId):null;
@@ -1866,7 +1871,7 @@ function openSrcModal(nodeId,kind){
   document.getElementById('o63').value=o['63A']||0;
   document.getElementById('o125').value=o['125A']||0;
   srcColorCustom=!!(n&&n.color);
-  document.getElementById('srcColor').value=(n&&n.color)||srcDefaultFill(srcKind);
+  document.getElementById('srcColor').value=(n&&n.color)||((!n&&srcKind==='elskap')?NEW_CAB_COLOR:srcDefaultFill(srcKind));
   srcOutsVis(); srcClampOuts(); srcBg.style.display='flex'; document.getElementById('srcAmp').focus();
 }
 document.getElementById('srcCancel').onclick=()=>{srcBg.style.display='none';srcEditing=null;};
@@ -2106,6 +2111,7 @@ function addNode(spec,lat,lng){
   if(spec.kind==='source'){ n.unl=spec.unl!==false; n.outs=spec.outs||null; }
   else if(spec.outs){ n.outs=spec.outs; }
   if(spec.color) n.color=spec.color;
+  else if(spec.kind==='elskap') n.color=NEW_CAB_COLOR;   // new cabinets start dark red (like A1N5N2)
   nodes.push(n); saveNet(); renderNode(n); setConnectSource(n.id);
 }
 /* A water koppling renders as a small gray junction dot, a bit wider than the pipe —
