@@ -2441,15 +2441,16 @@ document.addEventListener('keydown',e=>{
 /* One-time seed of the Camping area's fixed service structures (Reception, Kök, WC …).
    They are added to the global custom list AND pre-placed in the Camping area, so they
    never show in any "available" list (placedAnywhere gates them). Deleting one returns
-   it to the list, as with any object. Guarded by a global flag so it runs once; the
-   Camping `dirty` flag is set so an admin's next save pushes them to the shared Sheet.
-   The camper vans / RV rows from the plan are intentionally not included. */
-function seedCampingDefaults(){
-  if(localStorage.getItem('mtvi_seed_camping_v2')) return;
+   it to the list, as with any object. Guarded by a global flag so it runs once per
+   browser. The seed deliberately does NOT set the area's `dirty` flag: a set flag makes
+   autoLoadStartup skip the Sheet pull ("local edits win"), so on every fresh device the
+   seed used to hide the real shared plan — and a signed-in admin would even push the
+   seed-only state over it. The bootstrap syncs on the first real edit instead (an empty
+   Sheet area never overwrites it, applySheetState skips empty pulls). */
+function campSeedItems(){
   /* v2: shapes/colours/positions traced from the printed plan (homography-mapped).
      Splits the single WC into WC Damer + WC Herrar, adds the RV row along the eastern
-     körstråk plus the "Minst 4 m" note as a movable object. Existing placements are
-     kept; only camp_wc is replaced and missing items are added. */
+     körstråk plus the "Minst 4 m" note as a movable object. */
   const S=[
     {id:'camp_foodtruck',name:'Foodtruck och grillplats',placering:'MAT',color:'#B0607A',w:5,l:5,x:665,y:595,water:false},
     {id:'camp_kok',      name:'Kök',      placering:'KÖK',color:'#6AA84F',w:4,l:4,x:732,y:718,water:true},
@@ -2463,6 +2464,12 @@ function seedCampingDefaults(){
   // RV row: positions traced from the plan, angled with the körstråk
   [[1176,416],[1158,434],[1139,451],[1120,472],[1099,491],[1081,509],[1063,527],[1044,546],[1022,566],[1001,584]]
     .forEach((p,i)=>S.push({id:'camp_rv_'+(i+1),name:'RV',placering:'',color:'#D7DAE0',w:3,l:7,x:p[0],y:p[1],rot:45,water:false}));
+  return S;
+}
+function seedCampingDefaults(){
+  if(localStorage.getItem('mtvi_seed_camping_v2')) return;
+  // v2 keeps existing placements; only camp_wc is replaced and missing items are added.
+  const S=campSeedItems();
   const defs=S.map(s=>({id:s.id,name:s.name,placering:s.placering,electricity:'',water:!!s.water,
                         shape:'rect',length:s.l,width:s.w,color:s.color,nya:0}));
   try{
@@ -2474,7 +2481,6 @@ function seedCampingDefaults(){
     P=P.filter(p=>p&&p.ref&&String(p.ref.id)!=='camp_wc');
     S.forEach((s,i)=>{ if(!P.some(p=>p&&p.ref&&String(p.ref.id)===String(s.id))) P.push({ref:defs[i],lat:s.y,lng:s.x,rot:s.rot||0}); });
     localStorage.setItem(key,JSON.stringify(P));
-    localStorage.setItem(LS.dirty+'::camping',JSON.stringify(true));
     localStorage.setItem('mtvi_seed_camping_v2','1');
     customTents=lsGet(LS.custom,[]); library=TENTS.concat(customTents);
   }catch(e){}
@@ -2488,7 +2494,8 @@ function seedCampingDefaults(){
    behind the laktare) and rot 40 to line up with the arena's other objects
    (arena_base.png pixels, ppm 4.3923). Same mechanics as the Camping seed above:
    global custom def (a custom_ id, so the full definition rides in the placements
-   row) + pre-placed in Arena, arena dirty flag set so the next admin save syncs.
+   row) + pre-placed in Arena; no dirty flag (see the Camping seed above), the
+   bootstrap syncs with the first real edit.
    Version history: v2 12 m wide; v3 next to the ljus bod + rot 40; v4 one plain
    rect object, drops the 25 bale_* objects; v5 the object draws the bales again
    (shape 'balheart'); v6 heart guide 11.5 m wide (footprint 11.5 x 10.4). The
@@ -2515,15 +2522,41 @@ function seedArenaBales(){
     const ek=LS.edits+'::arena';                      // drop an old shape:'rect' override
     try{ const E=JSON.parse(localStorage.getItem(ek)||'{}')||{};
          if(E[def.id]){ delete E[def.id]; localStorage.setItem(ek,JSON.stringify(E)); } }catch(e){}
-    localStorage.setItem(LS.dirty+'::arena',JSON.stringify(true));
     localStorage.setItem('mtvi_seed_arena_bales_v6','1');
     customTents=lsGet(LS.custom,[]); library=TENTS.concat(customTents);
   }catch(e){}
 }
 
+/* Repair for the dirty flag older builds' seeds left behind. Those seeds set the
+   area's `dirty` flag on EVERY fresh browser, which made autoLoadStartup skip the
+   Sheet pull — the device showed only the seeded defaults instead of the shared plan
+   ("the camping map doesn't show correctly on my other device"), and a signed-in
+   admin's autosave could push that seed-only state over the real one. Clear the flag
+   ONLY when the area's local state is provably the untouched bootstrap: no nodes, no
+   cables, no edits, and every placed item is a seed item at its exact seed position.
+   Anything the user actually did keeps the flag and keeps winning over the Sheet. */
+function clearSeedOnlyDirty(){
+  const specs={
+    camping:campSeedItems().map(s=>({id:s.id,lat:s.y,lng:s.x,rot:s.rot||0})),
+    arena:[{id:'custom_balheart',lat:861.5,lng:577.4,rot:40}]
+  };
+  Object.keys(specs).forEach(a=>{
+    try{
+      const g=k=>{ const v=localStorage.getItem(k+'::'+a); return v?JSON.parse(v):null; };
+      if(!g(LS.dirty)) return;
+      const P=g(LS.placed)||[], N=g(LS.nodes)||[], C=g(LS.cables)||[], E=g(LS.edits)||{};
+      if(N.length||C.length||Object.keys(E).length) return;
+      const seedOnly=P.every(p=>p&&p.ref&&specs[a].some(s=>
+        String(s.id)===String(p.ref.id)&&s.lat===p.lat&&s.lng===p.lng&&s.rot===(p.rot||0)));
+      if(seedOnly) localStorage.setItem(LS.dirty+'::'+a,JSON.stringify(0));
+    }catch(e){}
+  });
+}
+
 /* ---------- init ---------- */
 seedCampingDefaults();
 seedArenaBales();
+clearSeedOnlyDirty();
 loadPlaced();
 updateLegend();
 updateScaleReadout();

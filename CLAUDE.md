@@ -430,6 +430,17 @@ zoom control — the area toggle is deliberately a separate control from the Let
     same-area edits; the 15 s poll narrows the window but doesn't close it.
 - The base images are committed PNGs (`marknad_base_clean.png`, `arena_base.png`) and
   **both** are copied into `_site/` by `pages.yml`.
+- **Area seeds must never set the `dirty` flag.** Camping's fixed structures
+  (`seedCampingDefaults`/`campSeedItems`) and the Arena bale heart (`seedArenaBales`) are
+  seeded once per **browser** — so a "push the bootstrap on the next save" dirty flag gets
+  set on every fresh device, where it makes `autoLoadStartup` skip the Sheet pull ("local
+  edits win"): the device showed only the seeded defaults instead of the shared plan, and a
+  signed-in admin's autosave could overwrite the real area with them. Seeds now leave
+  `dirty` alone (the bootstrap syncs with the first real edit; an empty Sheet area never
+  overwrites it because `applySheetState` skips empty pulls), and `clearSeedOnlyDirty()`
+  (init, after the seeds) repairs the flag older builds left behind — cleared only when the
+  area's local state is provably the untouched bootstrap (no nodes/cables/edits, every
+  placement a seed item at its exact seed position); any real work keeps the flag.
 
 ## Persistence
 
