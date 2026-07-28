@@ -567,9 +567,21 @@ is closed and hard-coded in two places (`outputs()` and the source/cabinet modal
 
 Reads are one `values.batchGet` with `valueRenderOption=UNFORMATTED_VALUE` (so numbers
 and booleans come back typed and trailing empty cells are omitted — that omission is
-what makes empty-vs-zero detectable). Writes are a `values:batchClear` of the data rows
-(`A2:` down, headers kept) followed by one `values:batchUpdate` for all four tabs; the
-clear is what removes stale rows when the plan shrinks. `tentId` joins to the baked-in
+what makes empty-vs-zero detectable). Writes are one `values:batchUpdate` for all four
+tabs FIRST (rows padded to full tab width, overwriting the old rows in place), then a
+`values:batchClear` of only the tail below the written block (`tailClears`) to remove
+stale rows when the plan shrinks. **Never reorder this back to clear-then-update**: the
+old order left a window where a concurrent reader saw a blank sheet, and on 2026-07-28
+a merge read that window, took it as "everything was deleted remotely" and blanked the
+whole plan (recovered via the Sheet's version history). Belt-and-braces for readers
+(old clients still clear first): `dataTabsEmpty(vr)` — data tabs empty while local/base
+have content = torn read; `runAutoSave` aborts and retries, `remoteReload`/
+`autoLoadStartup` keep the local cache, `setSheetAll` refuses to poison the snapshot.
+On top of that a **mass-delete valve** (cross-tab, both directions): a merge refuses to
+adopt a deletion of more than `MASS_DEL_MIN` (10) entities AND half the plan in one
+save — real edits delete a handful at a time (a water cascade stays under the cross-tab
+fraction); anything bigger is a torn read or a wiped client, kept and logged as
+`MASS DELETE blocked`. `tentId` joins to the baked-in
 library and is resolved through `refOf()`, which handles a missing id by falling back
 to a snapshot; on Sheet load a missing id gets a minimal stub `ref`.
 

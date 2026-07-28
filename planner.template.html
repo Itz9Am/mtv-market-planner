@@ -1139,7 +1139,6 @@ const SHEET_HEADERS={
    basedOn!=T knows its write was overwritten by a client that never read it (old build,
    or a simultaneous-write race) and re-merges its edits back in (see pollRemote). */
 const SHEET_RANGES={placements:'placements!A1:P',nodes:'nodes!A1:N',cables:'cables!A1:I',meta:'meta!A1:I'};
-const SHEET_CLEAR=['placements!A2:P','nodes!A2:N','cables!A2:I','meta!A2:I'];
 /* raw values (incl. header) of ALL areas from the last read — lets a write preserve other
    areas' rows. Persisted globally so a save before this session's first read still can't
    clobber the other area. */
@@ -1151,11 +1150,27 @@ function lsGetGlobal(k,d){try{const v=localStorage.getItem(k);return v?JSON.pars
    previous version — the exact mechanism that once leaked Arena rows into Marknad. As a
    trailing column, old clients simply ignore it (their A2:N clear leaves stale O cells
    behind, which is fine — the column is write-only) and no migration is needed. */
+/* A read whose three DATA tabs are all empty while meta still has rows is a TORN read —
+   another client (old build) between its batchClear and batchUpdate, or ranges read
+   mid-write. It is never a real plan: every save writes meta and data together. The
+   2026-07-28 wipe was exactly this: a merge read a torn snapshot, took the missing rows
+   as remote deletions and wrote the blank result back. Guard every consumer. */
+function dataTabsEmpty(vr){
+  for(let i=0;i<3;i++){ const v=vr[i]&&vr[i].values; if(v&&v.length>1) return false; }
+  return true;
+}
 function setSheetAll(vr){
-  sheetAll={placements:(vr[0]&&vr[0].values)||[],nodes:(vr[1]&&vr[1].values)||[],
+  const nx={placements:(vr[0]&&vr[0].values)||[],nodes:(vr[1]&&vr[1].values)||[],
             cables:(vr[2]&&vr[2].values)||[],meta:(vr[3]&&vr[3].values)||[]};
+  // refuse to replace a snapshot that has data with one that has none (torn read / mid-
+  // write window) — a poisoned snapshot blanks other areas on the next save's re-emit
+  const hadData=[sheetAll.placements,sheetAll.nodes,sheetAll.cables].some(v=>(v||[]).length>1);
+  const hasData=[nx.placements,nx.nodes,nx.cables].some(v=>v.length>1);
+  if(hadData && !hasData) return false;
+  sheetAll=nx;
   try{ localStorage.setItem('mtvi_sheetall_v1',JSON.stringify(sheetAll)); }catch(e){}
   GS.loadedOnce=true;
+  return true;
 }
 /* rows for areas OTHER than `forArea` (default: current), straight from the snapshot
    (written back verbatim) */
@@ -1215,8 +1230,29 @@ function rowSig(tab,r){
    base was seeded yet; a truly unknown base is null — then nothing remote is ever
    dropped). remoteRows: the sheet right now. Returns the merged row set plus whether
    anything remote was adopted (=> local state must be updated too). */
-function mergeRows(tab,localRows,baseRows,remoteRows){
-  const mapOf=rows=>{ const m=new Map(); (rows||[]).forEach(r=>m.set(rowKey(tab,r),r)); return m; };
+/* How many entities each side deleted since base, counted ACROSS the tabs of one save.
+   Feeds the mass-delete valve: a real user deletes a handful of items at a time (a water
+   cascade can take out a couple of dozen cables), but "more than MASS_DEL_MIN entities
+   AND more than half the plan gone at once" is a torn read or a wiped client, never an
+   edit — those deletions are refused and logged instead of adopted. */
+const MASS_DEL_MIN=10;
+function deleteCounts(tab,localRows,baseRows,remoteRows){
+  const mapOf=rows=>{ const m=new Map(); (rows||[]).forEach(r=>{ const k=rowKey(tab,r); if(!m.has(k)) m.set(k,r); }); return m; };
+  const L=mapOf(localRows), B=baseRows?mapOf(baseRows):null, R=mapOf(remoteRows);
+  let remoteDel=0, localDel=0;
+  if(B){
+    (localRows||[]).forEach(r=>{ const k=rowKey(tab,r);
+      if(!R.has(k) && B.has(k) && rowSig(tab,B.get(k))===rowSig(tab,r)) remoteDel++; });
+    (remoteRows||[]).forEach(r=>{ const k=rowKey(tab,r);
+      if(!L.has(k) && B.has(k)) localDel++; });
+  }
+  return {remoteDel,localDel,base:B?B.size:0};
+}
+/* guard (optional): {blockRemoteDel,blockLocalDel} from the cross-tab valve — a blocked
+   deletion keeps/restores the row instead of dropping it */
+function mergeRows(tab,localRows,baseRows,remoteRows,guard){
+  const g=guard||{};
+  const mapOf=rows=>{ const m=new Map(); (rows||[]).forEach(r=>{ const k=rowKey(tab,r); if(!m.has(k)) m.set(k,r); }); return m; };
   const L=mapOf(localRows), B=baseRows?mapOf(baseRows):null, R=mapOf(remoteRows);
   const out=[], log=[]; let adopted=false;
   (localRows||[]).forEach(r=>{
@@ -1230,8 +1266,10 @@ function mergeRows(tab,localRows,baseRows,remoteRows){
       out.push(r);                                              // edited here -> ours (last write wins)
       if(!B || rs!==bs) log.push({tab,key:k,action:'conflict — local edit wins'});
     } else {
-      if(B && br!==undefined && bs===ls){ adopted=true;         // unchanged here, deleted there
-        log.push({tab,key:k,action:'adopted remote delete'}); return; }
+      if(B && br!==undefined && bs===ls){                       // unchanged here, deleted there
+        if(g.blockRemoteDel){ out.push(r);                      // valve: refuse a mass wipe
+          log.push({tab,key:k,action:'MASS DELETE blocked — row kept'}); return; }
+        adopted=true; log.push({tab,key:k,action:'adopted remote delete'}); return; }
       out.push(r);                                              // added or edited here -> keep
       if(B && br!==undefined) log.push({tab,key:k,action:'conflict — local edit wins over remote delete'});
     }
@@ -1240,6 +1278,8 @@ function mergeRows(tab,localRows,baseRows,remoteRows){
     const k=rowKey(tab,r); if(L.has(k)) return;
     const br=B?B.get(k):undefined;
     if(br!==undefined){                                         // we deleted it since base
+      if(g.blockLocalDel){ out.push(r); adopted=true;           // valve: this client looks wiped
+        log.push({tab,key:k,action:'MASS DELETE blocked — remote row restored'}); return; }
       if(rowSig(tab,br)!==rowSig(tab,r)) log.push({tab,key:k,action:'conflict — local delete wins over remote edit'});
       return;
     }
@@ -1492,14 +1532,27 @@ function localAreaRows(){
   };
 }
 /* full write payload: the (merged) rows for `forArea` + the other areas' rows verbatim.
-   `basedOn` records which remote savedAt this write merged against (the write fence). */
+   `basedOn` records which remote savedAt this write merged against (the write fence).
+   Every row is padded to the tab's full width: the write is batchUpdate FIRST (over the
+   old rows in place) and only then a clear of the tail below — so a shorter adopted row
+   must blank the old row's trailing cells itself. */
+function padRows(tab,rows){
+  const w=SHEET_HEADERS[tab].length;
+  return rows.map(r=>{ const o=(r||[]).slice(0,w); while(o.length<w) o.push(''); return o; });
+}
 function sheetData(rows,savedAt,savedBy,forArea,basedOn){
   return [
-    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(rows.placements).concat(otherAreaRows('placements',forArea))},
-    {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(rows.nodes).concat(otherAreaRows('nodes',forArea))},
-    {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(rows.cables).concat(otherAreaRows('cables',forArea))},
-    {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta, metaRow(savedAt,savedBy).concat([forArea,basedOn||''])].concat(otherAreaRows('meta',forArea))}
+    {range:SHEET_RANGES.placements,values:[SHEET_HEADERS.placements].concat(padRows('placements',rows.placements.concat(otherAreaRows('placements',forArea))))},
+    {range:SHEET_RANGES.nodes,values:[SHEET_HEADERS.nodes].concat(padRows('nodes',rows.nodes.concat(otherAreaRows('nodes',forArea))))},
+    {range:SHEET_RANGES.cables,values:[SHEET_HEADERS.cables].concat(padRows('cables',rows.cables.concat(otherAreaRows('cables',forArea))))},
+    {range:SHEET_RANGES.meta,values:[SHEET_HEADERS.meta].concat(padRows('meta',[metaRow(savedAt,savedBy).concat([forArea,basedOn||''])].concat(otherAreaRows('meta',forArea))))}
   ];
+}
+/* clear ranges BELOW the data being written: header row 1 + values.length-1 data rows,
+   so stale rows start at values.length+1 */
+function tailClears(data){
+  const cols={placements:'P',nodes:'N',cables:'I',meta:'I'};
+  return data.map(d=>{ const tab=d.range.split('!')[0]; return tab+'!A'+(d.values.length+1)+':'+cols[tab]; });
 }
 function applySheetState(P,N,C,M,keepView){
   const cur=(keepView&&imgBounds)?{c:[map.getCenter().lat,map.getCenter().lng],z:map.getZoom()}:null; // preserve pan/zoom
@@ -1589,16 +1642,32 @@ async function runAutoSave(){
     //    (Also makes the other areas' re-emitted rows fresh, closing the stale-snapshot
     //    cross-area clobber.)
     const vr=await sheetBatchGet([SHEET_RANGES.placements,SHEET_RANGES.nodes,SHEET_RANGES.cables,SHEET_RANGES.meta]);
+    // Torn read (another client mid-write): data tabs empty while we know the plan has
+    // content. Merging against it would read as "everything was deleted remotely".
+    // Back off and retry instead — the 2026-07-28 wipe was exactly this.
+    if(dataTabsEmpty(vr) && (baseRows || GS.lastSavedAt || placed.length||nodes.length||cables.length)){
+      throw new Error('Sheet read back empty mid-write (another client saving) — retrying');
+    }
     setSheetAll(vr);
     if(area!==savingArea){ SYNC.inflight=false; return; }       // flipped mid-read: that area's dirty flag persists; saves on return
     const remote={placements:areaRawRows(vr[0]&&vr[0].values,'placements',savingArea),
                   nodes:areaRawRows(vr[1]&&vr[1].values,'nodes',savingArea),
                   cables:areaRawRows(vr[2]&&vr[2].values,'cables',savingArea)};
     const remoteMeta=currentAreaObjs(vr[3]&&vr[3].values,SHEET_HEADERS.meta)[0]||{};
-    // 2. three-way merge, synchronously (no user edit can interleave before the write)
-    const local=localAreaRows(), merged={}, mergeLog=[]; let adoptedAny=false;
+    // 2. three-way merge, synchronously (no user edit can interleave before the write).
+    //    Mass-delete valve first, ACROSS the tabs: refuse to adopt a deletion of more
+    //    than MASS_DEL_MIN entities AND half the plan in one save, in either direction.
+    const local=localAreaRows();
+    let remoteDel=0, localDel=0, baseN=0;
     ['placements','nodes','cables'].forEach(tab=>{
-      const m=mergeRows(tab,local[tab],baseRows?baseRows[tab]:null,remote[tab]);
+      const c=deleteCounts(tab,local[tab],baseRows?baseRows[tab]:null,remote[tab]);
+      remoteDel+=c.remoteDel; localDel+=c.localDel; baseN+=c.base;
+    });
+    const guard={blockRemoteDel:remoteDel>MASS_DEL_MIN&&remoteDel*2>baseN,
+                 blockLocalDel:localDel>MASS_DEL_MIN&&localDel*2>baseN};
+    const merged={}, mergeLog=[]; let adoptedAny=false;
+    ['placements','nodes','cables'].forEach(tab=>{
+      const m=mergeRows(tab,local[tab],baseRows?baseRows[tab]:null,remote[tab],guard);
       merged[tab]=m.rows; if(m.adopted) adoptedAny=true; mergeLog.push.apply(mergeLog,m.log);
     });
     if(adoptedAny && pointerDown){                              // never rebuild layers under a live drag
@@ -1614,10 +1683,14 @@ async function runAutoSave(){
       SYNC.loading=true;
       try{ applySheetState(P,N,C,{ppm:ppm,imageUrl:areaImg()},true); } finally{ SYNC.loading=false; }
     }
-    // 4. write the merged plan; `basedOn` fences this write against a concurrent one
+    // 4. write the merged plan; `basedOn` fences this write against a concurrent one.
+    //    UPDATE FIRST (rows are full-width, overwriting in place), then clear only the
+    //    stale tail below — a concurrent reader sees old data or new data, NEVER a blank
+    //    sheet. The old clear-then-update order left a window where the whole plan read
+    //    back empty, which is what caused the 2026-07-28 wipe.
     const data=sheetData(merged,savedAt,savedBy,savingArea,remoteMeta.savedAt||'');
-    await sheetApi('/values:batchClear',{ranges:SHEET_CLEAR});
     await sheetApi('/values:batchUpdate',{valueInputOption:'RAW',data});
+    await sheetApi('/values:batchClear',{ranges:tailClears(data)});
     sheetAll={placements:data[0].values,nodes:data[1].values,cables:data[2].values,meta:data[3].values};
     try{ localStorage.setItem('mtvi_sheetall_v1',JSON.stringify(sheetAll)); }catch(e){}
     baseSet(savingArea,{base:merged,prev:remote});              // write fence: `prev` = the sheet as the write saw it,
@@ -1646,6 +1719,9 @@ async function autoLoadStartup(){
   setSync('loading');
   try{
     const vr=await sheetBatchGet([SHEET_RANGES.placements,SHEET_RANGES.nodes,SHEET_RANGES.cables,SHEET_RANGES.meta]);
+    if(dataTabsEmpty(vr) && (placed.length||nodes.length||cables.length)){
+      setSync('saved'); return;   // torn read mid-write: keep the local cache; lastSavedAt stays null so the next poll re-pulls
+    }
     setSheetAll(vr);                                            // remember all areas' raw rows
     seedBaseFromRead(vr);                                       // the sheet is now our merge base
     const P=currentAreaObjs(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
@@ -1673,6 +1749,7 @@ async function remoteReload(){
   SYNC.loading=true;
   try{
     const vr=await sheetBatchGet([SHEET_RANGES.placements,SHEET_RANGES.nodes,SHEET_RANGES.cables,SHEET_RANGES.meta]);
+    if(dataTabsEmpty(vr) && (placed.length||nodes.length||cables.length)) return null;  // torn read mid-write: never adopt a blank plan over data
     setSheetAll(vr);
     seedBaseFromRead(vr);                          // adopting remote wholesale: it becomes the merge base
     const P=currentAreaObjs(vr[0]&&vr[0].values,SHEET_HEADERS.placements);
@@ -1711,8 +1788,8 @@ async function pollRemote(){
         return;
       }
       const m=await remoteReload();
-      flashBanner('Plan updated from the Sheet'+(m&&m.savedBy?(' · '+m.savedBy):'')+'.',false);
-      setTimeout(()=>banner.style.display='none',2200);
+      if(m){ flashBanner('Plan updated from the Sheet'+(m.savedBy?(' · '+m.savedBy):'')+'.',false);
+        setTimeout(()=>banner.style.display='none',2200); }   // null = torn read skipped; next poll retries
     } else if(JSON.stringify(metaVals)!==JSON.stringify(sheetAll.meta) && !reloadBlocked()){
       await loadSnapshot();   // a DIFFERENT area changed → refresh the snapshot so our next save won't clobber it
     }
