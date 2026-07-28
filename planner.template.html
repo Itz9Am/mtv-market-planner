@@ -1430,7 +1430,7 @@ function setSync(s,msg){
 /* Called from every mutation (savePlaced / saveNet / calibration). Debounced and
    coalesced so a burst of edits becomes one write. Never pops up auth. */
 function queueSheetSave(){
-  if(SYNC.loading || !sheetCfg().spreadsheetId) return;   // not while loading; not if unconfigured
+  if(!ADMIN || SYNC.loading || !sheetCfg().spreadsheetId) return;   // admin only (a stuck SYNC.pending kills pollRemote); not while loading; not if unconfigured
   lsSet(LS.dirty,1); SYNC.pending=true; SYNC.errs=0; setSync('pending');
   clearTimeout(SYNC.timer); SYNC.timer=setTimeout(runAutoSave,2500);
 }
@@ -1465,7 +1465,11 @@ async function runAutoSave(){
 async function autoLoadStartup(){
   const cfg=sheetCfg();
   if(!cfg.spreadsheetId) return;
-  if(lsGet(LS.dirty,0)){ setSync('pending'); queueSheetSave(); return; }
+  // "Local unsynced edits win" only applies to an admin device — a public viewer cannot
+  // edit, so a set dirty flag there is a leftover (the one-time seeds used to set it) and
+  // honouring it skips the pull and queues a save that can never run without a token,
+  // freezing the device on stale data. Public always pulls.
+  if(ADMIN && lsGet(LS.dirty,0)){ setSync('pending'); queueSheetSave(); return; }
   if(!haveToken() && !cfg.apiKey){ try{ await getToken(false); }catch(e){ setSync('signin'); return; } }
   setSync('loading');
   try{
@@ -2474,7 +2478,7 @@ function seedCampingDefaults(){
     P=P.filter(p=>p&&p.ref&&String(p.ref.id)!=='camp_wc');
     S.forEach((s,i)=>{ if(!P.some(p=>p&&p.ref&&String(p.ref.id)===String(s.id))) P.push({ref:defs[i],lat:s.y,lng:s.x,rot:s.rot||0}); });
     localStorage.setItem(key,JSON.stringify(P));
-    localStorage.setItem(LS.dirty+'::camping',JSON.stringify(true));
+    if(ADMIN) localStorage.setItem(LS.dirty+'::camping',JSON.stringify(true));   // dirty on a public device wedges sync (it can never save)
     localStorage.setItem('mtvi_seed_camping_v2','1');
     customTents=lsGet(LS.custom,[]); library=TENTS.concat(customTents);
   }catch(e){}
@@ -2515,13 +2519,18 @@ function seedArenaBales(){
     const ek=LS.edits+'::arena';                      // drop an old shape:'rect' override
     try{ const E=JSON.parse(localStorage.getItem(ek)||'{}')||{};
          if(E[def.id]){ delete E[def.id]; localStorage.setItem(ek,JSON.stringify(E)); } }catch(e){}
-    localStorage.setItem(LS.dirty+'::arena',JSON.stringify(true));
+    if(ADMIN) localStorage.setItem(LS.dirty+'::arena',JSON.stringify(true));   // dirty on a public device wedges sync (it can never save)
     localStorage.setItem('mtvi_seed_arena_bales_v6','1');
     customTents=lsGet(LS.custom,[]); library=TENTS.concat(customTents);
   }catch(e){}
 }
 
 /* ---------- init ---------- */
+/* A public device cannot edit, so any persisted dirty flag is a leftover (earlier seed
+   versions set them unconditionally). Besides blocking the startup pull, a stale flag
+   makes areaSrcCount() trust that area's stale local node cache, skewing the cabinet
+   designations. Clear them all before anything reads them. */
+if(!ADMIN) AREAS.forEach(a=>localStorage.removeItem(LS.dirty+(a.key==='marknad'?'':'::'+a.key)));
 seedCampingDefaults();
 seedArenaBales();
 loadPlaced();

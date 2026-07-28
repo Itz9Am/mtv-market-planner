@@ -473,6 +473,12 @@ module lives under the `/* automatic sync */` and `/* Google Sheets sync */` ban
 
 `LS.dirty` is a flag set on every queued save and cleared on a successful save/load;
 it is what stops a stale startup load from clobbering edits made while offline.
+**It is admin-only.** A public device cannot edit, so `queueSheetSave` no-ops when
+`!ADMIN`, `autoLoadStartup` only honours dirty-wins in admin, and startup clears every
+area's dirty flag on a public device. (Earlier, the one-time Camping/Arena seeds set
+dirty unconditionally: a logged-out viewer then skipped the Sheet pull and queued a
+save that could never run without a token — which also left `SYNC.pending` stuck,
+killing `pollRemote` for the whole session, so the device froze on cached data.)
 Config (spreadsheet id, OAuth client id, optional API key, base image URL) is
 **hard-coded** in `SHEET_DEFAULTS` — there is no settings UI. The only Sheet control in
 the app is the `#syncStatus` indicator, which doubles as the sign-in button (clicking it
