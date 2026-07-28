@@ -397,9 +397,10 @@ zoom control — the area toggle is deliberately a separate control from the Let
   loads unchanged. `letters`, `admin`, `area`, `custom`, `removed` stay global. All
   `lsGet`/`lsSet` go through `nsKey`; only two direct `localStorage` writes were pointed at
   `nsKey` by hand (`setImage`, and the `LS.area` write which is intentionally un-namespaced).
-- **Scale.** Marknad's `ppm` is now **baked into its `AREAS` entry** (`ppm:5.71`,
-  `ppmFixed:true` — raised 30% from the Sheet-tuned `4.3923` in 2026-07 after the user
-  found the plan showed more room than the market really has). `fixedPpm()` makes a
+- **Scale.** Marknad's `ppm` is now **baked into its `AREAS` entry** (`ppm:5.09`,
+  `ppmFixed:true` — measured 2026-07: at a trial `5.71` a map distance reading 33 m was
+  37 m in reality, so `5.71 × 33/37 = 5.09`; the older Sheet-tuned `4.3923` showed more
+  room than the market really has). `fixedPpm()` makes a
   `ppmFixed` code constant win over BOTH the localStorage cache and the Sheet `meta` row
   at every seed/load site — without the lock a constant change is silently overridden by
   the synced meta on the next load. Re-tune = edit the `AREAS` entry, nothing to clear.
