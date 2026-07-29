@@ -624,7 +624,9 @@ function capHtmlFor(t){
   const letters=sub?`<span class="ltr">${esc(sub)}</span>`:'';
   const size=(showSizes&&hasSize(ref))?`<span class="sz">${esc(fmtSize(ref))}</span>`:'';
   const stnd=(showStands&&ref.stand)?'<span class="stnd"></span>':'';
-  const chk=(currentTab==='el'&&showChecks)?`<span class="elchk${t.chk?' on':''}" data-uid="${t.uid}"></span>`:'';
+  // Only tents that actually need power get a box (tentReq null = none/blank). `ref`
+  // is edit-aware, so changing a tent's electricity adds/removes the box immediately.
+  const chk=(currentTab==='el'&&showChecks&&tentReq(ref.electricity))?`<span class="elchk${t.chk?' on':''}" data-uid="${t.uid}"></span>`:'';
   return `<div class="tent-cap"><span class="ln">${chk}${stnd}${esc(ref.name)}</span>${letters}${size}</div>`;
 }
 function tentClick(t,e){
@@ -1820,7 +1822,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRemo
    of the 2026-07-28 wipe). A HIDDEN tab with nothing in flight reloads itself — the
    dangerous stale tab is precisely the forgotten background one. A tab in active use
    gets a banner with a Reload button instead: never a mid-edit rug-pull. --- */
-const BUILD_ID='1b3cd831ed63';
+const BUILD_ID='a75b1cb392ef';
 let updBanner=null;
 function reloadIsSafe(){ return !lsGet(LS.dirty,0) && !SYNC.pending && !SYNC.inflight && !pointerDown; }
 function showUpdateBanner(){
