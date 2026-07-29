@@ -319,6 +319,15 @@ branches from it); deleting a pipe cascades through its kopplingar and their bra
 - Each tent is placed **once** and leaves the list; deleting returns it.
 - El and Vatten sidebars list **"Without power"** / **"Without water"** — placed items
   still needing a supply. Rows are clickable and pan to the item.
+- **El checkboxes**: in the El tab every tent label and cabinet carries a small tick
+  box (`.elchk`, hidden/shown by the **Check** toggle in the El toolbar — `LS.elchecks`,
+  global like `letters`). The ticked state is plan data, not UI state: `t.chk` /
+  `n.chk`, persisted locally, in undo history, and synced via a trailing `check`
+  column on `placements` and `nodes` (blank = unticked, so legacy rows and sigs are
+  unchanged; ticks merge like any other edit). Ticking is admin-only; public sees the
+  state read-only. The clicks are delegated on `document` in the CAPTURE phase so
+  Leaflet's select/drag/dblclick handlers never fire from a tick (the tent label pane
+  is `pointer-events:none`; the box re-enables itself).
 - **Undo/redo**: Ctrl+Z / Ctrl+Shift+Z (also Ctrl+Y; Cmd on Mac), admin only, all tabs.
   Snapshot-based (`HIST`): `histMark()` fires from `savePlaced`/`saveNet`/`saveRemoved`/
   the list edits, coalesced on a 0 ms timer so one user action (which may save placements
@@ -509,9 +518,10 @@ flat rows):
 ```
 placements  tentId | x | y | rot |
             name | placering | length | width | color | electricity | water | nya | shape
-            (+ trailing area | elskap — see below)
+            (+ trailing area | elskap | stand | check — see below)
 nodes       id | domain | kind | rating | x | y | unl |
             out220 | out16 | out32 | out63 | out125 | color
+            (+ trailing area | check)
 cables      src | dst | dstKind | domain | otype | phase | color
             (+ trailing area | pts)
 meta        ppm | imageUrl | viewX | viewY | viewZoom | savedAt | savedBy

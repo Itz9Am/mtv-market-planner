@@ -85,6 +85,13 @@
   /* marknadsstand badge: fixed pixel size like the name, so it reads at ANY zoom
      (the polygon border scales away when zoomed out) */
   .tent-cap .stnd{display:inline-block;width:11px;height:11px;background:#8B4513;border:1.5px solid #fff;border-radius:3px;margin-right:4px;vertical-align:-1.5px;box-sizing:border-box}
+  /* El-tab checkbox on tents and cabinets; toggled by the Check button. The tent label
+     pane is pointer-events:none, so the box itself re-enables events to be clickable. */
+  .elchk{display:inline-block;width:12px;height:12px;background:#fff;border:1.5px solid #333;border-radius:3px;box-sizing:border-box;pointer-events:auto;cursor:pointer;line-height:9px;font-size:9px;font-weight:900;color:#fff;text-align:center}
+  .elchk.on{background:#2e9e4f;border-color:#1d7a39}
+  .elchk.on::after{content:"\2713"}
+  .tent-cap .elchk{margin-right:4px;vertical-align:-2px}
+  body.public .elchk{cursor:default}
   #tentCtl{position:absolute;z-index:1200;display:none;gap:4px;background:rgba(20,22,30,.95);padding:5px;border-radius:22px;border:1px solid var(--line);transform:translate(-50%,-100%);box-shadow:0 4px 14px rgba(0,0,0,.5)}
   #tentCtl button{width:34px;height:34px;border-radius:50%;padding:0;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;font-variant-emoji:text}
   #tentCtl button.del{border-color:var(--danger);color:var(--danger)}
@@ -116,6 +123,7 @@
   /* cabinet designation (A1, A1N1 …) above the box; toggled by the Names button */
   .node .nname{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;color:#ffd76a;background:rgba(10,12,18,.88);border:1px solid var(--line);border-radius:5px;padding:0 5px;line-height:15px;white-space:nowrap;pointer-events:none}
   .node.source{background:#0e2033;border-radius:50%}
+  .node .elchk{position:absolute;top:-7px;right:-7px;width:14px;height:14px;line-height:11px;font-size:10px;z-index:3}
   .node .er{font-size:12px;font-weight:800;color:#fff;line-height:1}
   .node .eu{font-size:9px;font-weight:600;margin-top:1px}
   /* cable bend/curve dots (wire mode): square = sharp bend, round = curve */
@@ -275,6 +283,7 @@
         <button class="ela" data-r="16">16A</button>
         <button class="ela" data-custom="1">Custom</button>
         <button id="cabNamesBtn" class="wirebtn on" title="Show or hide the cabinet designations (A1, A1N1 &hellip;) on the map">Names</button>
+        <button id="checksBtn" class="wirebtn on" title="Show or hide the checkboxes on cabinets and tents">Check</button>
         <button id="lenBtnEl" class="wirebtn on" title="Show or hide the cable lengths (metres) on the wires">Lengths</button>
         <button id="wireEl" class="wirebtn">Wire</button>
       </div>
@@ -393,7 +402,7 @@
 <script>
 "use strict";
 const TENTS = __TENTS_JSON__;
-const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1',sizes:'mtvi_sizes_v1',stands:'mtvi_stands_v1'};
+const LS={placed:'mtvi_placed_v1',custom:'mtvi_custom_v1',img:'mtvi_img_v1',ppm:'mtvi_ppm_v1',size:'mtvi_size_v1',letters:'mtvi_letters_v1',view:'mtvi_view_v1',edits:'mtvi_edits_v1',removed:'mtvi_removed_v1',nodes:'mtvi_nodes_v2',cables:'mtvi_cables_v2',dirty:'mtvi_dirty_v1',admin:'mtvi_admin_v1',area:'mtvi_area_v1',cabnames:'mtvi_cabnames_v1',lengths:'mtvi_lengths_v1',sizes:'mtvi_sizes_v1',stands:'mtvi_stands_v1',elchecks:'mtvi_elchecks_v1'};
 /* Two independent plans ("areas"), each with its own tents, wiring, scale, view and base
    image. The plan-state keys below are namespaced per area in localStorage; the default
    area (marknad) keeps the ORIGINAL keys, so existing data loads unchanged. `letters`,
@@ -433,6 +442,7 @@ let showLetters=lsGet(LS.letters,true);
 let showSizes=lsGet(LS.sizes,true);   // tent dimensions on the map labels; global like `letters`
 let showStands=lsGet(LS.stands,true); // marknadsstand markings (brown border + badge); global like `letters`
 let showCabNames=lsGet(LS.cabnames,true);   // cabinet designations (A1, A1N1 …) on the map; global like `letters`
+let showChecks=lsGet(LS.elchecks,true);     // El-tab checkboxes on tents and cabinets; global like `letters`
 let showLengths=lsGet(LS.lengths,true);     // metre labels on wires/pipes; global like `letters`
 function saveRemoved(){ lsSet(LS.removed,[...removed]); histMark(); }               // per-id field overrides
 let editingId=null;                         // which tent the modal is editing (null = add new)
@@ -614,7 +624,8 @@ function capHtmlFor(t){
   const letters=sub?`<span class="ltr">${esc(sub)}</span>`:'';
   const size=(showSizes&&hasSize(ref))?`<span class="sz">${esc(fmtSize(ref))}</span>`:'';
   const stnd=(showStands&&ref.stand)?'<span class="stnd"></span>':'';
-  return `<div class="tent-cap"><span class="ln">${stnd}${esc(ref.name)}</span>${letters}${size}</div>`;
+  const chk=(currentTab==='el'&&showChecks)?`<span class="elchk${t.chk?' on':''}" data-uid="${t.uid}"></span>`:'';
+  return `<div class="tent-cap"><span class="ln">${chk}${stnd}${esc(ref.name)}</span>${letters}${size}</div>`;
 }
 function tentClick(t,e){
   L.DomEvent.stopPropagation(e);
@@ -692,8 +703,8 @@ function removeTentMarker(t){
   ['marker','label','poly','nyaPoly'].forEach(k=>{ if(t[k])map.removeLayer(t[k]); t[k]=null; });
 }
 function refreshAll(){ placed.forEach(renderTentMarker); positionCtl(); }
-function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot}))); updateCounts(); queueSheetSave(); histMark(); }
-function loadPlaced(){ placed=[]; (lsGet(LS.placed,[])||[]).forEach(a=>{placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null});}); placedIds=new Set(placed.map(t=>t.ref.id)); refreshOtherPlaced(); }
+function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot,chk:t.chk||undefined}))); updateCounts(); queueSheetSave(); histMark(); }
+function loadPlaced(){ placed=[]; (lsGet(LS.placed,[])||[]).forEach(a=>{placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,chk:!!a.chk,marker:null});}); placedIds=new Set(placed.map(t=>t.ref.id)); refreshOtherPlaced(); }
 /* A tent is placed once across the whole event: `otherPlaced` holds ids placed in the
    OTHER area(s), read straight from their namespaced localStorage, so a vendor dropped on
    Marknad no longer shows as "available" on Arena (and vice-versa). */
@@ -781,7 +792,7 @@ document.getElementById('delBtn').onclick=()=>{
    area switch) — undoing across someone else's save would silently clobber it. */
 const HIST={undo:[],redo:[],cur:null,max:60,timer:null,muted:false};
 function histState(){ return JSON.stringify({
-  placed:placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot||0})),
+  placed:placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot||0,chk:t.chk||undefined})),
   nodes:nodes,cables:cables,custom:customTents,removed:[...removed],edits:edits}); }
 function histInit(){ clearTimeout(HIST.timer); HIST.timer=null; HIST.undo=[]; HIST.redo=[]; HIST.cur=histState(); }
 function histFlush(){
@@ -798,7 +809,7 @@ function histApply(s){
   try{
     deselect(); connectSource=null; armNode=null; armedRef=null; clearHl(); banner.style.display='none';
     placed.forEach(removeTentMarker);
-    placed=st.placed.map(a=>({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,marker:null}));
+    placed=st.placed.map(a=>({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,chk:!!a.chk,marker:null}));
     placedIds=new Set(placed.map(t=>t.ref.id));
     nodes=st.nodes; cables=st.cables;
     customTents=st.custom; removed=new Set(st.removed); edits=st.edits;
@@ -1125,11 +1136,15 @@ function renderLegend(){
    other. `meta` becomes one row PER area. No manual sheet change is needed — the columns
    already exist empty and an UNFORMATTED_VALUE read omits trailing blanks. */
 const SHEET_HEADERS={
-  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape','area','elskap','stand'],
-  nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','color','area'],
+  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape','area','elskap','stand','check'],
+  nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','color','area','check'],
   cables:['src','dst','dstKind','domain','otype','phase','color','area','pts'],
   meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy','area','basedOn']
 };
+/* `check` (placements + nodes, trailing after everything): the El-tab checkbox state
+   (1 = ticked, blank = not). Trailing for the same positional-safety reason as
+   `elskap`/`stand`/`pts` — old clients ignore it; their narrower writes can leave
+   stale check cells behind (cosmetic, re-tick to fix). */
 /* `pts` (cable waypoints) is a trailing column AFTER `area`, same reasoning as `elskap`:
    rows are parsed positionally and other areas' rows re-emit verbatim, so it must never
    shift the earlier columns under an old client. Not JSON — a compact "x y k;x y k" list
@@ -1138,7 +1153,7 @@ const SHEET_HEADERS={
    against — the write fence. A poller that wrote T and later sees savedAt!=T with
    basedOn!=T knows its write was overwritten by a client that never read it (old build,
    or a simultaneous-write race) and re-merges its edits back in (see pollRemote). */
-const SHEET_RANGES={placements:'placements!A1:P',nodes:'nodes!A1:N',cables:'cables!A1:I',meta:'meta!A1:I'};
+const SHEET_RANGES={placements:'placements!A1:Q',nodes:'nodes!A1:O',cables:'cables!A1:I',meta:'meta!A1:I'};
 /* raw values (incl. header) of ALL areas from the last read — lets a write preserve other
    areas' rows. Persisted globally so a save before this session's first read still can't
    clobber the other area. */
@@ -1349,6 +1364,7 @@ function nodeFromRow(o){
   if(o.kind==='source'){ n.unl=gbool(o.unl); n.outs=n.unl?null:outs; }
   else if(outs){ n.outs=outs; }
   if(!isBlank(o.color)) n.color=String(o.color);   // custom middle-fill; blank => CSS default
+  if(gbool(o.check)) n.chk=true;                   // El-tab checkbox; blank/0 => unticked
   return n;
 }
 function nodeToRow(n){
@@ -1526,8 +1542,8 @@ function localAreaRows(){
   const A=area;
   const EN=elNames();   // one designations map for all the placement rows
   return {
-    placements:placed.map(t=>placementRow(t).concat([A,feedCabName(t.ref.id,EN),standCol(t)])),
-    nodes:nodes.map(n=>nodeToRow(n).concat([A])),
+    placements:placed.map(t=>placementRow(t).concat([A,feedCabName(t.ref.id,EN),standCol(t),t.chk?1:''])),
+    nodes:nodes.map(n=>nodeToRow(n).concat([A,n.chk?1:''])),
     cables:cables.map(c=>cableToRow(c).concat([A,ptsToStr(c.pts)]))
   };
 }
@@ -1551,7 +1567,7 @@ function sheetData(rows,savedAt,savedBy,forArea,basedOn){
 /* clear ranges BELOW the data being written: header row 1 + values.length-1 data rows,
    so stale rows start at values.length+1 */
 function tailClears(data){
-  const cols={placements:'P',nodes:'N',cables:'I',meta:'I'};
+  const cols={placements:'Q',nodes:'O',cables:'I',meta:'I'};
   return data.map(d=>{ const tab=d.range.split('!')[0]; return tab+'!A'+(d.values.length+1)+':'+cols[tab]; });
 }
 function applySheetState(P,N,C,M,keepView){
@@ -1574,7 +1590,7 @@ function applySheetState(P,N,C,M,keepView){
       if(!customTents.some(c=>String(c.id)===String(lib.id))){ customTents.push(lib); library.push(lib); customAdded=true; }
     }
     const ref=lib?Object.assign({},lib):{id:o.tentId,name:String(o.tentId),placering:'',length:null,width:null,color:'#C9CDD6',electricity:'',water:false,nya:0};
-    placed.push({uid:uidSeq++,ref:ref,lat:gnum(o.y),lng:gnum(o.x),rot:gnum(o.rot)||0,marker:null});
+    placed.push({uid:uidSeq++,ref:ref,lat:gnum(o.y),lng:gnum(o.x),rot:gnum(o.rot)||0,chk:gbool(o.check),marker:null});
   });
   if(customAdded) lsSet(LS.custom,customTents);
   placedIds=new Set(placed.map(t=>t.ref.id));
@@ -2278,6 +2294,27 @@ function setCabNames(on){ showCabNames=on; lsSet(LS.cabnames,on);
   document.getElementById('cabNamesBtn').classList.toggle('on',on);
   nodes.forEach(renderNode); }
 document.getElementById('cabNamesBtn').onclick=()=>setCabNames(!showCabNames);
+/* El-tab checkboxes on tents and cabinets — same pattern as the Letters toggle. The
+   checked state itself is plan data (t.chk / n.chk), saved and synced like everything
+   else; this button only shows/hides the boxes. */
+function setChecks(on){ showChecks=on; lsSet(LS.elchecks,on);
+  document.getElementById('checksBtn').classList.toggle('on',on);
+  refreshAll(); nodes.forEach(renderNode); }
+document.getElementById('checksBtn').onclick=()=>setChecks(!showChecks);
+/* Checkbox clicks are delegated in the CAPTURE phase so Leaflet's marker/map handlers
+   (select, highlight, drag, dblclick-edit) never fire from a tick. Toggling is
+   admin-only; public sees the state read-only. */
+document.addEventListener('click',e=>{
+  const el=e.target&&e.target.closest?e.target.closest('.elchk'):null; if(!el) return;
+  e.stopPropagation(); e.preventDefault();
+  if(!ADMIN||currentTab!=='el') return;
+  if(el.dataset.uid){ const t=placed.find(x=>String(x.uid)===el.dataset.uid);
+    if(t){ t.chk=!t.chk; savePlaced(); renderTentMarker(t); } }
+  else if(el.dataset.nid){ const n=nodes.find(x=>x.id===el.dataset.nid);
+    if(n){ n.chk=!n.chk; saveNet(); renderNode(n); } }
+},true);
+document.addEventListener('dblclick',e=>{ if(e.target&&e.target.closest&&e.target.closest('.elchk')){ e.stopPropagation(); e.preventDefault(); } },true);
+document.addEventListener('mousedown',e=>{ if(e.target&&e.target.closest&&e.target.closest('.elchk')) e.stopPropagation(); },true);
 /* metre labels on wires/pipes — one shared state, a button in each of the El and Vatten groups */
 function setLengths(on){ showLengths=on; lsSet(LS.lengths,on);
   document.getElementById('lenBtnEl').classList.toggle('on',on);
@@ -2470,8 +2507,9 @@ function renderNode(n){
   // rebuilds the DOM — rebuilding it mid double-click was eating the dblclick that edits the node.
   const fill=n.color?(';background:'+n.color):'';
   const nm=(n.domain==='el'&&showCabNames)?(elNames()[n.id]||'?'):null;
+  const chk=(n.domain==='el'&&n.kind==='elskap'&&showChecks)?('<span class="elchk'+(n.chk?' on':'')+'" data-nid="'+esc(n.id)+'"></span>'):'';
   const html='<div class="'+cls+'" style="border-color:'+brdr+fill+'">'
-    +(nm?'<div class="nname">'+esc(nm)+'</div>':'')
+    +(nm?'<div class="nname">'+esc(nm)+'</div>':'')+chk
     +'<div class="er">'+title+'</div>'+(sub?'<div class="eu" style="color:'+loadColor(lv,'#cfd3dc')+'">'+sub+'</div>':'')+'</div>';
   let m=nodeMarkers[n.id];
   if(!m){
@@ -2847,6 +2885,7 @@ setLetters(showLetters);
 setSizes(showSizes);
 setStands(showStands);
 setCabNames(showCabNames);
+setChecks(showChecks);
 setLengths(showLengths);
 renderList();
 histInit();          // baseline for Ctrl+Z (the pre-startup local state)
