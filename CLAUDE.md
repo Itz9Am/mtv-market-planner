@@ -319,7 +319,9 @@ branches from it); deleting a pipe cascades through its kopplingar and their bra
 - Each tent is placed **once** and leaves the list; deleting returns it.
 - El and Vatten sidebars list **"Without power"** / **"Without water"** — placed items
   still needing a supply. Rows are clickable and pan to the item.
-- **El checkboxes**: in the El tab every tent label and cabinet carries a small tick
+- **El checkboxes**: in the El tab every cabinet and every tent that needs power
+  (`tentReq` non-null; edit-aware via `refOf`, so editing a tent's electricity
+  adds/removes the box live) carries a small tick
   box (`.elchk`, hidden/shown by the **Check** toggle in the El toolbar — `LS.elchecks`,
   global like `letters`). The ticked state is plan data, not UI state: `t.chk` /
   `n.chk`, persisted locally, in undo history, and synced via a trailing `check`

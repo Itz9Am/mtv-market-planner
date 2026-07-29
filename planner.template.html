@@ -624,7 +624,9 @@ function capHtmlFor(t){
   const letters=sub?`<span class="ltr">${esc(sub)}</span>`:'';
   const size=(showSizes&&hasSize(ref))?`<span class="sz">${esc(fmtSize(ref))}</span>`:'';
   const stnd=(showStands&&ref.stand)?'<span class="stnd"></span>':'';
-  const chk=(currentTab==='el'&&showChecks)?`<span class="elchk${t.chk?' on':''}" data-uid="${t.uid}"></span>`:'';
+  // Only tents that actually need power get a box (tentReq null = none/blank). `ref`
+  // is edit-aware, so changing a tent's electricity adds/removes the box immediately.
+  const chk=(currentTab==='el'&&showChecks&&tentReq(ref.electricity))?`<span class="elchk${t.chk?' on':''}" data-uid="${t.uid}"></span>`:'';
   return `<div class="tent-cap"><span class="ln">${chk}${stnd}${esc(ref.name)}</span>${letters}${size}</div>`;
 }
 function tentClick(t,e){
