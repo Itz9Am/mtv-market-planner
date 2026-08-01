@@ -179,17 +179,23 @@
   /* Avfall tab: sopstations coloured + numbered, everything else greyed */
   #avfallUI{flex:1;min-height:0;overflow-y:auto;padding-bottom:40px}
   .tent-cap .avfnum{display:inline-block;min-width:17px;height:17px;line-height:14px;background:#2e9e4f;color:#fff;border:1.5px solid #fff;border-radius:50%;font-size:10px;font-weight:800;text-align:center;margin-right:4px;vertical-align:-3px;box-sizing:border-box;padding:0 2px}
-  .tent-cap .avfr{display:block;font-size:10px;font-weight:700;color:#bfe8cc;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000;margin-top:1px;white-space:normal;max-width:160px;line-height:1.25}
   .tent-cap.avfdim{opacity:.3}
   .avfrow{flex-wrap:wrap;cursor:pointer}
+  .avfrow.flash{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
   .avfrow .avfnumb{width:22px;height:22px;line-height:19px;background:#2e9e4f;color:#fff;border:1.5px solid #fff;border-radius:50%;font-size:12px;font-weight:800;text-align:center;flex:none;box-sizing:border-box}
   .avfchips{display:flex;flex-wrap:wrap;gap:5px;width:100%;margin-top:7px}
   .avfchip{display:flex;align-items:center;gap:4px;font-size:11px;color:#cfe9d6;background:rgba(46,158,79,.16);border:1px solid #2e9e4f;border-radius:12px;padding:2px 4px 2px 9px}
   .avfchip.ro{padding:2px 9px}
   .avfchip button{border:none;background:transparent;color:#9fcfae;padding:0 4px;font-size:11px;line-height:1}
   .avfchip button:hover{color:#fff;border:none}
-  #avfallList select{background-color:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:3px 8px;border-radius:12px;font-size:11px;font-family:inherit;cursor:pointer;max-width:100%}
+  /* same de-glossed look as the modal selects: no native chrome, subtle chevron */
+  #avfallList select{background-color:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    padding:3px 24px 3px 10px;border-radius:12px;font-size:11px;font-family:inherit;line-height:1.3;
+    -webkit-appearance:none;appearance:none;cursor:pointer;max-width:100%;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a90a0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 8px center}
   #avfallList select:hover{border-color:var(--accent)}
+  #avfallList select:focus{outline:none;border-color:var(--accent)}
 </style>
 </head>
 <body class="public">
@@ -234,7 +240,7 @@
       <div id="vattenLegend"></div>
     </div>
     <div id="avfallUI" style="display:none">
-      <div class="hint">Waste view. Every placed <b>Sopstation</b> is coloured green and numbered 1, 2, 3&hellip; starting from the <b>bottom-left</b> of the plan; everything else is greyed out. Each station lists the fractions it sorts (Papper, Plast, Metall &hellip;): pick one from the dropdown to add it, click a chip's &#10005; to remove it. Click a row to find the station on the plan.</div>
+      <div class="hint">Waste view. Every placed <b>Sopstation</b> is coloured green and numbered 1, 2, 3&hellip; starting from the <b>bottom-left</b> of the plan; everything else is greyed out. Each station lists the fractions it sorts (Papper, Plast, Metall &hellip;): pick one from the dropdown to add it, click a chip's &#10005; to remove it. Click a row to find the station on the plan; click a station on the map to highlight it and see its fractions.</div>
       <div id="avfallList"></div>
     </div>
   </div>
@@ -520,6 +526,7 @@ map.on('click',e=>{
     return;
   }
   if(armedRef){ doPlace(armedRef,e.latlng.lat,e.latlng.lng); return; }
+  if(currentTab==='avfall'&&hl.tents.size){ clearHl(); refreshHl(); banner.style.display='none'; }
   deselect();
 });
 
@@ -641,11 +648,9 @@ function tentStyle(t){
 function capHtmlFor(t){
   const ref=refOf(t);
   if(currentTab==='avfall'){
-    // Sopstations: number badge (bottom-left = 1) + fraction list; everything else dimmed.
-    if(isSopstation(ref)){
-      const fr=(t.avf&&t.avf.length)?`<span class="avfr">${esc(t.avf.join(' / '))}</span>`:'';
-      return `<div class="tent-cap"><span class="ln"><span class="avfnum">${avfNumOf(t)}</span>${esc(ref.name)}</span>${fr}</div>`;
-    }
+    // Sopstations: number badge only (bottom-left = 1); everything else dimmed.
+    // Fractions live in the sidebar list and in the click banner, not on the map.
+    if(isSopstation(ref)) return `<div class="tent-cap"><span class="ln"><span class="avfnum">${avfNumOf(t)}</span>${esc(ref.name)}</span></div>`;
     return `<div class="tent-cap avfdim"><span class="ln">${esc(ref.name)}</span></div>`;
   }
   const sub=currentTab==='el'?elLabel(ref.electricity):(showLetters?ref.placering:'');
@@ -662,7 +667,7 @@ function tentClick(t,e){
   // El/Vatten clicks may highlight in public too (wireMode is admin-only, so no writes)
   if(currentTab==='el'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); else highlightFromTent(t.ref.id); return; }
   if(currentTab==='vatten'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); return; }
-  if(currentTab==='avfall') return;   // Avfall is look-only; stations are edited from the sidebar list
+  if(currentTab==='avfall'){ if(isSopstation(refOf(t))) avfClickStation(t); return; }   // stations highlight + show their fractions; everything else is inert
   if(!ADMIN) return;   // public view: Placering tents are look-only
   if(e.originalEvent&&e.originalEvent.shiftKey) toggleSel(t.uid);   // shift-click: add/remove from the multi-selection
   else selectTent(t.uid);
@@ -1859,7 +1864,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRemo
    of the 2026-07-28 wipe). A HIDDEN tab with nothing in flight reloads itself — the
    dangerous stale tab is precisely the forgotten background one. A tab in active use
    gets a banner with a Reload button instead: never a mid-edit rug-pull. --- */
-const BUILD_ID='122f6a3f8784';
+const BUILD_ID='0c5e6607296c';
 let updBanner=null;
 function reloadIsSafe(){ return !lsGet(LS.dirty,0) && !SYNC.pending && !SYNC.inflight && !pointerDown; }
 function showUpdateBanner(){
@@ -2842,6 +2847,17 @@ function avfStations(){
 function avfNumOf(t){ const s=avfStations(); for(let i=0;i<s.length;i++){ if(s[i].uid===t.uid) return i+1; } return '?'; }
 function avfFromCell(v){ if(isBlank(v)) return []; return String(v).split(',').map(s=>s.trim()).filter(Boolean); }
 function setAvf(t,list){ t.avf=list; savePlaced(); renderTentMarker(t); renderAvfallList(); }
+/* Map click on a station: highlight it, show its fractions in the banner (the map
+   label carries only the number), and jump to its sidebar row (admin). */
+function avfClickStation(t){
+  clearHl(); hl.tents.add(t.ref.id); refreshHl();
+  const avf=t.avf||[];
+  flashBanner('Sopstation '+avfNumOf(t)+' — '+(avf.length?avf.join(', '):'no fractions yet'),false);
+  setTimeout(()=>banner.style.display='none',3000);
+  const row=document.querySelector('#avfallList .avfrow[data-uid="'+t.uid+'"]');
+  if(row){ row.scrollIntoView({block:'nearest',behavior:'smooth'});
+    row.classList.add('flash'); setTimeout(()=>row.classList.remove('flash'),1400); }
+}
 function renderAvfallList(){
   const el=document.getElementById('avfallList'); if(!el) return; el.innerHTML='';
   const st=avfStations();
@@ -2852,6 +2868,7 @@ function renderAvfallList(){
   st.forEach((t,i)=>{
     const ref=refOf(t), avf=t.avf||[];
     const row=document.createElement('div'); row.className='legrow avfrow'; row.title='Click to find it on the plan';
+    row.dataset.uid=t.uid;
     row.onclick=()=>gotoTent(t);
     const num=document.createElement('div'); num.className='avfnumb'; num.textContent=i+1; row.appendChild(num);
     const nm=document.createElement('div'); nm.className='lname'; nm.textContent=ref.name;
