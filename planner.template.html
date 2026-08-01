@@ -176,6 +176,20 @@
   #campLegend .lg-safe .lg-cap2{font-size:10px;letter-spacing:.8px;font-weight:700;margin:0 0 7px;display:flex;align-items:center;gap:7px}
   #campLegend .lg-safe .lg-val{color:#f2c012;font-weight:700}
   #campLegend.collapsed .lg-body{display:none}
+  /* Avfall tab: sopstations coloured + numbered, everything else greyed */
+  #avfallUI{flex:1;min-height:0;overflow-y:auto;padding-bottom:40px}
+  .tent-cap .avfnum{display:inline-block;min-width:17px;height:17px;line-height:14px;background:#2e9e4f;color:#fff;border:1.5px solid #fff;border-radius:50%;font-size:10px;font-weight:800;text-align:center;margin-right:4px;vertical-align:-3px;box-sizing:border-box;padding:0 2px}
+  .tent-cap .avfr{display:block;font-size:10px;font-weight:700;color:#bfe8cc;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000;margin-top:1px;white-space:normal;max-width:160px;line-height:1.25}
+  .tent-cap.avfdim{opacity:.3}
+  .avfrow{flex-wrap:wrap;cursor:pointer}
+  .avfrow .avfnumb{width:22px;height:22px;line-height:19px;background:#2e9e4f;color:#fff;border:1.5px solid #fff;border-radius:50%;font-size:12px;font-weight:800;text-align:center;flex:none;box-sizing:border-box}
+  .avfchips{display:flex;flex-wrap:wrap;gap:5px;width:100%;margin-top:7px}
+  .avfchip{display:flex;align-items:center;gap:4px;font-size:11px;color:#cfe9d6;background:rgba(46,158,79,.16);border:1px solid #2e9e4f;border-radius:12px;padding:2px 4px 2px 9px}
+  .avfchip.ro{padding:2px 9px}
+  .avfchip button{border:none;background:transparent;color:#9fcfae;padding:0 4px;font-size:11px;line-height:1}
+  .avfchip button:hover{color:#fff;border:none}
+  #avfallList select{background-color:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:3px 8px;border-radius:12px;font-size:11px;font-family:inherit;cursor:pointer;max-width:100%}
+  #avfallList select:hover{border-color:var(--accent)}
 </style>
 </head>
 <body class="public">
@@ -186,6 +200,7 @@
       <button id="tabPlacering" class="tab on">Placering</button>
       <button id="tabEl" class="tab">El</button>
       <button id="tabVatten" class="tab">Vatten</button>
+      <button id="tabAvfall" class="tab">Avfall</button>
     </div>
     <div class="bar" id="projectBar">
       <span id="syncStatus" title="Google Sheet sync" style="font-size:12px;font-weight:600;color:var(--muted);cursor:pointer"></span>
@@ -217,6 +232,10 @@
     <div id="vattenUI" style="display:none">
       <div class="hint">Water view. Add a <b>Brunn</b> (water source) and <b>Handfat</b> (sink) from the toolbar, then turn on the <b>Wire</b> tool and click a brunn followed by a handfat or water object to run a blue pipe. With Wire on: click a pipe to add a blue dot you can drag to bend it; <b>double-click the dot</b> to switch sharp/curve, right-click it to make it a gray <b>koppling</b> or remove it. A koppling is a junction: click it and then a tent/handfat to branch a new pipe from that point (right-click removes it with its branches). <b>Double-click the pipe</b> (or right-click) to recolour or remove it. Ctrl+Z undoes, Ctrl+Shift+Z redoes. Select a fixture and press Delete.</div>
       <div id="vattenLegend"></div>
+    </div>
+    <div id="avfallUI" style="display:none">
+      <div class="hint">Waste view. Every placed <b>Sopstation</b> is coloured green and numbered 1, 2, 3&hellip; starting from the <b>bottom-left</b> of the plan; everything else is greyed out. Each station lists the fractions it sorts (Papper, Plast, Metall &hellip;): pick one from the dropdown to add it, click a chip's &#10005; to remove it. Click a row to find the station on the plan.</div>
+      <div id="avfallList"></div>
     </div>
   </div>
 
@@ -267,6 +286,7 @@
         <button data-tab="placering" class="on">Placering</button>
         <button data-tab="el">El</button>
         <button data-tab="vatten">Vatten</button>
+        <button data-tab="avfall">Avfall</button>
       </div>
       <div class="grp" id="placeringControls">
         <button id="lettersBtn" class="wirebtn on" title="Show or hide the Placering letters on tents">Letters</button>
@@ -609,7 +629,7 @@ function tentStyle(t){
             weight: show?1.5:0, opacity:show?1:0, fillColor:'#000', fillOpacity:0};
   }
   const isEl=currentTab==='el';
-  const fill=isEl?elColor(ref.electricity):ref.color;
+  const fill=isEl?elColor(ref.electricity):(currentTab==='avfall'?(isSopstation(ref)?AVF_COLOR:AVF_GRAY):ref.color);
   // marknadsstand (organiser-rented market stall): darker brown border, a bit heavier
   const stand=showStands&&ref.stand;
   const base=stand?'#8B4513':'rgba(0,0,0,.65)';
@@ -620,6 +640,14 @@ function tentStyle(t){
 }
 function capHtmlFor(t){
   const ref=refOf(t);
+  if(currentTab==='avfall'){
+    // Sopstations: number badge (bottom-left = 1) + fraction list; everything else dimmed.
+    if(isSopstation(ref)){
+      const fr=(t.avf&&t.avf.length)?`<span class="avfr">${esc(t.avf.join(' / '))}</span>`:'';
+      return `<div class="tent-cap"><span class="ln"><span class="avfnum">${avfNumOf(t)}</span>${esc(ref.name)}</span>${fr}</div>`;
+    }
+    return `<div class="tent-cap avfdim"><span class="ln">${esc(ref.name)}</span></div>`;
+  }
   const sub=currentTab==='el'?elLabel(ref.electricity):(showLetters?ref.placering:'');
   const letters=sub?`<span class="ltr">${esc(sub)}</span>`:'';
   const size=(showSizes&&hasSize(ref))?`<span class="sz">${esc(fmtSize(ref))}</span>`:'';
@@ -634,6 +662,7 @@ function tentClick(t,e){
   // El/Vatten clicks may highlight in public too (wireMode is admin-only, so no writes)
   if(currentTab==='el'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); else highlightFromTent(t.ref.id); return; }
   if(currentTab==='vatten'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); return; }
+  if(currentTab==='avfall') return;   // Avfall is look-only; stations are edited from the sidebar list
   if(!ADMIN) return;   // public view: Placering tents are look-only
   if(e.originalEvent&&e.originalEvent.shiftKey) toggleSel(t.uid);   // shift-click: add/remove from the multi-selection
   else selectTent(t.uid);
@@ -671,7 +700,7 @@ function renderTentMarker(t){
     const corners=tentCorners(t);
     if(!t.poly){ ensureDefs(); t.poly=L.polygon(corners,tentStyle(t)).addTo(map); attachPolyHandlers(t); }
     else { t.poly.setLatLngs(corners); t.poly.setStyle(tentStyle(t)); }
-    if(ref.nya && currentTab!=='el' && hasSize(ref)){
+    if(ref.nya && currentTab!=='el' && currentTab!=='avfall' && hasSize(ref)){
       if(!t.nyaPoly){ ensureDefs(); t.nyaPoly=L.polygon(corners,{className:'nya-fill',stroke:false,fillOpacity:1,interactive:false}).addTo(map); }
       else t.nyaPoly.setLatLngs(corners);
     }else if(t.nyaPoly){ map.removeLayer(t.nyaPoly); t.nyaPoly=null; }
@@ -684,8 +713,8 @@ function renderTentMarker(t){
   const W=ref.width||3, L2=ref.length||3, base=46, m=Math.max(W,L2)||1;
   const w=Math.max(9,(W/m)*base), h=Math.max(9,(L2/m)*base);
   const isEl=currentTab==='el';
-  const color=isEl?elColor(ref.electricity):ref.color;
-  const stripes=(!isEl && ref.nya)?'<div class="stripes"></div>':'';
+  const color=isEl?elColor(ref.electricity):(currentTab==='avfall'?(isSopstation(ref)?AVF_COLOR:AVF_GRAY):ref.color);
+  const stripes=(!isEl && currentTab!=='avfall' && ref.nya)?'<div class="stripes"></div>':'';
   const wring=(currentTab==='vatten'&&ref.water)?';box-shadow:0 0 0 2px #2b8cff':(hl.tents.has(t.ref.id)?';box-shadow:0 0 0 3px #ffd400':'');
   const standB=(showStands&&ref.stand)?';border:3px solid #8B4513':'';
   const boxHtml=`<div class="tent-box ${t.uid===selectedUid?'sel':''}" style="width:${w}px;height:${h}px;background:${color};transform:rotate(${t.rot}deg)${wring}${standB}">${stripes}</div>`;
@@ -705,8 +734,8 @@ function removeTentMarker(t){
   ['marker','label','poly','nyaPoly'].forEach(k=>{ if(t[k])map.removeLayer(t[k]); t[k]=null; });
 }
 function refreshAll(){ placed.forEach(renderTentMarker); positionCtl(); }
-function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot,chk:t.chk||undefined}))); updateCounts(); queueSheetSave(); histMark(); }
-function loadPlaced(){ placed=[]; (lsGet(LS.placed,[])||[]).forEach(a=>{placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,chk:!!a.chk,marker:null});}); placedIds=new Set(placed.map(t=>t.ref.id)); refreshOtherPlaced(); }
+function savePlaced(){ lsSet(LS.placed, placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot,chk:t.chk||undefined,avf:(t.avf&&t.avf.length)?t.avf:undefined}))); updateCounts(); queueSheetSave(); histMark(); }
+function loadPlaced(){ placed=[]; (lsGet(LS.placed,[])||[]).forEach(a=>{placed.push({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,chk:!!a.chk,avf:Array.isArray(a.avf)?a.avf:[],marker:null});}); placedIds=new Set(placed.map(t=>t.ref.id)); refreshOtherPlaced(); }
 /* A tent is placed once across the whole event: `otherPlaced` holds ids placed in the
    OTHER area(s), read straight from their namespaced localStorage, so a vendor dropped on
    Marknad no longer shows as "available" on Arena (and vice-versa). */
@@ -794,7 +823,7 @@ document.getElementById('delBtn').onclick=()=>{
    area switch) — undoing across someone else's save would silently clobber it. */
 const HIST={undo:[],redo:[],cur:null,max:60,timer:null,muted:false};
 function histState(){ return JSON.stringify({
-  placed:placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot||0,chk:t.chk||undefined})),
+  placed:placed.map(t=>({ref:t.ref,lat:t.lat,lng:t.lng,rot:t.rot||0,chk:t.chk||undefined,avf:(t.avf&&t.avf.length)?t.avf:undefined})),
   nodes:nodes,cables:cables,custom:customTents,removed:[...removed],edits:edits}); }
 function histInit(){ clearTimeout(HIST.timer); HIST.timer=null; HIST.undo=[]; HIST.redo=[]; HIST.cur=histState(); }
 function histFlush(){
@@ -811,7 +840,7 @@ function histApply(s){
   try{
     deselect(); connectSource=null; armNode=null; armedRef=null; clearHl(); banner.style.display='none';
     placed.forEach(removeTentMarker);
-    placed=st.placed.map(a=>({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,chk:!!a.chk,marker:null}));
+    placed=st.placed.map(a=>({uid:uidSeq++,ref:a.ref,lat:a.lat,lng:a.lng,rot:a.rot||0,chk:!!a.chk,avf:Array.isArray(a.avf)?a.avf:[],marker:null}));
     placedIds=new Set(placed.map(t=>t.ref.id));
     nodes=st.nodes; cables=st.cables;
     customTents=st.custom; removed=new Set(st.removed); edits=st.edits;
@@ -822,6 +851,7 @@ function histApply(s){
     showDomainLayers();                            // rebuilds node markers + cables for the current tab
     if(currentTab==='el') renderLegend();
     if(currentTab==='vatten') renderVattenLegend();
+    if(currentTab==='avfall') renderAvfallList();
   } finally { HIST.muted=false; }
 }
 function histStep(from,to,label){
@@ -1060,12 +1090,14 @@ function setTab(tab){
   document.getElementById('tabPlacering').classList.toggle('on',tab==='placering');
   document.getElementById('tabEl').classList.toggle('on',tab==='el');
   document.getElementById('tabVatten').classList.toggle('on',tab==='vatten');
+  document.getElementById('tabAvfall').classList.toggle('on',tab==='avfall');
   document.querySelectorAll('#pubTabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   const pl=tab==='placering';
   document.getElementById('placementUI').style.display=pl?'':'none';
   document.getElementById('tentList').style.display=pl?'':'none';
   document.getElementById('elUI').style.display=tab==='el'?'':'none';
   document.getElementById('vattenUI').style.display=tab==='vatten'?'':'none';
+  document.getElementById('avfallUI').style.display=tab==='avfall'?'':'none';
   document.getElementById('placeringControls').style.display=pl?'flex':'none';
   document.getElementById('elControls').style.display=tab==='el'?'flex':'none';
   document.getElementById('vattenControls').style.display=tab==='vatten'?'flex':'none';
@@ -1077,10 +1109,12 @@ function setTab(tab){
   showDomainLayers();
   if(tab==='el') renderLegend();
   if(tab==='vatten') renderVattenLegend();
+  if(tab==='avfall') renderAvfallList();
 }
 document.getElementById('tabPlacering').onclick=()=>setTab('placering');
 document.getElementById('tabEl').onclick=()=>setTab('el');
 document.getElementById('tabVatten').onclick=()=>setTab('vatten');
+document.getElementById('tabAvfall').onclick=()=>setTab('avfall');
 document.querySelectorAll('#pubTabs button').forEach(b=>{ b.onclick=()=>setTab(b.dataset.tab); });
 function renderLegend(){
   const el=document.getElementById('elLegend'); if(!el)return; el.innerHTML='';
@@ -1138,7 +1172,7 @@ function renderLegend(){
    other. `meta` becomes one row PER area. No manual sheet change is needed — the columns
    already exist empty and an UNFORMATTED_VALUE read omits trailing blanks. */
 const SHEET_HEADERS={
-  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape','area','elskap','stand','check'],
+  placements:['tentId','x','y','rot','name','placering','length','width','color','electricity','water','nya','shape','area','elskap','stand','check','avfall'],
   nodes:['id','domain','kind','rating','x','y','unl','out220','out16','out32','out63','out125','color','area','check'],
   cables:['src','dst','dstKind','domain','otype','phase','color','area','pts'],
   meta:['ppm','imageUrl','viewX','viewY','viewZoom','savedAt','savedBy','area','basedOn']
@@ -1147,6 +1181,9 @@ const SHEET_HEADERS={
    (1 = ticked, blank = not). Trailing for the same positional-safety reason as
    `elskap`/`stand`/`pts` — old clients ignore it; their narrower writes can leave
    stale check cells behind (cosmetic, re-tick to fix). */
+/* `avfall` (placements, trailing after `check`): the Avfall-tab fraction list of a
+   sopstation, comma-joined ("Papper, Plast, Metall"; blank = none, so legacy rows and
+   sigs are unchanged). Same trailing-column rules as `check`. */
 /* `pts` (cable waypoints) is a trailing column AFTER `area`, same reasoning as `elskap`:
    rows are parsed positionally and other areas' rows re-emit verbatim, so it must never
    shift the earlier columns under an old client. Not JSON — a compact "x y k;x y k" list
@@ -1155,7 +1192,7 @@ const SHEET_HEADERS={
    against — the write fence. A poller that wrote T and later sees savedAt!=T with
    basedOn!=T knows its write was overwritten by a client that never read it (old build,
    or a simultaneous-write race) and re-merges its edits back in (see pollRemote). */
-const SHEET_RANGES={placements:'placements!A1:Q',nodes:'nodes!A1:O',cables:'cables!A1:I',meta:'meta!A1:I'};
+const SHEET_RANGES={placements:'placements!A1:R',nodes:'nodes!A1:O',cables:'cables!A1:I',meta:'meta!A1:I'};
 /* raw values (incl. header) of ALL areas from the last read — lets a write preserve other
    areas' rows. Persisted globally so a save before this session's first read still can't
    clobber the other area. */
@@ -1544,7 +1581,7 @@ function localAreaRows(){
   const A=area;
   const EN=elNames();   // one designations map for all the placement rows
   return {
-    placements:placed.map(t=>placementRow(t).concat([A,feedCabName(t.ref.id,EN),standCol(t),t.chk?1:''])),
+    placements:placed.map(t=>placementRow(t).concat([A,feedCabName(t.ref.id,EN),standCol(t),t.chk?1:'',(t.avf&&t.avf.length)?t.avf.join(', '):''])),
     nodes:nodes.map(n=>nodeToRow(n).concat([A,n.chk?1:''])),
     cables:cables.map(c=>cableToRow(c).concat([A,ptsToStr(c.pts)]))
   };
@@ -1569,7 +1606,7 @@ function sheetData(rows,savedAt,savedBy,forArea,basedOn){
 /* clear ranges BELOW the data being written: header row 1 + values.length-1 data rows,
    so stale rows start at values.length+1 */
 function tailClears(data){
-  const cols={placements:'Q',nodes:'O',cables:'I',meta:'I'};
+  const cols={placements:'R',nodes:'O',cables:'I',meta:'I'};
   return data.map(d=>{ const tab=d.range.split('!')[0]; return tab+'!A'+(d.values.length+1)+':'+cols[tab]; });
 }
 function applySheetState(P,N,C,M,keepView){
@@ -1592,7 +1629,7 @@ function applySheetState(P,N,C,M,keepView){
       if(!customTents.some(c=>String(c.id)===String(lib.id))){ customTents.push(lib); library.push(lib); customAdded=true; }
     }
     const ref=lib?Object.assign({},lib):{id:o.tentId,name:String(o.tentId),placering:'',length:null,width:null,color:'#C9CDD6',electricity:'',water:false,nya:0};
-    placed.push({uid:uidSeq++,ref:ref,lat:gnum(o.y),lng:gnum(o.x),rot:gnum(o.rot)||0,chk:gbool(o.check),marker:null});
+    placed.push({uid:uidSeq++,ref:ref,lat:gnum(o.y),lng:gnum(o.x),rot:gnum(o.rot)||0,chk:gbool(o.check),avf:avfFromCell(o.avfall),marker:null});
   });
   if(customAdded) lsSet(LS.custom,customTents);
   placedIds=new Set(placed.map(t=>t.ref.id));
@@ -1610,7 +1647,7 @@ function applySheetState(P,N,C,M,keepView){
   if(keepView && imgUrl===imgData){ if(useView) map.setView(useView.c,useView.z); refreshAll(); }  // same image: no reflash
   else if(imgUrl){ setImage(imgUrl, !!useView); }
   else { refreshAll(); flashBanner('Loaded — set a base image URL in Sheet settings to draw to scale.',true); }
-  renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend();
+  renderList(''); showDomainLayers(); if(currentTab==='el')renderLegend(); if(currentTab==='vatten')renderVattenLegend(); if(currentTab==='avfall')renderAvfallList();
   histInit();   // remote state applied — undoing past this point would clobber someone else's save
   return didRebalance;
 }
@@ -2449,6 +2486,7 @@ function switchArea(a){
   setImage(baseImg(),true);   // swaps to this area's committed base image, restores its saved view, re-renders
   showDomainLayers();
   if(currentTab==='el') renderLegend(); if(currentTab==='vatten') renderVattenLegend();
+  if(currentTab==='avfall') renderAvfallList();
   GS.lastSavedAt=null; autoLoadStartup();   // pull this area's rows from the Sheet (local unsynced edits win)
   updateLegend();
   flashBanner('Switched to '+areaDef().label,false);
@@ -2781,6 +2819,67 @@ function renderVattenLegend(){
   }
   const waitingW=library.filter(x=>!placedAnywhere(x.id)&&!removed.has(String(x.id))&&applyEdits(x).water).length;
   if(waitingW){ const d=document.createElement('div'); d.className='hint'; d.textContent=waitingW+' more tent(s) needing water are not placed yet.'; el.appendChild(d); }
+}
+
+/* ---------- Avfall tab (sopstationer) ----------
+   A read-mostly overlay view: every placed item whose NAME contains "sopstation" is
+   coloured green and numbered 1, 2, 3… from the BOTTOM-LEFT of the plan upwards
+   (lat asc, then lng asc — lat 0 is the image bottom). Numbers are DERIVED from
+   position, never stored, so moving a station renumbers (same principle as the
+   cabinet designations). Everything else is drawn grey so the stations stand out.
+   Each station carries an editable list of waste fractions (t.avf, picked from the
+   fixed AVF_FRACTIONS dropdown in the sidebar). The list is plan data like the El
+   checkboxes: persisted locally, in undo history, and synced via the trailing
+   `avfall` column on `placements` (comma-joined; blank = none). Editing is
+   admin-only; public sees the numbers, colours and fraction labels on the map. */
+const AVF_COLOR='#2e9e4f', AVF_GRAY='#878c96';
+const AVF_FRACTIONS=['Papper','Kartong','Plast','Metall','Glas','Matavfall','Pant','Brännbart','Restavfall'];
+function isSopstation(ref){ return /sopstation/i.test((ref&&ref.name)||''); }
+function avfStations(){
+  return placed.filter(t=>isSopstation(refOf(t)))
+    .slice().sort((a,b)=>(a.lat-b.lat)||(a.lng-b.lng));
+}
+function avfNumOf(t){ const s=avfStations(); for(let i=0;i<s.length;i++){ if(s[i].uid===t.uid) return i+1; } return '?'; }
+function avfFromCell(v){ if(isBlank(v)) return []; return String(v).split(',').map(s=>s.trim()).filter(Boolean); }
+function setAvf(t,list){ t.avf=list; savePlaced(); renderTentMarker(t); renderAvfallList(); }
+function renderAvfallList(){
+  const el=document.getElementById('avfallList'); if(!el) return; el.innerHTML='';
+  const st=avfStations();
+  const h=document.createElement('div'); h.className='legsub'; h.textContent='Sopstationer ('+st.length+')'; el.appendChild(h);
+  if(!st.length){ const d=document.createElement('div'); d.className='hint';
+    d.textContent='No sopstation is placed in this area yet. Place an object named "Sopstation" in Placering and it shows up here.';
+    el.appendChild(d); return; }
+  st.forEach((t,i)=>{
+    const ref=refOf(t), avf=t.avf||[];
+    const row=document.createElement('div'); row.className='legrow avfrow'; row.title='Click to find it on the plan';
+    row.onclick=()=>gotoTent(t);
+    const num=document.createElement('div'); num.className='avfnumb'; num.textContent=i+1; row.appendChild(num);
+    const nm=document.createElement('div'); nm.className='lname'; nm.textContent=ref.name;
+    const sub=document.createElement('div'); sub.style.cssText='font-size:10px;color:var(--muted);font-weight:400';
+    sub.textContent=avf.length?(avf.length+' fraktion(er)'):'no fractions yet';
+    nm.appendChild(sub); row.appendChild(nm);
+    const chips=document.createElement('div'); chips.className='avfchips';
+    avf.forEach(f=>{
+      const c=document.createElement('span'); c.className='avfchip'+(ADMIN?'':' ro');
+      const s=document.createElement('span'); s.textContent=f; c.appendChild(s);
+      if(ADMIN){
+        const x=document.createElement('button'); x.innerHTML='&#10005;'; x.title='Remove '+f;
+        x.onclick=e=>{ e.stopPropagation(); setAvf(t,(t.avf||[]).filter(v=>v!==f)); };
+        c.appendChild(x);
+      }
+      chips.appendChild(c);
+    });
+    if(ADMIN){
+      const sel=document.createElement('select');
+      const ph=document.createElement('option'); ph.value=''; ph.textContent='+ Lägg till fraktion…'; sel.appendChild(ph);
+      AVF_FRACTIONS.filter(f=>avf.indexOf(f)<0).forEach(f=>{ const o=document.createElement('option'); o.value=f; o.textContent=f; sel.appendChild(o); });
+      sel.onclick=e=>e.stopPropagation();
+      sel.onchange=()=>{ if(sel.value) setAvf(t,(t.avf||[]).concat([sel.value])); };
+      chips.appendChild(sel);
+    }
+    row.appendChild(chips);
+    el.appendChild(row);
+  });
 }
 document.addEventListener('keydown',e=>{
   if(curDomain()){

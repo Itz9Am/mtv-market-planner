@@ -311,8 +311,21 @@ branches from it); deleting a pipe cascades through its kopplingar and their bra
 
 ## UI conventions
 
-- Three tabs: **Placering** (place/move/rotate), **El**, **Vatten**.
-- Placing/moving is only possible in Placering. El and Vatten are read-only for layout.
+- Four tabs: **Placering** (place/move/rotate), **El**, **Vatten**, **Avfall**.
+- Placing/moving is only possible in Placering. El, Vatten and Avfall are read-only for
+  layout.
+- **Avfall tab**: every placed item whose name contains "sopstation" (case-insensitive,
+  `isSopstation`) is drawn green (`AVF_COLOR`) and numbered 1, 2, 3… from the
+  **bottom-left** of the plan upwards (lat asc then lng asc — lat 0 is the image
+  bottom); everything else is grey (`AVF_GRAY`), nya stripes suppressed. Numbers are
+  **derived from position, never stored** (moving a station renumbers — same principle
+  as the cabinet designations). Each station carries an editable list of waste
+  fractions (`t.avf`, picked from the fixed `AVF_FRACTIONS` dropdown in the sidebar,
+  removable chips). Fractions are plan data like the El checkboxes: persisted locally,
+  in undo history, and synced via a trailing `avfall` column on `placements`
+  (comma-joined, blank = none, so legacy rows and sigs are unchanged). Editing is
+  admin-only; public sees the numbers, colours and fraction labels on the map (the tab
+  is in `#pubTabs`). Map clicks are inert in this tab (`tentClick` early return).
 - Wiring requires the **Wire** tool to be toggled on; otherwise clicks select and
   highlight. Clicking a tent in El highlights its whole upstream supply chain in gold;
   clicking a cabinet highlights upstream plus its own tents.
@@ -520,7 +533,7 @@ flat rows):
 ```
 placements  tentId | x | y | rot |
             name | placering | length | width | color | electricity | water | nya | shape
-            (+ trailing area | elskap | stand | check — see below)
+            (+ trailing area | elskap | stand | check | avfall — see below)
 nodes       id | domain | kind | rating | x | y | unl |
             out220 | out16 | out32 | out63 | out125 | color
             (+ trailing area | check)
