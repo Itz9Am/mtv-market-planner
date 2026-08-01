@@ -1875,7 +1875,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRemo
    of the 2026-07-28 wipe). A HIDDEN tab with nothing in flight reloads itself — the
    dangerous stale tab is precisely the forgotten background one. A tab in active use
    gets a banner with a Reload button instead: never a mid-edit rug-pull. --- */
-const BUILD_ID='984d8d26b86c';
+const BUILD_ID='1de78c364a0e';
 let updBanner=null;
 function reloadIsSafe(){ return !lsGet(LS.dirty,0) && !SYNC.pending && !SYNC.inflight && !pointerDown; }
 function showUpdateBanner(){
@@ -2855,7 +2855,32 @@ function avfStations(){
   return placed.filter(t=>isSopstation(refOf(t)))
     .slice().sort((a,b)=>(a.lat-b.lat)||(a.lng-b.lng));
 }
-function avfNumOf(t){ const s=avfStations(); for(let i=0;i<s.length;i++){ if(s[i].uid===t.uid) return i+1; } return '?'; }
+/* Stations are numbered GLOBALLY across the areas (in AREAS order), like the cabinet
+   designations: Marknad 1..n, then Arena continues at n+1, then Camping. The active
+   area's base = the sopstation count of every area before it, taken from that area's
+   local cache when it has unsaved edits (it is ahead of the Sheet), otherwise from
+   the sheetAll snapshot — the exact areaSrcCount()/srcNumBase() pattern. */
+function areaAvfCount(key){
+  const suff=(key==='marknad')?'':'::'+key;   // same namespacing as nsKey/refreshOtherPlaced
+  try{ if(JSON.parse(localStorage.getItem(LS.dirty+suff)||'0')){
+    const ed=JSON.parse(localStorage.getItem(LS.edits+suff)||'{}')||{};
+    const loc=JSON.parse(localStorage.getItem(LS.placed+suff)||'[]')||[];
+    return loc.filter(p=>{ if(!p||!p.ref) return false;
+      const e=ed[p.ref.id]; return isSopstation((e&&e.name!=null)?e:p.ref); }).length; } }catch(e){}
+  const hdr=SHEET_HEADERS.placements, rows=(sheetAll&&sheetAll.placements)||[],
+        ai=hdr.indexOf('area'), ni=hdr.indexOf('name');
+  let c=0;
+  for(let i=1;i<rows.length;i++){ const r=rows[i]||[]; if(r.every(isBlank)) continue;
+    const ar=isBlank(r[ai])?'marknad':String(r[ai]);
+    if(ar===key && isSopstation({name:isBlank(r[ni])?'':String(r[ni])})) c++; }
+  return c;
+}
+function avfNumBase(){
+  let base=0;
+  for(const a of AREAS){ if(a.key===area) break; base+=areaAvfCount(a.key); }
+  return base;
+}
+function avfNumOf(t){ const s=avfStations(); for(let i=0;i<s.length;i++){ if(s[i].uid===t.uid) return avfNumBase()+i+1; } return '?'; }
 function avfFromCell(v){ if(isBlank(v)) return []; return String(v).split(',').map(s=>s.trim()).filter(Boolean); }
 function setAvf(t,list){ t.avf=list; savePlaced(); renderTentMarker(t); renderAvfallList(); }
 /* Clicking the station text on the map toggles its fraction dropdown. Delegated in
@@ -2878,11 +2903,12 @@ function renderAvfallList(){
   if(!st.length){ const d=document.createElement('div'); d.className='hint';
     d.textContent='No sopstation is placed in this area yet. Place an object named "Sopstation" in Placering and it shows up here.';
     el.appendChild(d); return; }
+  const base=avfNumBase();   // numbering continues across the areas
   st.forEach((t,i)=>{
     const ref=refOf(t), avf=t.avf||[];
     const row=document.createElement('div'); row.className='legrow avfrow'; row.title='Click to find it on the plan';
     row.onclick=()=>gotoTent(t);
-    const num=document.createElement('div'); num.className='avfnumb'; num.textContent=i+1; row.appendChild(num);
+    const num=document.createElement('div'); num.className='avfnumb'; num.textContent=base+i+1; row.appendChild(num);
     const nm=document.createElement('div'); nm.className='lname'; nm.textContent=ref.name;
     const sub=document.createElement('div'); sub.style.cssText='font-size:10px;color:var(--muted);font-weight:400';
     sub.textContent=avf.length?(avf.length+' fraktion(er)'):'no fractions yet';
