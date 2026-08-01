@@ -319,7 +319,11 @@ branches from it); deleting a pipe cascades through its kopplingar and their bra
   **bottom-left** of the plan upwards (lat asc then lng asc — lat 0 is the image
   bottom); everything else is grey (`AVF_GRAY`), nya stripes suppressed. Numbers are
   **derived from position, never stored** (moving a station renumbers — same principle
-  as the cabinet designations). Each station carries an editable list of waste
+  as the cabinet designations) and are **global across the areas** in `AREAS` order,
+  exactly like the source designations: Marknad 1..n, Arena continues at n+1, then
+  Camping (`avfNumBase()` mirrors `srcNumBase()` — earlier areas' counts come from
+  their local cache when dirty, else the `sheetAll` snapshot, so placing a station in
+  an earlier area shifts the later areas' numbers, by design). Each station carries an editable list of waste
   fractions (`t.avf`, picked from the fixed `AVF_FRACTIONS` dropdown in the sidebar,
   removable chips). Fractions are plan data like the El checkboxes: persisted locally,
   in undo history, and synced via a trailing `avfall` column on `placements`
