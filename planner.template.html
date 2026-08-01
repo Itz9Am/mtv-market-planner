@@ -180,8 +180,14 @@
   #avfallUI{flex:1;min-height:0;overflow-y:auto;padding-bottom:40px}
   .tent-cap .avfnum{display:inline-block;min-width:17px;height:17px;line-height:14px;background:#2e9e4f;color:#fff;border:1.5px solid #fff;border-radius:50%;font-size:10px;font-weight:800;text-align:center;margin-right:4px;vertical-align:-3px;box-sizing:border-box;padding:0 2px}
   .tent-cap.avfdim{opacity:.3}
+  /* the on-map fraction dropdown: opens under the station text when it is clicked
+     (the label pane is pointer-events:none; the text re-enables itself, like .elchk) */
+  .tent-cap .avftgl{pointer-events:auto;cursor:pointer}
+  .tent-cap .avfcar{color:#9fcfae;font-size:9px}
+  .tent-cap .avflist{position:absolute;left:50%;transform:translateX(-50%);top:100%;margin-top:2px;background:rgba(15,17,22,.92);border:1px solid #2e9e4f;border-radius:7px;padding:3px 0;min-width:76px;text-align:left}
+  .tent-cap .avflist .avfli{font-size:10.5px;font-weight:600;color:#dfeee4;padding:2px 10px;white-space:nowrap}
+  .tent-cap .avflist .avfli.none{color:var(--muted);font-style:italic}
   .avfrow{flex-wrap:wrap;cursor:pointer}
-  .avfrow.flash{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
   .avfrow .avfnumb{width:22px;height:22px;line-height:19px;background:#2e9e4f;color:#fff;border:1.5px solid #fff;border-radius:50%;font-size:12px;font-weight:800;text-align:center;flex:none;box-sizing:border-box}
   .avfchips{display:flex;flex-wrap:wrap;gap:5px;width:100%;margin-top:7px}
   .avfchip{display:flex;align-items:center;gap:4px;font-size:11px;color:#cfe9d6;background:rgba(46,158,79,.16);border:1px solid #2e9e4f;border-radius:12px;padding:2px 4px 2px 9px}
@@ -240,7 +246,7 @@
       <div id="vattenLegend"></div>
     </div>
     <div id="avfallUI" style="display:none">
-      <div class="hint">Waste view. Every placed <b>Sopstation</b> is coloured green and numbered 1, 2, 3&hellip; starting from the <b>bottom-left</b> of the plan; everything else is greyed out. Each station lists the fractions it sorts (Papper, Plast, Metall &hellip;): pick one from the dropdown to add it, click a chip's &#10005; to remove it. Click a row to find the station on the plan; click a station on the map to highlight it and see its fractions.</div>
+      <div class="hint">Waste view. Every placed <b>Sopstation</b> is coloured green and numbered 1, 2, 3&hellip; starting from the <b>bottom-left</b> of the plan; everything else is greyed out. Each station lists the fractions it sorts (Papper, Plast, Metall &hellip;): pick one from the dropdown to add it, click a chip's &#10005; to remove it. Click a row to find the station on the plan; on the map, click a station's text to drop down (or hide) its fraction list.</div>
       <div id="avfallList"></div>
     </div>
   </div>
@@ -648,9 +654,14 @@ function tentStyle(t){
 function capHtmlFor(t){
   const ref=refOf(t);
   if(currentTab==='avfall'){
-    // Sopstations: number badge only (bottom-left = 1); everything else dimmed.
-    // Fractions live in the sidebar list and in the click banner, not on the map.
-    if(isSopstation(ref)) return `<div class="tent-cap"><span class="ln"><span class="avfnum">${avfNumOf(t)}</span>${esc(ref.name)}</span></div>`;
+    // Sopstations: number badge + name (bottom-left = 1); everything else dimmed.
+    // Clicking the station text toggles a dropdown with its fraction list right
+    // under the label (t.avfOpen — per-station view state, not persisted).
+    if(isSopstation(ref)){
+      const open=!!t.avfOpen, avf=t.avf||[];
+      const list=open?`<div class="avflist">${avf.length?avf.map(f=>`<div class="avfli">${esc(f)}</div>`).join(''):'<div class="avfli none">no fractions yet</div>'}</div>`:'';
+      return `<div class="tent-cap"><span class="ln avftgl" data-uid="${t.uid}"><span class="avfnum">${avfNumOf(t)}</span>${esc(ref.name)} <span class="avfcar">${open?'&#9652;':'&#9662;'}</span></span>${list}</div>`;
+    }
     return `<div class="tent-cap avfdim"><span class="ln">${esc(ref.name)}</span></div>`;
   }
   const sub=currentTab==='el'?elLabel(ref.electricity):(showLetters?ref.placering:'');
@@ -667,7 +678,7 @@ function tentClick(t,e){
   // El/Vatten clicks may highlight in public too (wireMode is admin-only, so no writes)
   if(currentTab==='el'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); else highlightFromTent(t.ref.id); return; }
   if(currentTab==='vatten'){ if(wireMode&&connectSource) connect(connectSource,{kind:'tent',id:t.ref.id}); return; }
-  if(currentTab==='avfall'){ if(isSopstation(refOf(t))) avfClickStation(t); return; }   // stations highlight + show their fractions; everything else is inert
+  if(currentTab==='avfall'){ if(isSopstation(refOf(t))){ t.avfOpen=!t.avfOpen; renderTentMarker(t); } return; }   // footprint click toggles the fraction dropdown too; everything else is inert
   if(!ADMIN) return;   // public view: Placering tents are look-only
   if(e.originalEvent&&e.originalEvent.shiftKey) toggleSel(t.uid);   // shift-click: add/remove from the multi-selection
   else selectTent(t.uid);
@@ -2847,17 +2858,19 @@ function avfStations(){
 function avfNumOf(t){ const s=avfStations(); for(let i=0;i<s.length;i++){ if(s[i].uid===t.uid) return i+1; } return '?'; }
 function avfFromCell(v){ if(isBlank(v)) return []; return String(v).split(',').map(s=>s.trim()).filter(Boolean); }
 function setAvf(t,list){ t.avf=list; savePlaced(); renderTentMarker(t); renderAvfallList(); }
-/* Map click on a station: highlight it, show its fractions in the banner (the map
-   label carries only the number), and jump to its sidebar row (admin). */
-function avfClickStation(t){
-  clearHl(); hl.tents.add(t.ref.id); refreshHl();
-  const avf=t.avf||[];
-  flashBanner('Sopstation '+avfNumOf(t)+' — '+(avf.length?avf.join(', '):'no fractions yet'),false);
-  setTimeout(()=>banner.style.display='none',3000);
-  const row=document.querySelector('#avfallList .avfrow[data-uid="'+t.uid+'"]');
-  if(row){ row.scrollIntoView({block:'nearest',behavior:'smooth'});
-    row.classList.add('flash'); setTimeout(()=>row.classList.remove('flash'),1400); }
-}
+/* Clicking the station text on the map toggles its fraction dropdown. Delegated in
+   the CAPTURE phase like the El checkboxes, so Leaflet's map handlers never fire from
+   it (the label pane is pointer-events:none; .avftgl re-enables itself). It is view
+   state, not an edit — public can toggle too. */
+document.addEventListener('click',e=>{
+  const el=e.target&&e.target.closest?e.target.closest('.avftgl'):null; if(!el) return;
+  e.stopPropagation(); e.preventDefault();
+  if(currentTab!=='avfall') return;
+  const t=placed.find(x=>String(x.uid)===el.dataset.uid);
+  if(t){ t.avfOpen=!t.avfOpen; renderTentMarker(t); }
+},true);
+document.addEventListener('dblclick',e=>{ if(e.target&&e.target.closest&&e.target.closest('.avftgl')){ e.stopPropagation(); e.preventDefault(); } },true);
+document.addEventListener('mousedown',e=>{ if(e.target&&e.target.closest&&e.target.closest('.avftgl')) e.stopPropagation(); },true);
 function renderAvfallList(){
   const el=document.getElementById('avfallList'); if(!el) return; el.innerHTML='';
   const st=avfStations();
@@ -2868,7 +2881,6 @@ function renderAvfallList(){
   st.forEach((t,i)=>{
     const ref=refOf(t), avf=t.avf||[];
     const row=document.createElement('div'); row.className='legrow avfrow'; row.title='Click to find it on the plan';
-    row.dataset.uid=t.uid;
     row.onclick=()=>gotoTent(t);
     const num=document.createElement('div'); num.className='avfnumb'; num.textContent=i+1; row.appendChild(num);
     const nm=document.createElement('div'); nm.className='lname'; nm.textContent=ref.name;

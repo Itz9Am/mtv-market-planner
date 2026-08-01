@@ -325,10 +325,13 @@ branches from it); deleting a pipe cascades through its kopplingar and their bra
   in undo history, and synced via a trailing `avfall` column on `placements`
   (comma-joined, blank = none, so legacy rows and sigs are unchanged). Editing is
   admin-only; the tab is in `#pubTabs` so public sees the numbers and colours too.
-  Fractions do NOT show on the map labels (user request): clicking a station
-  (`avfClickStation`) highlights it gold, shows its fractions in the banner (this is
-  how public reads them) and scrolls its sidebar row into view; clicking empty map
-  clears the highlight. Non-station clicks are inert in this tab.
+  On the map the fractions are a **click-to-toggle dropdown under the station label**
+  (user request — not always-on text): clicking the station's text or footprint flips
+  `t.avfOpen` (per-station view state, never persisted) and the label re-renders with
+  an `.avflist` panel under it. The text click is delegated on `document` in the
+  CAPTURE phase like the El checkboxes (label pane is `pointer-events:none`; `.avftgl`
+  re-enables itself), and public can toggle too — it is a view, not an edit.
+  Non-station clicks are inert in this tab.
 - Wiring requires the **Wire** tool to be toggled on; otherwise clicks select and
   highlight. Clicking a tent in El highlights its whole upstream supply chain in gold;
   clicking a cabinet highlights upstream plus its own tents.
