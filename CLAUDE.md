@@ -324,8 +324,11 @@ branches from it); deleting a pipe cascades through its kopplingar and their bra
   removable chips). Fractions are plan data like the El checkboxes: persisted locally,
   in undo history, and synced via a trailing `avfall` column on `placements`
   (comma-joined, blank = none, so legacy rows and sigs are unchanged). Editing is
-  admin-only; public sees the numbers, colours and fraction labels on the map (the tab
-  is in `#pubTabs`). Map clicks are inert in this tab (`tentClick` early return).
+  admin-only; the tab is in `#pubTabs` so public sees the numbers and colours too.
+  Fractions do NOT show on the map labels (user request): clicking a station
+  (`avfClickStation`) highlights it gold, shows its fractions in the banner (this is
+  how public reads them) and scrolls its sidebar row into view; clicking empty map
+  clears the highlight. Non-station clicks are inert in this tab.
 - Wiring requires the **Wire** tool to be toggled on; otherwise clicks select and
   highlight. Clicking a tent in El highlights its whole upstream supply chain in gold;
   clicking a cabinet highlights upstream plus its own tents.
